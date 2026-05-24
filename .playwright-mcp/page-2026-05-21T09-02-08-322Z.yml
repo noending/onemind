@@ -1,0 +1,51 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]: Presentation Suite
+    - heading "佛经记忆与数字法藏展示材料" [level=1] [ref=e5]
+    - paragraph [ref=e6]: 一套同时覆盖正式 PDF 与单页网页的高质感材料体系。核心叙事统一，但分别针对合作方、组织方与内部团队重塑重心，让同一产品逻辑以更合适的方式被理解、信任与推进。
+  - generic [ref=e7]:
+    - article [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 合作方 / 投资人
+        - generic [ref=e11]: 产品价值
+      - heading "长期价值与商业闭环" [level=2] [ref=e12]
+      - paragraph [ref=e13]: 强调为什么值得做、为什么现在做、为什么这不是小众工具，而是可以沉淀高信任内容与精准人群的长期产品。
+      - list [ref=e14]:
+        - listitem [ref=e15]: 科学记忆作为高频入口
+        - listitem [ref=e16]: 节日与内容陪伴形成留存
+        - listitem [ref=e17]: 会员、专题包与组织服务形成变现
+        - listitem [ref=e18]: 数字法藏管理构成长期壁垒
+      - generic [ref=e19]:
+        - generic [ref=e20]: 适合会前预读、合作洽谈、项目介绍
+        - link "打开版本" [ref=e21] [cursor=pointer]:
+          - /url: ./investor.html
+    - article [ref=e22]:
+      - generic [ref=e23]:
+        - generic [ref=e24]: 寺院 / 上师团队 / 组织方
+        - generic [ref=e25]: 秩序与信任
+      - heading "数字法藏与权限治理" [level=2] [ref=e26]
+      - paragraph [ref=e27]: 强调资料长期保存、开放边界、角色授权与人员变动后的连续性，让产品首先被理解为一个可承载内容与传承秩序的可信工具。
+      - list [ref=e28]:
+        - listitem [ref=e29]: 资料不再散落在个人设备中
+        - listitem [ref=e30]: 公开、封闭、指定可见权限清晰
+        - listitem [ref=e31]: 版本留存、访问日志、交接不丢失
+        - listitem [ref=e32]: 适合寺院、道场与团队长期使用
+      - generic [ref=e33]:
+        - generic [ref=e34]: 适合建立信任、明确边界、组织沟通
+        - link "打开版本" [ref=e35] [cursor=pointer]:
+          - /url: ./organization.html
+    - article [ref=e36]:
+      - generic [ref=e37]:
+        - generic [ref=e38]: 内部产品共识
+        - generic [ref=e39]: 范围与阶段
+      - heading "首发路线与团队取舍" [level=2] [ref=e40]
+      - paragraph [ref=e41]: 帮助团队统一认知，明确首发做什么、后续做什么，以及为什么数字法藏是长期重点能力但不应挤压记忆工具的首发入口。
+      - list [ref=e42]:
+        - listitem [ref=e43]: MVP 边界与主闭环清晰
+        - listitem [ref=e44]: 功能模块与阶段节奏明确
+        - listitem [ref=e45]: 商业路径与组织能力分阶段推进
+        - listitem [ref=e46]: 风险与取舍对齐，减少分散投入
+      - generic [ref=e47]:
+        - generic [ref=e48]: 适合内部对齐、立项讨论、任务拆分前阅读
+        - link "打开版本" [ref=e49] [cursor=pointer]:
+          - /url: ./internal.html

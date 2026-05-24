@@ -1,0 +1,23 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/library/index",
+    "pages/shop/index",
+    "pages/profile/index",
+    "pages/practice/index",
+    "pages/plan/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "一念法藏",
+    "navigationBarTextStyle": "black",
+    "navigationBarBackgroundColor": "#f7f4ec",
+    "backgroundColor": "#fffaf2",
+    "navigationStyle": "custom"
+  },
+  "usingComponents": {
+    "app-header": "/components/app-header/index",
+    "app-tabbar": "/components/app-tabbar/index"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

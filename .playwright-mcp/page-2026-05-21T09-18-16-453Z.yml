@@ -1,0 +1,88 @@
+- main [ref=e2]:
+  - navigation [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: 合作方 / 投资人版
+      - generic [ref=e6]: 精简叙事
+      - generic [ref=e7]: PDF-ready
+    - generic [ref=e8]:
+      - link "总览" [ref=e9] [cursor=pointer]:
+        - /url: ./index.html
+      - link "机会" [ref=e10] [cursor=pointer]:
+        - /url: "#s1"
+      - link "解法" [ref=e11] [cursor=pointer]:
+        - /url: "#s2"
+      - link "变现" [ref=e12] [cursor=pointer]:
+        - /url: "#s3"
+  - generic [ref=e13]:
+    - generic [ref=e14]: Investor Edition
+    - heading "把修学需求，做成高信任的长期产品。" [level=1] [ref=e15]
+    - paragraph [ref=e16]: 我们不是在做一款内容阅读工具，而是在做一条清晰路径：用科学记忆建立高频入口，用节日与内容陪伴建立留存，用数字法藏管理建立长期壁垒。
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]: 入口
+        - strong [ref=e20]: 记忆
+        - paragraph [ref=e21]: 让用户真正背会，形成高频打开理由。
+      - generic [ref=e22]:
+        - generic [ref=e23]: 留存
+        - strong [ref=e24]: 陪伴
+        - paragraph [ref=e25]: 节日节点与内容增强，让修学行为持续发生。
+      - generic [ref=e26]:
+        - generic [ref=e27]: 壁垒
+        - strong [ref=e28]: 法藏
+        - paragraph [ref=e29]: 权限、版本、托管能力，形成组织级护城河。
+  - generic [ref=e30]:
+    - heading "为什么值得做" [level=2] [ref=e31]
+    - generic [ref=e32]:
+      - generic [ref=e33]: 用户不缺内容，缺的是“把内容内化成能力”的工具。
+      - generic [ref=e34]:
+        - generic [ref=e35]: 机会窗口
+        - paragraph [ref=e36]: 修学行为正在移动化、碎片化、长期化，但产品供给仍停留在阅读、打卡或泛内容堆叠。
+    - generic [ref=e37]:
+      - generic [ref=e38]:
+        - strong [ref=e39]: 背诵难
+        - paragraph [ref=e40]: 有愿心，但缺科学节奏与反馈。
+      - generic [ref=e41]:
+        - strong [ref=e42]: 坚持难
+        - paragraph [ref=e43]: 缺少稳定提醒与阶段成就感。
+      - generic [ref=e44]:
+        - strong [ref=e45]: 沉淀难
+        - paragraph [ref=e46]: 资料分散，长期价值难积累。
+  - generic [ref=e47]:
+    - heading "我们的解法" [level=2] [ref=e48]
+    - paragraph [ref=e49]: 首期只做最有价值的一件事：让用户更轻松背下来。
+    - generic [ref=e50]:
+      - generic [ref=e51]:
+        - generic [ref=e52]: MVP
+        - strong [ref=e53]: 记忆主闭环
+        - paragraph [ref=e54]: 选内容 → 自动方案 → 到点复习 → 背会 → 下一段。
+      - generic [ref=e55]:
+        - generic [ref=e56]: 扩展
+        - strong [ref=e57]: 节日 + 内容增强
+        - paragraph [ref=e58]: 在关键节点推送相关内容，引入音频、能量画、唐卡作为陪伴层。
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - strong [ref=e61]: 阶段 1
+        - paragraph [ref=e62]: 小程序验证留存与背会率。
+      - generic [ref=e63]:
+        - strong [ref=e64]: 阶段 2
+        - paragraph [ref=e65]: 内容增强与轻会员变现。
+      - generic [ref=e66]:
+        - strong [ref=e67]: 阶段 3
+        - paragraph [ref=e68]: App 承接与组织版能力。
+  - generic [ref=e69]:
+    - heading "商业闭环与长期价值" [level=2] [ref=e70]
+    - generic [ref=e71]:
+      - generic [ref=e72]:
+        - generic [ref=e73]: 收入 01
+        - strong [ref=e74]: 会员计划
+        - paragraph [ref=e75]: 更深记忆方案与长期进度能力。
+      - generic [ref=e76]:
+        - generic [ref=e77]: 收入 02
+        - strong [ref=e78]: 专题内容
+        - paragraph [ref=e79]: 音频、节日与主题包的持续付费。
+      - generic [ref=e80]:
+        - generic [ref=e81]: 收入 03
+        - strong [ref=e82]: 组织服务
+        - paragraph [ref=e83]: 数字法藏托管与权限治理服务。
+    - heading "这是一条“先价值、后规模、再壁垒”的稳健路线。" [level=3] [ref=e84]
+    - paragraph [ref=e85]: 发心是利益众生，模式是长期可持续。

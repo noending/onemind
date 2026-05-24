@@ -1,0 +1,194 @@
+- main [ref=e2]:
+  - navigation [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: 寺院 / 上师团队 / 组织方版
+      - generic [ref=e6]: 权限与秩序
+      - generic [ref=e7]: PDF-ready
+    - generic [ref=e8]:
+      - link "返回总览" [ref=e9] [cursor=pointer]:
+        - /url: ./index.html
+      - link "封面" [ref=e10] [cursor=pointer]:
+        - /url: "#page-1"
+      - link "价值" [ref=e11] [cursor=pointer]:
+        - /url: "#page-4"
+      - link "权限" [ref=e12] [cursor=pointer]:
+        - /url: "#page-5"
+      - link "结语" [ref=e13] [cursor=pointer]:
+        - /url: "#page-9"
+  - generic [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]: Organization Edition
+      - heading "把散落的资料， 沉淀成可守护、可传承的数字法藏。" [level=1] [ref=e18]:
+        - text: 把散落的资料，
+        - text: 沉淀成可守护、可传承的数字法藏。
+      - paragraph [ref=e19]: 这不是单纯的修学内容库，也不是普通的云盘替代品。它是一套兼顾修学次第、内容边界、权限秩序与长期交接的数字工具，让经文、音频、唐卡、仪轨和相关资料真正留得住、管得清、传得稳。
+      - generic [ref=e20]:
+        - generic [ref=e21]: 护持与传承
+        - generic [ref=e22]: 权限边界清楚
+        - generic [ref=e23]: 资料长期保存
+    - generic [ref=e24]:
+      - generic [ref=e25]: 核心判断
+      - strong [ref=e26]: 最危险的不是资料少，而是资料散、权责乱、交接断。
+      - paragraph [ref=e27]: 当关键内容依赖个人网盘、电脑或微信保存时，组织往往在最需要秩序的时候失去秩序。
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - generic [ref=e30]: 风险一
+          - generic [ref=e31]: 散
+          - generic [ref=e32]: 资料分散在个人设备与聊天记录中
+        - generic [ref=e33]:
+          - generic [ref=e34]: 风险二
+          - generic [ref=e35]: 混
+          - generic [ref=e36]: 公开、内部、指定资料边界不清
+        - generic [ref=e37]:
+          - generic [ref=e38]: 风险三
+          - generic [ref=e39]: 断
+          - generic [ref=e40]: 人员离开后资料与历史难以继承
+        - generic [ref=e41]:
+          - generic [ref=e42]: 目标
+          - generic [ref=e43]: 稳
+          - generic [ref=e44]: 托管、权限、版本与审计长期稳定
+  - generic [ref=e45]:
+    - generic [ref=e47]:
+      - generic [ref=e48]: 01 / 为什么需要数字法藏管理
+      - heading "修学资料越来越多，但真正可被组织长期掌握的并不多。" [level=2] [ref=e49]
+    - generic [ref=e50]:
+      - generic [ref=e51]: 真正值得被护持的，不只是内容本身，更是它的边界、来处、版本、适用对象与传递秩序。
+      - generic [ref=e52]:
+        - text: 典型资料类型
+        - list [ref=e53]:
+          - listitem [ref=e54]: 经文、咒语、仪轨、注音与释义版本
+          - listitem [ref=e55]: 诵读音频、梵呗、导读与讲解录音
+          - listitem [ref=e56]: 唐卡、能量画、主题视觉与专题图册
+          - listitem [ref=e57]: 讲记、修学安排、内部资料与阶段性课程
+  - generic [ref=e58]:
+    - generic [ref=e60]:
+      - generic [ref=e61]: 02 / 当前资料管理风险
+      - heading "内容越珍贵，越不能继续依赖“谁在管，就存在谁那里”。" [level=2] [ref=e62]
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - strong [ref=e65]: 资料散落
+        - paragraph [ref=e66]: 保存在个人微信、聊天文件、U 盘、电脑桌面与不同网盘中，难统一检索与备份。
+      - generic [ref=e67]:
+        - strong [ref=e68]: 权限模糊
+        - paragraph [ref=e69]: 哪些可以公开，哪些仅内部可见，哪些只对特定人员开放，往往缺少清晰制度化表达。
+      - generic [ref=e70]:
+        - strong [ref=e71]: 版本混乱
+        - paragraph [ref=e72]: 同一份经文或音频被多次转存与修改，久而久之难以确认哪一版是正确有效版本。
+      - generic [ref=e73]:
+        - strong [ref=e74]: 交接断裂
+        - paragraph [ref=e75]: 当整理人员离开、换手机、丢账号或岗位变动时，组织失去完整历史与控制权。
+  - generic [ref=e76]:
+    - generic [ref=e78]:
+      - generic [ref=e79]: 03 / 修学与护持价值
+      - heading "产品不是把资料堆在一起，而是把修学秩序做出来。" [level=2] [ref=e80]
+    - generic [ref=e81]:
+      - generic [ref=e82]:
+        - text: 面向个人
+        - strong [ref=e83]: 科学记忆，帮助背诵受持
+        - paragraph [ref=e84]: 经文、咒语与片段内容可直接进入记忆计划，提升真正受持的可能性。
+      - generic [ref=e85]:
+        - text: 面向组织
+        - strong [ref=e86]: 统一归档，形成长期内容秩序
+        - paragraph [ref=e87]: 内容按来源、版本、对象与开放级别归类，而不是继续散落管理。
+      - generic [ref=e88]:
+        - text: 面向传承
+        - strong [ref=e89]: 资料边界清楚，交接不失真
+        - paragraph [ref=e90]: 内容从“谁手里有”变成“组织如何守护”，减少因个人变动造成的损失。
+      - generic [ref=e91]:
+        - text: 面向未来
+        - strong [ref=e92]: 数字内容可持续扩展
+        - paragraph [ref=e93]: 音乐、唐卡、能量画、密法经咒等都能在同一体系下被长期管理。
+  - generic [ref=e94]:
+    - generic [ref=e96]:
+      - generic [ref=e97]: 04 / 权限与开放体系
+      - heading "每份资料都应当有明确边界，而不是靠口头提醒维持秩序。" [level=2] [ref=e98]
+    - generic [ref=e99]:
+      - generic [ref=e100]:
+        - text: 公开
+        - strong [ref=e101]: 可面向大众传播
+        - paragraph [ref=e102]: 适合公开阅读、日常诵读或基础了解的资料，便于传播与修学引导。
+      - generic [ref=e103]:
+        - text: 内部可见
+        - strong [ref=e104]: 仅组织成员访问
+        - paragraph [ref=e105]: 适用于内部课程、组织资料、工作资料或仍需保持管理边界的内容。
+      - generic [ref=e106]:
+        - text: 指定可见
+        - strong [ref=e107]: 仅指定人员开放
+        - paragraph [ref=e108]: 适用于特定法门、特定修学阶段或敏感资料，按角色、人员或团队细分授权。
+    - generic [ref=e109]:
+      - text: 角色建议
+      - paragraph [ref=e110]: 至少支持超级管理员、内容管理员、资料维护者、普通成员、指定受众等角色，并对查看、上传、修改、下载、授权等行为保留完整日志。
+  - generic [ref=e111]:
+    - generic [ref=e113]:
+      - generic [ref=e114]: 05 / 人员变动下的风险防护
+      - heading "真正的稳定，不是某个人很负责，而是即使他离开，系统仍然稳。" [level=2] [ref=e115]
+    - generic [ref=e116]:
+      - generic [ref=e117]:
+        - generic [ref=e118]: Step 1
+        - strong [ref=e119]: 集中托管
+        - paragraph [ref=e120]: 资料统一进入组织可控的内容仓，而不是继续保留在个人端。
+      - generic [ref=e121]:
+        - generic [ref=e122]: Step 2
+        - strong [ref=e123]: 角色绑定
+        - paragraph [ref=e124]: 权限属于角色与组织关系，不属于私人聊天链路或临时口头授权。
+      - generic [ref=e125]:
+        - generic [ref=e126]: Step 3
+        - strong [ref=e127]: 历史留痕
+        - paragraph [ref=e128]: 谁上传、谁改动、谁下载、谁授权，都可被追踪与核查。
+      - generic [ref=e129]:
+        - generic [ref=e130]: Step 4
+        - strong [ref=e131]: 顺畅交接
+        - paragraph [ref=e132]: 人员调整后，资料、标签、版本与访问边界都可被完整接续。
+  - generic [ref=e133]:
+    - generic [ref=e135]:
+      - generic [ref=e136]: 06 / 内容与资产长期沉淀
+      - heading "数字法藏不是静态仓库，而是不断被整理、验证、托管与延续的系统。" [level=2] [ref=e137]
+    - generic [ref=e138]:
+      - generic [ref=e139]:
+        - generic [ref=e140]: 管理维度
+        - generic [ref=e141]: 需要被记录
+        - generic [ref=e142]: 需要被控制
+        - generic [ref=e143]: 长期价值
+      - generic [ref=e144]:
+        - generic [ref=e145]: 资料身份
+        - generic [ref=e146]: 标题、类别、来源、适用对象
+        - generic [ref=e147]: 命名与归档规范
+        - generic [ref=e148]: 检索清晰
+      - generic [ref=e149]:
+        - generic [ref=e150]: 版本历史
+        - generic [ref=e151]: 更新时间、维护人、备注
+        - generic [ref=e152]: 版本覆盖规则
+        - generic [ref=e153]: 减少混乱
+      - generic [ref=e154]:
+        - generic [ref=e155]: 权限边界
+        - generic [ref=e156]: 公开等级、角色、指定对象
+        - generic [ref=e157]: 访问、下载与授权行为
+        - generic [ref=e158]: 秩序稳定
+  - generic [ref=e159]:
+    - generic [ref=e161]:
+      - generic [ref=e162]: 07 / 适用组织场景
+      - heading "不是所有组织都需要复杂系统，但每个重视内容的人都需要秩序。" [level=2] [ref=e163]
+    - generic [ref=e164]:
+      - generic [ref=e165]:
+        - strong [ref=e166]: 寺院
+        - paragraph [ref=e167]: 经文音频、活动资料、诵读内容统一保存与管理。
+      - generic [ref=e168]:
+        - strong [ref=e169]: 道场
+        - paragraph [ref=e170]: 内部课程资料、成员资料、专题法门内容分层开放。
+      - generic [ref=e171]:
+        - strong [ref=e172]: 上师团队
+        - paragraph [ref=e173]: 资料敏感度更高，需要更明确的指定授权与可追踪记录。
+      - generic [ref=e174]:
+        - strong [ref=e175]: 修学组织
+        - paragraph [ref=e176]: 从个人学习工具延伸到组织资料治理，形成统一体系。
+    - generic [ref=e177]:
+      - text: 延展能力
+      - paragraph [ref=e178]: 同一平台还可承接记忆计划、节日内容推荐、专题音频和视觉资产，既服务个人，也服务组织。
+  - generic [ref=e180]:
+    - generic [ref=e181]: Closing
+    - heading "让重要资料不再依赖个人留存，让内容真正成为可被守护、可被传承的共同财富。" [level=3] [ref=e182]
+    - paragraph [ref=e183]: 这套产品先帮助个人更轻松地背诵与受持，再帮助组织用更有秩序的方式管理数字内容。它既是一件工具，也是一种长期托付关系。
+    - generic [ref=e184]:
+      - generic [ref=e185]: 护持
+      - generic [ref=e186]: 秩序
+      - generic [ref=e187]: 长期保存

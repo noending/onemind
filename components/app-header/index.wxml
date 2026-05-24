@@ -1,0 +1,1 @@
+<view class="app-header" style="height: {{statusBarHeight}}px;"></view>

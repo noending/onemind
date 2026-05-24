@@ -1,0 +1,266 @@
+- main [ref=e2]:
+  - navigation [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: 合作方 / 投资人版
+      - generic [ref=e6]: PDF-ready
+      - generic [ref=e7]: 现代庄重融合
+    - generic [ref=e8]:
+      - link "返回总览" [ref=e9] [cursor=pointer]:
+        - /url: ./index.html
+      - link "封面" [ref=e10] [cursor=pointer]:
+        - /url: "#page-1"
+      - link "MVP" [ref=e11] [cursor=pointer]:
+        - /url: "#page-5"
+      - link "变现" [ref=e12] [cursor=pointer]:
+        - /url: "#page-7"
+      - link "结语" [ref=e13] [cursor=pointer]:
+        - /url: "#page-9"
+  - generic [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]: Investor Edition
+      - heading "把修学的长期价值， 做成可信且可持续的产品。" [level=1] [ref=e18]:
+        - text: 把修学的长期价值，
+        - text: 做成可信且可持续的产品。
+      - paragraph [ref=e19]: 这不是一款孤立的佛学内容工具，而是一条以科学记忆为入口、以高频修学习惯为留存、以数字法藏管理为长期壁垒的产品路径。它先帮助用户真正背下来，再帮助内容长期留得住、管得清、传得稳。
+      - generic [ref=e20]:
+        - generic [ref=e21]: 利益众生为发心
+        - generic [ref=e22]: 科学记忆为入口
+        - generic [ref=e23]: 数字法藏为壁垒
+    - generic [ref=e24]:
+      - generic [ref=e25]: 核心判断
+      - strong [ref=e26]: 高信任内容，不该停留在“阅读”层。
+      - paragraph [ref=e27]: 真正有长期价值的，是让用户持续诵读、实际背会，并在后续把音频、视觉内容与组织级资料管理沉淀成一体。
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - generic [ref=e30]: 入口
+          - generic [ref=e31]: 记忆
+          - generic [ref=e32]: 高频、可量化、容易形成成就感
+        - generic [ref=e33]:
+          - generic [ref=e34]: 留存
+          - generic [ref=e35]: 复习
+          - generic [ref=e36]: 记忆曲线、节日引导与内容陪伴
+        - generic [ref=e37]:
+          - generic [ref=e38]: 变现
+          - generic [ref=e39]: 订阅
+          - generic [ref=e40]: 专题内容包与组织服务
+        - generic [ref=e41]:
+          - generic [ref=e42]: 壁垒
+          - generic [ref=e43]: 法藏
+          - generic [ref=e44]: 权限、托管、版本与连续性
+  - generic [ref=e45]:
+    - generic [ref=e47]:
+      - generic [ref=e48]: 01 / 为什么值得做
+      - heading "从“想背下来”到“真的背下来”，中间缺了一套可靠工具。" [level=2] [ref=e49]
+      - paragraph [ref=e50]: 佛经、咒语与修学资料长期存在，却缺少兼顾记忆效率、使用温度与资料秩序的现代产品表达。
+    - generic [ref=e51]:
+      - generic [ref=e52]: 修学意愿很强，但背诵过程分散、复习节奏随缘、资料陪伴零碎，最后往往只停留在“看过”而不是“受持”。
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - text: 需求端变化
+          - heading "修学行为正在从线下固定场景，转向碎片化与长期陪伴。" [level=3] [ref=e55]
+          - list [ref=e56]:
+            - listitem [ref=e57]: 普通在家修行者更依赖移动端安排功课与复习。
+            - listitem [ref=e58]: 优质内容越来越多，但真正沉淀为个人能力的越来越少。
+            - listitem [ref=e59]: 音频、视觉、节日内容正在成为新的修学陪伴方式。
+        - generic [ref=e60]:
+          - text: 供给端缺口
+          - heading "市场上有内容、有社群、有工具，但很少有完整闭环。" [level=3] [ref=e61]
+          - list [ref=e62]:
+            - listitem [ref=e63]: 内容产品偏阅读与传播，难形成背诵完成感。
+            - listitem [ref=e64]: 习惯产品偏签到，缺少真正的宗教文化语境。
+            - listitem [ref=e65]: 资料管理偏网盘式收纳，难承接传承秩序与权限边界。
+  - generic [ref=e66]:
+    - generic [ref=e68]:
+      - generic [ref=e69]: 02 / 用户真实痛点
+      - heading "同一个用户，往往同时承受四类阻力。" [level=2] [ref=e70]
+    - generic [ref=e71]:
+      - generic [ref=e72]:
+        - generic [ref=e73]: A
+        - heading "背诵难" [level=3] [ref=e74]
+        - paragraph [ref=e75]: 内容不短，开始容易，稳定复习难，往往没有科学节奏。
+      - generic [ref=e76]:
+        - generic [ref=e77]: B
+        - heading "坚持难" [level=3] [ref=e78]
+        - paragraph [ref=e79]: 功课时间碎片化，缺少节日与阶段性成就的持续拉力。
+      - generic [ref=e80]:
+        - generic [ref=e81]: C
+        - heading "陪伴弱" [level=3] [ref=e82]
+        - paragraph [ref=e83]: 诵读音乐、导读、主题视觉内容零散，难形成沉浸感。
+      - generic [ref=e84]:
+        - generic [ref=e85]: D
+        - heading "资料散" [level=3] [ref=e86]
+        - paragraph [ref=e87]: 经文、音频、唐卡等数字资产分散在个人设备与群聊里。
+    - generic [ref=e88]:
+      - generic [ref=e89]:
+        - heading "短期问题看似是“提醒不够”。" [level=4] [ref=e90]
+        - paragraph [ref=e91]: 本质上是用户没有一套低负担、可兑现的修学工具，导致愿心与行动之间反复断裂。
+      - generic [ref=e92]:
+        - heading "长期问题看似是“资料太多”。" [level=4] [ref=e93]
+        - paragraph [ref=e94]: 本质上是没有把内容、关系和权限组织起来，因而无法形成真正的数字法藏。
+  - generic [ref=e95]:
+    - generic [ref=e97]:
+      - generic [ref=e98]: 03 / 产品核心解法
+      - heading "一个四层引擎，把“愿意学”稳稳推到“能够持续受持”。" [level=2] [ref=e99]
+    - generic [ref=e100]:
+      - generic [ref=e101]:
+        - generic [ref=e102]: Layer 01
+        - strong [ref=e103]: 科学记忆
+        - paragraph [ref=e104]: 按长度生成计划，用拆段、首字提示、填空、跟读帮助用户背会内容。
+      - generic [ref=e105]:
+        - generic [ref=e106]: Layer 02
+        - strong [ref=e107]: 节日场景
+        - paragraph [ref=e108]: 在佛菩萨诞辰、成道日等节点推送相关内容，把日常练习接入时间秩序。
+      - generic [ref=e109]:
+        - generic [ref=e110]: Layer 03
+        - strong [ref=e111]: 内容陪伴
+        - paragraph [ref=e112]: 音频、能量画、唐卡与专题内容包，让记忆与亲近感同步加深。
+      - generic [ref=e113]:
+        - generic [ref=e114]: Layer 04
+        - strong [ref=e115]: 数字法藏
+        - paragraph [ref=e116]: 将内容资产、权限体系、版本与托管能力沉淀为组织级基础设施。
+    - generic [ref=e117]:
+      - generic [ref=e118]:
+        - generic [ref=e119]: 层级
+        - generic [ref=e120]: 用户价值
+        - generic [ref=e121]: 产品动作
+        - generic [ref=e122]: 长期结果
+      - generic [ref=e123]:
+        - generic [ref=e124]: 记忆入口
+        - generic [ref=e125]: 轻松背下来
+        - generic [ref=e126]: 自动排程 + 多种训练
+        - generic [ref=e127]: 稳定复习频率
+      - generic [ref=e128]:
+        - generic [ref=e129]: 陪伴增强
+        - generic [ref=e130]: 更愿意回来
+        - generic [ref=e131]: 节日推荐 + 音频视觉内容
+        - generic [ref=e132]: 持续修学习惯
+      - generic [ref=e133]:
+        - generic [ref=e134]: 组织沉淀
+        - generic [ref=e135]: 资料不再丢失
+        - generic [ref=e136]: 权限、版本、交接、审计
+        - generic [ref=e137]: 形成数字法藏壁垒
+  - generic [ref=e138]:
+    - generic [ref=e140]:
+      - generic [ref=e141]: 04 / 首期 MVP
+      - heading "先做成一件最有价值、最容易验证留存的事。" [level=2] [ref=e142]
+      - paragraph [ref=e143]: 不急着做内容商城，也不急着把数字资产前台化。首发只验证：用户是否愿意把背诵这件事交给系统来帮他完成。
+    - generic [ref=e144]:
+      - generic [ref=e145]:
+        - text: 内容范围
+        - strong [ref=e146]: 短咒、短偈、常用经文片段
+        - paragraph [ref=e147]: 避开长经首发复杂度，让用户在一周内能感受到“确实背会”的成就。
+      - generic [ref=e148]:
+        - text: 产品闭环
+        - strong [ref=e149]: 选内容 → 自动方案 → 到点复习 → 背会 → 下一段
+        - paragraph [ref=e150]: 主闭环完整，意味着产品不是提醒器，而是一个真正的记忆教练。
+      - generic [ref=e151]:
+        - text: 节日增强
+        - strong [ref=e152]: 轻量推荐，不抢主叙事
+        - paragraph [ref=e153]: 节日当天精选相关内容，支持一键加入记忆计划，既有文化厚度，也不稀释主功能。
+      - generic [ref=e154]:
+        - text: 平台路径
+        - strong [ref=e155]: 小程序验证 → App 承接
+        - paragraph [ref=e156]: 前者适合低门槛获客，后者适合更强提醒、更高留存与完整会员体系。
+  - generic [ref=e157]:
+    - generic [ref=e159]:
+      - generic [ref=e160]: 05 / 留存逻辑
+      - heading "用户留下来，不是因为他打了卡，而是因为他真的背下来了。" [level=2] [ref=e161]
+    - generic [ref=e162]:
+      - generic [ref=e163]:
+        - generic [ref=e164]: "01"
+        - strong [ref=e165]: 选择内容
+        - paragraph [ref=e166]: 从短咒或片段开始，决策成本低，容易迈出第一步。
+      - generic [ref=e167]:
+        - generic [ref=e168]: "02"
+        - strong [ref=e169]: 接受方案
+        - paragraph [ref=e170]: 系统自动给出 1 到 7 天节奏，用户无需自己计算复习频率。
+      - generic [ref=e171]:
+        - generic [ref=e172]: "03"
+        - strong [ref=e173]: 完成复习
+        - paragraph [ref=e174]: 拆段与提示降低挫败感，让复习比硬背更轻、更稳。
+      - generic [ref=e175]:
+        - generic [ref=e176]: "04"
+        - strong [ref=e177]: 形成成就
+        - paragraph [ref=e178]: 看到“已背会”的内容沉淀，胜过单纯签到累计。
+      - generic [ref=e179]:
+        - generic [ref=e180]: "05"
+        - strong [ref=e181]: 接下一段
+        - paragraph [ref=e182]: 系统顺势推荐下一条内容，把单次成功转化成长期修学习惯。
+    - generic [ref=e183]:
+      - generic [ref=e184]:
+        - text: 关键指标
+        - list [ref=e185]:
+          - listitem [ref=e186]: 首次创建记忆计划转化率
+          - listitem [ref=e187]: 3 日连续复习完成率
+          - listitem [ref=e188]: 单段内容背会完成率
+          - listitem [ref=e189]: 完成首段后进入第二段的比例
+      - generic [ref=e190]:
+        - text: 增长补强
+        - list [ref=e191]:
+          - listitem [ref=e192]: 节日当天精选推荐，形成自然传播点。
+          - listitem [ref=e193]: 已背会内容可沉淀为个人修学履历。
+          - listitem [ref=e194]: 音频与视觉内容作为下一阶段增强，不打断首发验证。
+  - generic [ref=e195]:
+    - generic [ref=e197]:
+      - generic [ref=e198]: 06 / 商业路径
+      - heading "先建立信任，再逐层打开收入结构。" [level=2] [ref=e199]
+    - generic [ref=e200]:
+      - generic [ref=e201]:
+        - text: 阶段一
+        - heading "会员记忆计划" [level=3] [ref=e202]
+        - paragraph [ref=e203]: 更长内容、更细复习曲线、更完整进度分析，先服务愿意持续精进的高频用户。
+      - generic [ref=e204]:
+        - text: 阶段二
+        - heading "专题数字内容" [level=3] [ref=e205]
+        - paragraph [ref=e206]: 佛菩萨专题、节日专题、经文音乐、导读音频与主题视觉内容包。
+      - generic [ref=e207]:
+        - text: 阶段三
+        - heading "组织版管理服务" [level=3] [ref=e208]
+        - paragraph [ref=e209]: 资料托管、权限治理、版本留存与数字法藏架构搭建，形成高客单的长期服务。
+    - generic [ref=e210]:
+      - generic [ref=e211]:
+        - text: 为什么这条变现路径更稳
+        - paragraph [ref=e212]: 它不是从交易开始，而是从价值兑现开始。用户先因背诵成果形成信任，再对专题内容与长期陪伴付费；组织方则在资料治理与风险控制上看到明确投入回报。
+      - generic [ref=e213]:
+        - text: 收入构成
+        - list [ref=e214]:
+          - listitem [ref=e215]: C 端订阅
+          - listitem [ref=e216]: 专题内容包
+          - listitem [ref=e217]: 组织版服务费
+          - listitem [ref=e218]: 定制迁移与治理项目
+  - generic [ref=e219]:
+    - generic [ref=e221]:
+      - generic [ref=e222]: 07 / 长期壁垒与阶段路线
+      - heading "从“内容帮助用户精进”，走向“系统帮助组织守护内容”。" [level=2] [ref=e223]
+    - generic [ref=e224]:
+      - generic [ref=e225]:
+        - generic [ref=e226]: Phase 1
+        - strong [ref=e227]: 记忆工具验证期
+        - paragraph [ref=e228]: 用小程序验证短内容科学记忆是否形成真实留存。
+      - generic [ref=e229]:
+        - generic [ref=e230]: Phase 2
+        - strong [ref=e231]: 内容增强期
+        - paragraph [ref=e232]: 引入节日、音频、能量画、唐卡与主题计划。
+      - generic [ref=e233]:
+        - generic [ref=e234]: Phase 3
+        - strong [ref=e235]: App 承接高频用户
+        - paragraph [ref=e236]: 强化提醒、会员体系与长期修学习惯沉淀。
+      - generic [ref=e237]:
+        - generic [ref=e238]: Phase 4
+        - strong [ref=e239]: 数字法藏平台
+        - paragraph [ref=e240]: 形成组织级权限、托管与版本系统，构成真正壁垒。
+    - generic [ref=e241]:
+      - generic [ref=e242]:
+        - heading "产品壁垒" [level=4] [ref=e243]
+        - paragraph [ref=e244]: 记忆工具的高频入口，让后续内容消费与组织服务都建立在强关系之上。
+      - generic [ref=e245]:
+        - heading "组织壁垒" [level=4] [ref=e246]
+        - paragraph [ref=e247]: 一旦资料、角色与历史都沉淀在系统内，替代成本显著提高。
+  - generic [ref=e249]:
+    - generic [ref=e250]: Closing
+    - heading "一款产品，既能帮助个人稳稳背下来，也能帮助组织稳稳留得住。" [level=3] [ref=e251]
+    - paragraph [ref=e252]: 它以利益众生为发心，却不回避商业可持续；它先做好一件小而确定的事，再逐步长成一个高信任、高复用、高壁垒的长期平台。这正是它值得被认真看见的原因。
+    - generic [ref=e253]:
+      - generic [ref=e254]: 高信任内容
+      - generic [ref=e255]: 精准修学人群
+      - generic [ref=e256]: 长期组织价值

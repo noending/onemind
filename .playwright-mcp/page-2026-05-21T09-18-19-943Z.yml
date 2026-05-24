@@ -1,0 +1,78 @@
+- main [ref=e2]:
+  - navigation [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: 内部产品共识版
+      - generic [ref=e6]: MVP 优先
+      - generic [ref=e7]: PDF-ready
+    - generic [ref=e8]:
+      - link "总览" [ref=e9] [cursor=pointer]:
+        - /url: ./index.html
+      - link "边界" [ref=e10] [cursor=pointer]:
+        - /url: "#i1"
+      - link "路线" [ref=e11] [cursor=pointer]:
+        - /url: "#i2"
+      - link "取舍" [ref=e12] [cursor=pointer]:
+        - /url: "#i3"
+  - generic [ref=e13]:
+    - generic [ref=e14]: Internal Edition
+    - heading "先把入口做深，再把平台做厚。" [level=1] [ref=e15]
+    - paragraph [ref=e16]: 内部共识的核心不是“做更多”，而是“先做对”。首发阶段我们聚焦科学记忆主闭环，验证用户是否愿意持续回来并真正背会内容。
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]: 定位
+        - strong [ref=e20]: 记忆教练
+        - paragraph [ref=e21]: 不是资讯平台，也不是内容商城。
+      - generic [ref=e22]:
+        - generic [ref=e23]: 首发
+        - strong [ref=e24]: 短内容
+        - paragraph [ref=e25]: 短咒、短偈、常用经文片段优先。
+      - generic [ref=e26]:
+        - generic [ref=e27]: 节奏
+        - strong [ref=e28]: 分阶段
+        - paragraph [ref=e29]: 先验证留存，再增强内容与平台能力。
+  - generic [ref=e30]:
+    - heading "MVP 只做一条主闭环" [level=2] [ref=e31]
+    - generic [ref=e32]:
+      - generic [ref=e33]: 选内容 → 自动方案 → 到点复习 → 背会 → 下一段。
+      - generic [ref=e34]:
+        - generic [ref=e35]: 关键目标
+        - paragraph [ref=e36]: 让用户感知到“我真的记住了”，而不是“我只是打卡了”。这是决定产品是否成立的第一指标。
+    - generic [ref=e37]:
+      - generic [ref=e38]:
+        - strong [ref=e39]: 要做
+        - paragraph [ref=e40]: 自动记忆排程与多种训练辅助。
+      - generic [ref=e41]:
+        - strong [ref=e42]: 暂缓
+        - paragraph [ref=e43]: 重商城、重前台资产管理。
+      - generic [ref=e44]:
+        - strong [ref=e45]: 预埋
+        - paragraph [ref=e46]: 内容元信息、权限分层能力。
+  - generic [ref=e47]:
+    - heading "阶段路线要清晰可执行" [level=2] [ref=e48]
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e51]: Phase 1
+        - strong [ref=e52]: 记忆验证
+        - paragraph [ref=e53]: 小程序验证背会率、复学率、连续复习率。
+      - generic [ref=e54]:
+        - generic [ref=e55]: Phase 2
+        - strong [ref=e56]: 内容增强
+        - paragraph [ref=e57]: 加入节日内容、音频、主题视觉陪伴。
+      - generic [ref=e58]:
+        - generic [ref=e59]: Phase 3
+        - strong [ref=e60]: 平台深化
+        - paragraph [ref=e61]: App 承接 + 组织版数字法藏管理。
+    - generic [ref=e62]:
+      - generic [ref=e63]: 衡量口径
+      - paragraph [ref=e64]: 首段计划创建率、3 日复习完成率、单段背会率、首段后继续学习率，是首发阶段必须持续看的四个核心指标。
+  - generic [ref=e65]:
+    - heading "关键取舍" [level=2] [ref=e66]
+    - generic [ref=e67]:
+      - generic [ref=e68]:
+        - strong [ref=e69]: 为什么先不做重内容化
+        - paragraph [ref=e70]: 如果入口价值还没被验证，过多内容会放大复杂度并稀释差异化。
+      - generic [ref=e71]:
+        - strong [ref=e72]: 为什么提前预埋权限体系
+        - paragraph [ref=e73]: 数字法藏是长期壁垒，架构方向需要从第一天一致，但不必第一天前台化。
+    - heading "共识不是统一想法，而是统一节奏与优先级。" [level=3] [ref=e74]
+    - paragraph [ref=e75]: 先做成，再做大；先聚焦，再扩展。

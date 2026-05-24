@@ -1,0 +1,117 @@
+page {
+  min-height: 100%;
+  color: #351b18;
+  background: #fff8ed;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+view,
+text,
+button,
+image {
+  box-sizing: border-box;
+}
+
+button {
+  margin: 0;
+  padding: 0;
+}
+
+button::after {
+  border: 0;
+}
+
+.screen {
+  width: 100%;
+  max-width: 750rpx;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding-bottom: calc(156rpx + env(safe-area-inset-bottom));
+  background: #fff8ed;
+}
+
+.page-body {
+  padding: 28rpx 36rpx 40rpx;
+}
+
+.page-title {
+  display: block;
+  color: #351b18;
+  font-size: 62rpx;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 1rpx;
+}
+
+.page-subtitle {
+  display: block;
+  margin-top: 10rpx;
+  color: #80655c;
+  font-size: 34rpx;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.section-title {
+  display: block;
+  margin: 42rpx 0 20rpx;
+  color: #80655c;
+  font-size: 38rpx;
+  font-weight: 500;
+  letter-spacing: 1rpx;
+}
+
+.card {
+  border: 1rpx solid #ead8c2;
+  border-radius: 36rpx;
+  background: #fffaf2;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 40rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: #f6e4d1;
+  color: #6d4e43;
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+.tag-strong {
+  background: #eda53f;
+  color: #351b18;
+}
+
+.pill-button {
+  height: 54rpx;
+  padding: 0 24rpx;
+  border-radius: 999rpx;
+  background: #f2ac3e;
+  color: #351b18;
+  font-size: 27rpx;
+  font-weight: 800;
+  line-height: 54rpx;
+}
+
+.red-button {
+  height: 58rpx;
+  padding: 0 26rpx;
+  border-radius: 999rpx;
+  background: #a63127;
+  color: #fff8ed;
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 58rpx;
+}
+
+.muted {
+  color: #80655c;
+}
+
+.divider {
+  height: 1rpx;
+  background: #ead8c2;
+}

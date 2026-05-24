@@ -1,0 +1,36 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]: Product Narrative Suite
+    - heading "佛经记忆与数字法藏" [level=1] [ref=e5]
+    - paragraph [ref=e6]: 这次版本做了减法：更少文字、更强重点、更高级的呈现。三份页面使用同一视觉系统，但分别服务合作方、组织方与内部团队。
+  - generic [ref=e7]:
+    - article [ref=e8]:
+      - generic [ref=e9]: 合作方版
+      - heading "价值与回报" [level=2] [ref=e10]
+      - paragraph [ref=e11]: 聚焦“为什么值得做”，用最短路径讲清产品价值、增长逻辑与商业闭环。
+      - list [ref=e12]:
+        - listitem [ref=e13]: 问题与机会
+        - listitem [ref=e14]: 核心解法
+        - listitem [ref=e15]: 变现路径
+      - link "打开页面" [ref=e16] [cursor=pointer]:
+        - /url: ./investor.html
+    - article [ref=e17]:
+      - generic [ref=e18]: 组织方版
+      - heading "秩序与权限" [level=2] [ref=e19]
+      - paragraph [ref=e20]: 强调数字法藏管理如何解决资料散落、权限混乱和人员流动下的资产风险。
+      - list [ref=e21]:
+        - listitem [ref=e22]: 风险识别
+        - listitem [ref=e23]: 权限分层
+        - listitem [ref=e24]: 长期托管
+      - link "打开页面" [ref=e25] [cursor=pointer]:
+        - /url: ./organization.html
+    - article [ref=e26]:
+      - generic [ref=e27]: 内部版
+      - heading "路线与取舍" [level=2] [ref=e28]
+      - paragraph [ref=e29]: 用于团队对齐首发范围与阶段节奏，避免一开始就做重、做散。
+      - list [ref=e30]:
+        - listitem [ref=e31]: MVP 边界
+        - listitem [ref=e32]: 阶段路线
+        - listitem [ref=e33]: 关键取舍
+      - link "打开页面" [ref=e34] [cursor=pointer]:
+        - /url: ./internal.html

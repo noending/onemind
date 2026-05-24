@@ -1,0 +1,100 @@
+.plan-body {
+  padding-top: 24rpx;
+}
+
+.empty-card,
+.plan-card {
+  margin-top: 32rpx;
+  padding: 30rpx;
+}
+
+.empty-title {
+  display: block;
+  color: #351b18;
+  font-size: 42rpx;
+  font-weight: 500;
+}
+
+.empty-desc {
+  display: block;
+  margin-top: 12rpx;
+  color: #80655c;
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.plan-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.plan-title {
+  display: block;
+  color: #351b18;
+  font-size: 46rpx;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.plan-meta {
+  display: block;
+  margin-top: 10rpx;
+  color: #80655c;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.plan-state {
+  flex-shrink: 0;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #f6e4d1;
+  color: #6d4e43;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.plan-state.done {
+  background: rgba(75, 155, 98, 0.14);
+  color: #4b9b62;
+}
+
+.node-list {
+  margin-top: 24rpx;
+  border-top: 1rpx solid #ead8c2;
+}
+
+.node-row {
+  min-height: 76rpx;
+  display: grid;
+  grid-template-columns: 168rpx 1fr 36rpx;
+  align-items: center;
+  gap: 12rpx;
+  border-bottom: 1rpx solid rgba(234, 216, 194, 0.7);
+}
+
+.node-row.done {
+  color: #4b9b62;
+}
+
+.node-date {
+  color: #80655c;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.node-title {
+  color: #351b18;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.node-mark {
+  text-align: right;
+  color: #a63127;
+  font-size: 28rpx;
+  font-weight: 700;
+}

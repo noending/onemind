@@ -1,0 +1,181 @@
+- main [ref=e2]:
+  - navigation [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: 内部产品共识版
+      - generic [ref=e6]: 范围与阶段
+      - generic [ref=e7]: PDF-ready
+    - generic [ref=e8]:
+      - link "返回总览" [ref=e9] [cursor=pointer]:
+        - /url: ./index.html
+      - link "封面" [ref=e10] [cursor=pointer]:
+        - /url: "#page-1"
+      - link "MVP" [ref=e11] [cursor=pointer]:
+        - /url: "#page-4"
+      - link "路线" [ref=e12] [cursor=pointer]:
+        - /url: "#page-6"
+      - link "取舍" [ref=e13] [cursor=pointer]:
+        - /url: "#page-8"
+  - generic [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]: Internal Edition
+      - heading "先把主入口做深， 再把长期能力做厚。" [level=1] [ref=e18]:
+        - text: 先把主入口做深，
+        - text: 再把长期能力做厚。
+      - paragraph [ref=e19]: 内部共识的关键不是把所有可能性一次讲完，而是明确首发做什么、不做什么，以及为什么“科学记忆”应该先成为产品成立的第一块地基。
+      - generic [ref=e20]:
+        - generic [ref=e21]: 首发聚焦
+        - generic [ref=e22]: 阶段拆分
+        - generic [ref=e23]: 长期能力预埋
+    - generic [ref=e24]:
+      - generic [ref=e25]: 一句话定位
+      - strong [ref=e26]: 一款帮助用户科学记忆佛经与咒语，并逐步沉淀数字法藏能力的产品。
+      - paragraph [ref=e27]: 首发不是做泛内容平台，而是做一件能快速被验证、能形成留存、能自然外延到更大体系的核心工具。
+  - generic [ref=e28]:
+    - generic [ref=e30]:
+      - generic [ref=e31]: 01 / 产品定位
+      - heading "我们到底在做什么，不在做什么。" [level=2] [ref=e32]
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - text: 在做
+        - list [ref=e35]:
+          - listitem [ref=e36]: 科学记忆工具：帮助用户更轻松背诵佛经、咒语、仪轨片段。
+          - listitem [ref=e37]: 节日增强能力：在重要日期推送相关内容，辅助修学习惯。
+          - listitem [ref=e38]: 内容陪伴路线：为后续音频、视觉与专题内容预留承接路径。
+          - listitem [ref=e39]: 长期法藏管理：作为组织版平台能力逐步建设。
+      - generic [ref=e40]:
+        - text: 不在做
+        - list [ref=e41]:
+          - listitem [ref=e42]: 首发不做综合佛学资讯平台。
+          - listitem [ref=e43]: 首发不做重内容商城或重社群运营产品。
+          - listitem [ref=e44]: 首发不把数字资产管理前台化成主要卖点。
+          - listitem [ref=e45]: 首发不承诺完整长经逐章训练。
+  - generic [ref=e46]:
+    - generic [ref=e48]:
+      - generic [ref=e49]: 02 / 用户与场景
+      - heading "首发先服务谁，场景应该怎样收窄。" [level=2] [ref=e50]
+    - generic [ref=e51]:
+      - generic [ref=e52]:
+        - generic [ref=e53]: A
+        - heading "目标用户" [level=3] [ref=e54]
+        - paragraph [ref=e55]: 普通在家修行者，有意愿、时间碎片化，希望更稳定地完成功课。
+      - generic [ref=e56]:
+        - generic [ref=e57]: B
+        - heading "首发内容" [level=3] [ref=e58]
+        - paragraph [ref=e59]: 短咒、短偈、常用经文片段，优先让成就感快速出现。
+      - generic [ref=e60]:
+        - generic [ref=e61]: C
+        - heading "使用场景" [level=3] [ref=e62]
+        - paragraph [ref=e63]: 晨课、晚课与碎片化复习时间，而不是长时间沉浸阅读。
+      - generic [ref=e64]:
+        - generic [ref=e65]: D
+        - heading "平台策略" [level=3] [ref=e66]
+        - paragraph [ref=e67]: 小程序先验证，独立 App 再承接高频用户与更强提醒能力。
+  - generic [ref=e68]:
+    - generic [ref=e70]:
+      - generic [ref=e71]: 03 / MVP 范围
+      - heading "首发只验证最关键的用户闭环。" [level=2] [ref=e72]
+    - generic [ref=e73]:
+      - generic [ref=e74]:
+        - generic [ref=e75]: "01"
+        - strong [ref=e76]: 选内容
+        - paragraph [ref=e77]: 用户从短内容中选择一段进入记忆计划。
+      - generic [ref=e78]:
+        - generic [ref=e79]: "02"
+        - strong [ref=e80]: 自动方案
+        - paragraph [ref=e81]: 系统按内容长度给出 1 到 7 天的智能节奏。
+      - generic [ref=e82]:
+        - generic [ref=e83]: "03"
+        - strong [ref=e84]: 复习提醒
+        - paragraph [ref=e85]: 用记忆曲线排程，而不是让用户自己设置复杂频率。
+      - generic [ref=e86]:
+        - generic [ref=e87]: "04"
+        - strong [ref=e88]: 训练背会
+        - paragraph [ref=e89]: 拆段、遮挡、首字提示、填空、跟读辅助降低难度。
+      - generic [ref=e90]:
+        - generic [ref=e91]: "05"
+        - strong [ref=e92]: 进入下一段
+        - paragraph [ref=e93]: 完成一段即推荐下一段，形成持续精进链路。
+  - generic [ref=e94]:
+    - generic [ref=e96]:
+      - generic [ref=e97]: 04 / 核心功能结构
+      - heading "让产品像“记忆教练”，而不是“提醒器”或“内容库”。" [level=2] [ref=e98]
+    - generic [ref=e99]:
+      - generic [ref=e100]:
+        - text: 首页
+        - strong [ref=e101]: 今日待复习、连续天数、即将背会
+        - paragraph [ref=e102]: 用户每次回来都能看到明确任务与进展，而不是空白首页。
+      - generic [ref=e103]:
+        - text: 内容选择
+        - strong [ref=e104]: 按长度、场景与节日主题组织内容
+        - paragraph [ref=e105]: 帮助用户快速选定一段内容并判断难度与预计周期。
+      - generic [ref=e106]:
+        - text: 训练引擎
+        - strong [ref=e107]: 渐进拆段式 + 多种辅助法
+        - paragraph [ref=e108]: 兼顾科学性与温和体验，避免把修学变成生硬刷题。
+      - generic [ref=e109]:
+        - text: 进度沉淀
+        - strong [ref=e110]: 复习中 / 已背会 / 待加强
+        - paragraph [ref=e111]: 以真实掌握为核心结果，而不是以打卡次数替代掌握度。
+  - generic [ref=e112]:
+    - generic [ref=e114]:
+      - generic [ref=e115]: 05 / 中长期路线
+      - heading "阶段清楚，团队才不会在还没验证前就把事情做重。" [level=2] [ref=e116]
+    - generic [ref=e117]:
+      - generic [ref=e118]:
+        - generic [ref=e119]: MVP
+        - strong [ref=e120]: 记忆工具验证
+        - paragraph [ref=e121]: 科学记忆短内容，验证留存、完成率与复学率。
+      - generic [ref=e122]:
+        - generic [ref=e123]: Phase 2
+        - strong [ref=e124]: 节日与内容增强
+        - paragraph [ref=e125]: 加入主题音频、节日推荐、视觉内容与专题计划。
+      - generic [ref=e126]:
+        - generic [ref=e127]: Phase 3
+        - strong [ref=e128]: App 承接
+        - paragraph [ref=e129]: 强化系统推送、会员体系、长期连续陪伴能力。
+      - generic [ref=e130]:
+        - generic [ref=e131]: Phase 4
+        - strong [ref=e132]: 组织版法藏平台
+        - paragraph [ref=e133]: 资料管理、版本控制、权限体系与交接连续性完善。
+  - generic [ref=e134]:
+    - generic [ref=e136]:
+      - generic [ref=e137]: 06 / 商业与组织能力
+      - heading "商业路径存在，但节奏必须服从产品信任感。" [level=2] [ref=e138]
+    - generic [ref=e139]:
+      - generic [ref=e140]:
+        - text: 个人付费
+        - heading "会员记忆计划" [level=3] [ref=e141]
+        - paragraph [ref=e142]: 服务高频精进用户，建立第一层收入与人群筛选。
+      - generic [ref=e143]:
+        - text: 内容付费
+        - heading "音频与主题内容包" [level=3] [ref=e144]
+        - paragraph [ref=e145]: 在不伤害庄重感的前提下，逐步引入更高价值陪伴内容。
+      - generic [ref=e146]:
+        - text: 组织服务
+        - heading "数字法藏管理" [level=3] [ref=e147]
+        - paragraph [ref=e148]: 为寺院、道场与团队提供资料治理、托管与权限服务。
+  - generic [ref=e149]:
+    - generic [ref=e151]:
+      - generic [ref=e152]: 07 / 风险与取舍
+      - heading "如果不主动取舍，产品很容易从第一天就变得很重。" [level=2] [ref=e153]
+    - generic [ref=e154]:
+      - generic [ref=e155]:
+        - text: 当前不做重前台化的原因
+        - list [ref=e156]:
+          - listitem [ref=e157]: 数字资产管理属于高价值能力，但不适合压住首发主入口。
+          - listitem [ref=e158]: 过早做商城或过多内容分类，会掩盖记忆产品的独特价值。
+          - listitem [ref=e159]: 首发应服务“愿意背、能背会、会回来”的最小闭环。
+      - generic [ref=e160]:
+        - text: 需要提前预埋的部分
+        - list [ref=e161]:
+          - listitem [ref=e162]: 内容元信息结构与节日关联字段。
+          - listitem [ref=e163]: 后续音频、视觉内容的挂载位。
+          - listitem [ref=e164]: 权限分层与版本系统的长期架构方向。
+  - generic [ref=e166]:
+    - generic [ref=e167]: Closing
+    - heading "先把入口做深，才有资格把平台做大。" [level=3] [ref=e168]
+    - paragraph [ref=e169]: 这份内部版的目标不是把全部未来一次讲完，而是让团队在同一个节奏上工作：先用科学记忆验证价值，再把内容陪伴、商业化与数字法藏能力逐层长出来。
+    - generic [ref=e170]:
+      - generic [ref=e171]: MVP 聚焦
+      - generic [ref=e172]: 阶段推进
+      - generic [ref=e173]: 长期预埋

@@ -1,0 +1,182 @@
+.top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.date {
+  display: block;
+  margin-bottom: 12rpx;
+  color: #80655c;
+  font-size: 31rpx;
+  font-weight: 700;
+}
+
+.today-card {
+  margin-top: 34rpx;
+  padding: 42rpx 36rpx;
+  border-radius: 44rpx;
+  background: linear-gradient(135deg, #aa332b, #873327);
+  box-shadow: 0 26rpx 60rpx rgba(132, 43, 34, 0.18);
+}
+
+.today-label {
+  display: block;
+  color: rgba(255, 248, 237, 0.82);
+  font-size: 23rpx;
+  letter-spacing: 6rpx;
+}
+
+.today-count {
+  display: block;
+  margin-top: 20rpx;
+  color: #fff8ed;
+  font-size: 64rpx;
+  font-weight: 500;
+  line-height: 1.18;
+}
+
+.today-desc {
+  display: block;
+  margin-top: 14rpx;
+  color: rgba(255, 248, 237, 0.9);
+  font-size: 29rpx;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.review-card {
+  margin-bottom: 20rpx;
+  padding: 30rpx;
+}
+
+.review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tag-row {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.review-meta {
+  color: #80655c;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.arrow {
+  color: #80655c;
+  font-size: 50rpx;
+  line-height: 1;
+}
+
+.review-title {
+  display: block;
+  margin-top: 20rpx;
+  color: #351b18;
+  font-size: 50rpx;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.review-body {
+  display: block;
+  margin-top: 14rpx;
+  color: #80655c;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.empty-today {
+  padding: 34rpx 30rpx;
+}
+
+.empty-title {
+  display: block;
+  color: #351b18;
+  font-size: 46rpx;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.empty-desc {
+  display: block;
+  margin-top: 14rpx;
+  color: #80655c;
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.empty-button {
+  margin-top: 24rpx;
+  width: 180rpx;
+  height: 58rpx;
+  border-radius: 999rpx;
+  background: #a63127;
+  color: #fff8ed;
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 58rpx;
+}
+
+.festival-card {
+  margin-top: 36rpx;
+  padding: 30rpx 28rpx;
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  border: 1rpx solid #ebcaa9;
+  border-radius: 36rpx;
+  background: #ffe1c4;
+}
+
+.festival-icon {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f2a33b;
+  color: #351b18;
+  font-size: 42rpx;
+}
+
+.festival-copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.festival-date {
+  color: #80655c;
+  font-size: 31rpx;
+  font-weight: 500;
+}
+
+.festival-title {
+  margin-top: 6rpx;
+  color: #351b18;
+  font-size: 46rpx;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.demo-card {
+  margin-top: 54rpx;
+  height: 72rpx;
+  border: 1rpx dashed #ead8c2;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #80655c;
+  font-size: 24rpx;
+}

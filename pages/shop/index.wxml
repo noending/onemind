@@ -1,0 +1,75 @@
+<view class="screen">
+  <app-header />
+
+  <view class="page-body shop-body">
+    <view class="shop-kicker">
+      <text class="shop-icon">▢</text>
+      <text>SHOP</text>
+    </view>
+    <text class="page-title">心经记 · 商城</text>
+    <text class="page-subtitle">为修行而选 · 经文音乐 · 唐卡能量画</text>
+
+    <view class="theme-card">
+      <text class="theme-label">本月主题</text>
+      <text class="theme-title">观音法门 · 音画合辑</text>
+      <text class="theme-desc">搭配你的记忆计划，一同请回家中供奉与聆听。</text>
+      <view class="discount-row">
+        <text class="discount">限时 8.8 折</text>
+        <text>满 ¥299 包邮</text>
+      </view>
+    </view>
+
+    <view class="shop-tabs">
+      <text class="shop-tab {{activeTab === 'music' ? 'active' : ''}}" data-tab="music" bindtap="switchTab">经文音乐</text>
+      <text class="shop-tab {{activeTab === 'thangka' ? 'active' : ''}}" data-tab="thangka" bindtap="switchTab">唐卡 / 能量画</text>
+    </view>
+
+    <view wx:if="{{activeTab === 'music'}}">
+      <view wx:for="{{music}}" wx:key="id" class="product-card card">
+        <view class="cover">
+          <image class="cover-image" src="{{item.cover}}" mode="aspectFill" />
+          <text class="play">▶</text>
+        </view>
+        <view class="product-main">
+          <view class="product-title-row">
+            <text class="tag">{{item.tag}}</text>
+            <text class="product-title">{{item.title}}</text>
+          </view>
+          <text class="product-subtitle">{{item.artist}} · {{item.duration}}</text>
+          <view class="product-bottom">
+            <text class="price">¥{{item.price}}</text>
+            <text class="unit">/ 专辑</text>
+          </view>
+        </view>
+        <view class="product-actions">
+          <text class="heart">♡</text>
+          <button class="red-button">请回家</button>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{activeTab === 'thangka'}}" class="thangka-grid">
+      <view wx:for="{{thangka}}" wx:key="id" class="thangka-card card">
+        <view class="thangka-cover">
+          <image class="thangka-image" src="{{item.image}}" mode="aspectFill" />
+          <text class="thangka-tag">{{item.tag}}</text>
+          <text class="thangka-heart">♡</text>
+        </view>
+        <view class="thangka-copy">
+          <text class="thangka-title">{{item.title}}</text>
+          <text class="thangka-desc">{{item.desc}}</text>
+          <text class="thangka-size">尺寸 {{item.size}}</text>
+          <view class="thangka-bottom">
+            <text class="price small-price">¥{{item.price}}</text>
+            <text class="rating">★ 4.9</text>
+          </view>
+          <button class="red-button thangka-button">请回家</button>
+        </view>
+      </view>
+    </view>
+
+    <text class="shop-note">所有内容均为修行辅助 · 请以恭敬心请购</text>
+  </view>
+
+  <app-tabbar active="shop" />
+</view>

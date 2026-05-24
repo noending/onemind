@@ -1,0 +1,31 @@
+<view class="screen">
+  <app-header />
+
+  <view class="page-body plan-body">
+    <text class="page-title">复习计划</text>
+    <text class="page-subtitle">按记忆曲线生成节点，完成后会同步到我的进度。</text>
+
+    <view wx:if="{{!hasPlans}}" class="empty-card card">
+      <text class="empty-title">还没有计划</text>
+      <text class="empty-desc">去内容库选择一段内容，系统会自动生成复习节奏。</text>
+    </view>
+
+    <view wx:for="{{plans}}" wx:key="id" class="plan-card card">
+      <view class="plan-head">
+        <view>
+          <text class="plan-title">{{item.title}}</text>
+          <text class="plan-meta">掌握度 {{item.masteryScore}}%</text>
+        </view>
+        <text class="plan-state {{item.state === 'mastered' ? 'done' : ''}}">{{item.state === 'mastered' ? '已背会' : '复习中'}}</text>
+      </view>
+
+      <view class="node-list">
+        <view wx:for="{{item.taskRows}}" wx:key="id" wx:for-item="node" class="node-row {{node.done ? 'done' : ''}}">
+          <text class="node-date">{{node.date}}</text>
+          <text class="node-title">{{node.title}}</text>
+          <text class="node-mark">{{node.done ? '✓' : '·'}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

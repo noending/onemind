@@ -1,0 +1,88 @@
+<view class="screen">
+  <app-header />
+
+  <view class="page-body profile-body">
+    <text class="page-title">我的</text>
+    <text class="page-subtitle">计划进度与修持记录</text>
+
+    <view class="platform-card card">
+      <view>
+        <text class="platform-label">当前端</text>
+        <text class="platform-title">{{platform.label}}</text>
+        <text class="platform-desc">{{platform.system || platform.model}}</text>
+      </view>
+      <button class="plan-button" bindtap="openPlan">计划</button>
+    </view>
+
+    <view class="stat-grid">
+      <view class="stat-card card">
+        <text class="stat-icon red">↻</text>
+        <text class="stat-number">{{stats.reviewing}}</text>
+        <text class="stat-label">复习中</text>
+      </view>
+      <view class="stat-card card">
+        <text class="stat-icon amber">△</text>
+        <text class="stat-number">{{stats.atRisk}}</text>
+        <text class="stat-label">高遗忘风险</text>
+      </view>
+      <view class="stat-card card">
+        <text class="stat-icon green">✓</text>
+        <text class="stat-number">{{stats.mastered}}</text>
+        <text class="stat-label">已背会</text>
+      </view>
+    </view>
+
+    <text class="section-title">提醒策略</text>
+    <view class="reminder-card card">
+      <text class="reminder-main">{{reminderStrategy}}</text>
+      <view class="capability-list">
+        <view wx:for="{{capabilities}}" wx:key="key" class="capability-row">
+          <view>
+            <text class="capability-title">{{item.title}}</text>
+            <text class="capability-desc">{{item.desc}}</text>
+          </view>
+          <text class="capability-status {{item.status}}">{{item.status === 'available' ? '已启用' : item.status === 'ready' ? '待接入' : '降级'}}</text>
+        </view>
+      </view>
+    </view>
+
+    <text class="section-title">多端自检</text>
+    <view class="check-card card">
+      <view wx:for="{{checklist}}" wx:key="key" class="check-row">
+        <text class="check-dot"></text>
+        <view class="check-copy">
+          <text class="check-title">{{item.title}}</text>
+          <text class="check-desc">{{item.desc}}</text>
+        </view>
+      </view>
+    </view>
+
+    <text class="section-title">复习中</text>
+    <view wx:for="{{reviewing}}" wx:key="id" class="progress-card card">
+      <view class="progress-head">
+        <text class="progress-title">{{item.title}}</text>
+        <text class="progress-count">{{item.current}}/{{item.total}}</text>
+      </view>
+      <view class="progress-track">
+        <view class="progress-bar" style="width: {{item.percent}}%;"></view>
+      </view>
+      <text class="progress-scene">{{item.scene}}</text>
+    </view>
+
+    <text class="section-title">已背会</text>
+    <view wx:for="{{mastered}}" wx:key="id" class="progress-card card">
+      <view class="progress-head">
+        <text class="progress-title">{{item.title}}</text>
+        <text class="progress-count">{{item.current}}/{{item.total}}</text>
+      </view>
+      <view class="progress-track">
+        <view class="progress-bar done" style="width: {{item.percent}}%;"></view>
+      </view>
+      <text class="progress-scene">{{item.scene}}</text>
+    </view>
+
+    <button class="reset-button" bindtap="resetDemo">♲ 重置 Demo</button>
+  </view>
+
+  <app-tabbar active="profile" />
+</view>

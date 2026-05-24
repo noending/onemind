@@ -1,0 +1,54 @@
+<view class="screen">
+  <app-header />
+
+  <view class="page-body">
+    <view class="top-row">
+      <view>
+        <text class="date">{{dateLabel}}</text>
+        <text class="page-title">今日修持</text>
+      </view>
+      <button class="pill-button">♨ 连续 0 天</button>
+    </view>
+
+    <view class="today-card">
+      <text class="today-label">TODAY</text>
+      <text class="today-count">{{reviewCount}} 段待复习</text>
+      <text class="today-desc">顺次完成今日小段，让记忆稳稳落地。</text>
+    </view>
+
+    <text class="section-title">{{reviewCount > 0 ? '待复习' : '今日安排'}}</text>
+
+    <view wx:for="{{reviews}}" wx:key="id" class="review-card card" data-id="{{item.id}}" data-plan-id="{{item.planId}}" bindtap="openPractice">
+      <view class="review-head">
+        <view class="tag-row">
+          <text class="tag">{{item.category}}</text>
+          <text class="review-meta">{{item.meta}}</text>
+        </view>
+        <text class="arrow">›</text>
+      </view>
+      <text class="review-title">{{item.title}}</text>
+      <text class="review-body">{{item.body}}</text>
+    </view>
+
+    <view wx:if="{{reviewCount === 0}}" class="empty-today card">
+      <text class="empty-title">{{hasPlans ? '今日已清净' : '从一小段开始'}}</text>
+      <text class="empty-desc">{{hasPlans ? '今天没有到期复习。可以静读一遍，或者去选下一段内容。' : '选择一段短咒或经文片段，系统会自动安排记忆曲线。'}}</text>
+      <button class="empty-button" bindtap="goLibrary">{{hasPlans ? '选下一段' : '去选内容'}}</button>
+    </view>
+
+    <view class="festival-card">
+      <view class="festival-icon">✣</view>
+      <view class="festival-copy">
+        <text class="festival-date">农历二月十九</text>
+        <text class="festival-title">观音菩萨圣诞 · 精选</text>
+      </view>
+      <text class="arrow">›</text>
+    </view>
+
+    <view class="demo-card">
+      <text>» Demo：快讲一天、体验明日复习</text>
+    </view>
+  </view>
+
+  <app-tabbar active="home" />
+</view>
