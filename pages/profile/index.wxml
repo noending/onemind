@@ -1,87 +1,177 @@
 <view class="screen">
-  <app-header />
-
   <view class="page-body profile-body">
-    <text class="page-title">我的</text>
-    <text class="page-subtitle">计划进度与修持记录</text>
-
-    <view class="platform-card card">
-      <view>
-        <text class="platform-label">当前端</text>
-        <text class="platform-title">{{platform.label}}</text>
-        <text class="platform-desc">{{platform.system || platform.model}}</text>
-      </view>
-      <button class="plan-button" bindtap="openPlan">计划</button>
-    </view>
-
-    <view class="stat-grid">
-      <view class="stat-card card">
-        <text class="stat-icon red">↻</text>
-        <text class="stat-number">{{stats.reviewing}}</text>
-        <text class="stat-label">复习中</text>
-      </view>
-      <view class="stat-card card">
-        <text class="stat-icon amber">△</text>
-        <text class="stat-number">{{stats.atRisk}}</text>
-        <text class="stat-label">高遗忘风险</text>
-      </view>
-      <view class="stat-card card">
-        <text class="stat-icon green">✓</text>
-        <text class="stat-number">{{stats.mastered}}</text>
-        <text class="stat-label">已背会</text>
-      </view>
-    </view>
-
-    <text class="section-title">提醒策略</text>
-    <view class="reminder-card card">
-      <text class="reminder-main">{{reminderStrategy}}</text>
-      <view class="capability-list">
-        <view wx:for="{{capabilities}}" wx:key="key" class="capability-row">
-          <view>
-            <text class="capability-title">{{item.title}}</text>
-            <text class="capability-desc">{{item.desc}}</text>
+    <view class="hero-panel">
+      <view class="auth-card card">
+        <view class="auth-avatar-wrap">
+          <image wx:if="{{auth.avatarUrl}}" class="auth-avatar" src="{{auth.avatarUrl}}" mode="aspectFill"></image>
+          <view wx:else class="auth-avatar auth-avatar-fallback">{{auth.avatarInitial}}</view>
+          <view class="auth-medal">✧</view>
+        </view>
+        <view class="auth-copy">
+          <view class="auth-name-row">
+            <text class="auth-name">{{auth.nickname}}</text>
+            <text class="auth-level">Lv.2 行愿</text>
           </view>
-          <text class="capability-status {{item.status}}">{{item.status === 'available' ? '已启用' : item.status === 'ready' ? '待接入' : '降级'}}</text>
+          <text class="auth-desc">◔ 已坚持 {{growthOverview.memorizationStreak}} 天 · 在家修行</text>
+        </view>
+        <button class="auth-button settings" bindtap="onAuthAction">⚙</button>
+      </view>
+
+      <view class="daily-card">
+        <text class="daily-kicker">今日寄语</text>
+        <text class="daily-title">念念相续，无有间断</text>
+        <text class="daily-desc">心定则慧生 · 慧生则烦恼断</text>
+      </view>
+    </view>
+
+    <view class="growth-grid">
+      <view class="growth-card card">
+        <text class="growth-number">{{growthOverview.memorizationStreak}}</text>
+        <text class="growth-label">连续天数</text>
+      </view>
+      <view class="growth-card card">
+        <text class="growth-number">{{stats.mastered}}</text>
+        <text class="growth-label">已背会</text>
+      </view>
+      <view class="growth-card card">
+        <text class="growth-number">{{plans.length}}</text>
+        <text class="growth-label">累计学习</text>
+      </view>
+    </view>
+
+    <view class="sub-tabs">
+      <button class="sub-tab {{subTab === 'progress' ? 'active' : ''}}" data-tab="progress" bindtap="changeSubTab">⟳ 进度</button>
+      <button class="sub-tab {{subTab === 'orders' ? 'active' : ''}}" data-tab="orders" bindtap="changeSubTab">◫ 订单</button>
+    </view>
+
+    <block wx:if="{{subTab === 'progress'}}">
+      <view class="summary-card card">
+        <view class="summary-item review">
+          <text class="summary-kicker">⟳ 复习中</text>
+          <text class="summary-value">{{stats.reviewing}}</text>
+          <text class="summary-label">进行中</text>
+        </view>
+        <view class="summary-item risk">
+          <text class="summary-kicker">⚠ 遗忘风险</text>
+          <text class="summary-value">{{stats.atRisk}}</text>
+          <text class="summary-label">需优先回稳</text>
+        </view>
+        <view class="summary-item done">
+          <text class="summary-kicker">✓ 已背会</text>
+          <text class="summary-value">{{stats.mastered}}</text>
+          <text class="summary-label">进入长期记忆</text>
         </view>
       </view>
-    </view>
 
-    <text class="section-title">多端自检</text>
-    <view class="check-card card">
-      <view wx:for="{{checklist}}" wx:key="key" class="check-row">
-        <text class="check-dot"></text>
-        <view class="check-copy">
-          <text class="check-title">{{item.title}}</text>
-          <text class="check-desc">{{item.desc}}</text>
+      <view class="curve-block">
+        <text class="curve-title">记忆曲线</text>
+        <text class="curve-desc">基于艾宾浩斯遗忘曲线，红点为复习节点。</text>
+      </view>
+
+      <scroll-view wx:if="{{plans.length}}" class="curve-plan-scroll" scroll-x="true" show-scrollbar="false">
+        <view class="curve-plan-row">
+          <text wx:for="{{plans}}" wx:key="id" class="curve-plan-pill {{selectedPlanId === item.id ? 'active' : ''}}" data-id="{{item.id}}" bindtap="changeCurvePlan">{{item.title}}</text>
+        </view>
+      </scroll-view>
+
+      <view wx:if="{{curveData.length}}" class="curve-card card">
+        <view class="curve-head">
+          <text class="curve-plan-title">{{selectedPlanTitle}}</text>
+          <text class="curve-plan-day">第 {{curveCurrentDay}}/{{curveTotalDays}} 天</text>
+        </view>
+        <view class="curve-chart-shell">
+          <view class="curve-y-axis">
+            <text wx:for="{{curveChart.yTicks}}" wx:key="id" class="curve-y-label" style="{{item.style}}">{{item.value}}%</text>
+          </view>
+          <view class="curve-plot">
+            <canvas id="curveCanvas" type="2d" class="curve-canvas"></canvas>
+            <view wx:for="{{curveChart.guideLines}}" wx:key="id" class="curve-guide-line" style="{{item.style}}"></view>
+            <view class="curve-x-axis">
+              <text wx:for="{{curveChart.xTicks}}" wx:key="id" class="curve-x-label" style="{{item.style}}">{{item.day}}d</text>
+            </view>
+          </view>
+        </view>
+        <view class="curve-note-row">
+          <view wx:for="{{curveChart.nodeLegend}}" wx:key="id" class="curve-note-node">
+            <view class="curve-note-dot {{item.active ? 'active' : ''}}"></view>
+            <text class="curve-note-label {{item.active ? 'active' : ''}}">{{item.label}}</text>
+          </view>
         </view>
       </view>
-    </view>
 
-    <text class="section-title">复习中</text>
-    <view wx:for="{{reviewing}}" wx:key="id" class="progress-card card">
-      <view class="progress-head">
-        <text class="progress-title">{{item.title}}</text>
-        <text class="progress-count">{{item.current}}/{{item.total}}</text>
+      <view wx:if="{{reviewingPlans.length}}" class="section-head">
+        <text class="section-title">复习中</text>
       </view>
-      <view class="progress-track">
-        <view class="progress-bar" style="width: {{item.percent}}%;"></view>
+      <view wx:for="{{reviewingPlans}}" wx:key="id" class="mini-plan-card card" data-id="{{item.contentId}}" data-plan-id="{{item.id}}" bindtap="openPractice">
+        <view class="mini-plan-row">
+          <text class="mini-plan-title">{{item.title}}</text>
+          <text class="mini-plan-progress">{{item.current}}/{{item.total}}</text>
+        </view>
+        <view class="mini-progress-track">
+          <view class="mini-progress-bar" style="width: {{item.percent}}%;"></view>
+        </view>
+        <text class="mini-plan-scene">{{item.scene}}</text>
       </view>
-      <text class="progress-scene">{{item.scene}}</text>
-    </view>
 
-    <text class="section-title">已背会</text>
-    <view wx:for="{{mastered}}" wx:key="id" class="progress-card card">
-      <view class="progress-head">
-        <text class="progress-title">{{item.title}}</text>
-        <text class="progress-count">{{item.current}}/{{item.total}}</text>
+      <view wx:if="{{riskPlans.length}}" class="section-head">
+        <text class="section-title">高遗忘风险</text>
       </view>
-      <view class="progress-track">
-        <view class="progress-bar done" style="width: {{item.percent}}%;"></view>
+      <view wx:for="{{riskPlans}}" wx:key="id" class="mini-plan-card card" data-id="{{item.contentId}}" data-plan-id="{{item.id}}" bindtap="openPractice">
+        <view class="mini-plan-row">
+          <text class="mini-plan-title">{{item.title}}</text>
+          <text class="mini-plan-progress">{{item.current}}/{{item.total}}</text>
+        </view>
+        <view class="mini-progress-track">
+          <view class="mini-progress-bar risk" style="width: {{item.percent}}%;"></view>
+        </view>
+        <text class="mini-plan-scene">{{item.scene}}</text>
       </view>
-      <text class="progress-scene">{{item.scene}}</text>
-    </view>
 
-    <button class="reset-button" bindtap="resetDemo">♲ 重置 Demo</button>
+      <view wx:if="{{donePlans.length}}" class="section-head">
+        <text class="section-title">已背会</text>
+      </view>
+      <view wx:for="{{donePlans}}" wx:key="id" class="mini-plan-card card" data-id="{{item.contentId}}" data-plan-id="{{item.id}}" bindtap="openPractice">
+        <view class="mini-plan-row">
+          <text class="mini-plan-title done">{{item.title}}</text>
+          <text class="mini-plan-progress">{{item.total}}/{{item.total}}</text>
+        </view>
+        <view class="mini-progress-track">
+          <view class="mini-progress-bar done" style="width: 100%;"></view>
+        </view>
+        <text class="mini-plan-scene">{{item.scene}}</text>
+      </view>
+
+      <view wx:if="{{!reviewingPlans.length && !riskPlans.length && !donePlans.length}}" class="empty-card card">
+        <text class="empty-title">还没有计划</text>
+        <text class="empty-desc">去「选内容」开始你的第一段记忆计划。</text>
+        <button class="empty-button" bindtap="goLibrary">去选内容</button>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="order-head">订单记录</view>
+      <view wx:if="{{orders.length === 0}}" class="empty-card card">
+        <text class="empty-title">暂无订单记录</text>
+        <text class="empty-desc">已购内容会在这里长期可查。</text>
+      </view>
+      <view wx:for="{{orders}}" wx:key="id" class="order-card card" data-id="{{item.id}}" bindtap="openOrder">
+        <view class="order-icon" style="background-color: {{item.color}};">藏</view>
+        <view class="order-main">
+          <text class="order-title">{{item.title}}</text>
+          <text class="order-date">{{item.date}}</text>
+        </view>
+        <view class="order-right">
+          <text class="order-price">{{item.price}}</text>
+          <text class="order-status">{{item.status}}</text>
+        </view>
+      </view>
+      <text class="orders-note">所有内容承诺无水印 · 一次购买长期可用</text>
+    </block>
+
+    <view class="profile-brand">
+      <text class="brand-line">· ✦ ·</text>
+      <text class="brand-copy">心经记 · 与你一起慢慢修</text>
+    </view>
   </view>
 
   <app-tabbar active="profile" />
