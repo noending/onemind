@@ -1,0 +1,121 @@
+{
+  "meta": {
+    "page": "recitation",
+    "updatedAt": "2026-06-05",
+    "notes": "Web FullTextModal 与 MiniApp recitation 页结构映射基线。"
+  },
+  "mappings": [
+    {
+      "id": "recitation.topbar",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1674,
+        "snippet": "返回训练 / 经文全文 / 收藏"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 3,
+        "selector": ".header-topbar",
+        "snippet": "back + header-top-title + heart-button"
+      }
+    },
+    {
+      "id": "recitation.hero-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1686,
+        "snippet": "Decorative banner"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 9,
+        "selector": ".hero-card",
+        "snippet": "hero-card"
+      }
+    },
+    {
+      "id": "recitation.stats-strip",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1700,
+        "snippet": "Stats strip"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 24,
+        "selector": ".stats-strip",
+        "snippet": "stats-strip"
+      }
+    },
+    {
+      "id": "recitation.lines",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1718,
+        "snippet": "全文逐句展示"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 39,
+        "selector": ".segment-card",
+        "snippet": "wx:for=\"{{content.segments}}\""
+      }
+    },
+    {
+      "id": "recitation.note-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1748,
+        "snippet": "修持要点"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 49,
+        "selector": ".note-card",
+        "snippet": "note-card"
+      }
+    },
+    {
+      "id": "recitation.round-row",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1761,
+        "snippet": "轮次与控制"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 58,
+        "selector": ".round-inline",
+        "snippet": "round-inline"
+      }
+    },
+    {
+      "id": "recitation.progress-row",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1767,
+        "snippet": "时间 + 进度条"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 67,
+        "selector": ".time-row",
+        "snippet": "progress-slider"
+      }
+    },
+    {
+      "id": "recitation.controls",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1781,
+        "snippet": "播放器控制区"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 73,
+        "selector": ".control-row",
+        "snippet": "control-mini / control-play / control-btn"
+      }
+    }
+  ]
+}

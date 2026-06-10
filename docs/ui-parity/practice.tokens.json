@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "page": "practice",
+    "source": "design/src/app/App.tsx#TrainingModal",
+    "target": "pages/practice/index.(wxml|wxss|js)",
+    "updatedAt": "2026-06-03",
+    "designFrame": {
+      "widthPx": 390,
+      "heightPx": 844
+    },
+    "conversion": {
+      "miniProgramWidthRpx": 750,
+      "rpxPerPx": 1.9230769231,
+      "rounding": "round-half-up"
+    }
+  },
+  "palette": {
+    "pageBg": "#f6ecd7",
+    "primary": "#7e2a1c",
+    "headline": "#2d2018",
+    "subtle": "#8a7860",
+    "cardBg": "rgba(255, 250, 242, 0.72)",
+    "progressBg": "#efe3cb",
+    "riskBg": "#fff4ed"
+  },
+  "typography": {
+    "title": {
+      "designPx": 26,
+      "miniRpx": 50,
+      "implementedRpx": 50
+    },
+    "segmentText": {
+      "designPx": 20,
+      "miniRpx": 38,
+      "implementedRpx": 38
+    },
+    "buttonText": {
+      "designPx": 13,
+      "miniRpx": 25,
+      "implementedRpx": 24
+    }
+  },
+  "shape": {
+    "cardRadius": {
+      "designPx": 16,
+      "miniRpx": 31,
+      "implementedRpx": 32
+    },
+    "buttonRadius": {
+      "designPx": 16,
+      "miniRpx": 31,
+      "implementedRpx": 24
+    }
+  },
+  "spacing": {
+    "pageHorizontal": {
+      "designPx": 24,
+      "miniRpx": 46,
+      "implementedRpx": 36
+    },
+    "sectionGap": {
+      "designPx": 16,
+      "miniRpx": 31,
+      "implementedRpx": 16
+    }
+  },
+  "selectorSnapshot": {
+    ".train-progress": [
+      "height: 8rpx",
+      "background: #efe3cb"
+    ],
+    ".train-info-chip": [
+      "border-radius: 999rpx",
+      "background: #efe3cb"
+    ],
+    ".segment-card": [
+      "padding: 24rpx",
+      "border-radius: 32rpx"
+    ],
+    ".feedback-button": [
+      "border-radius: 28rpx",
+      "background: #fffaf2"
+    ],
+    ".next-card": [
+      "border-radius: 32rpx",
+      "padding: 28rpx"
+    ]
+  }
+}

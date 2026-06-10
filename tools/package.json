@@ -1,0 +1,18 @@
+{
+  "name": "onemind-ui-parity-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:shop": "node check-shop-parity.mjs",
+    "check:home": "node check-home-parity.mjs",
+    "check:library": "node check-library-parity.mjs",
+    "check:ui": "node check-ui-parity.mjs",
+    "compare:shop": "node compare-shop-screenshots.mjs",
+    "compare:library": "node compare-library-screenshots.mjs",
+    "compare:ui": "node compare-ui-screenshots.mjs"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0"
+  }
+}

@@ -6,12 +6,28 @@ const {
   syncPlansFromBackend
 } = require("../../common/memory");
 const {
+  getPlatformInfo,
+  getPlatformLabel,
+  getReminderStrategy,
+  getReminderCapabilities,
+  getPlatformChecklist,
+  toggleChecklistStatus,
+  resetChecklistStatus
+} = require("../../common/platform");
+const {
   clearAuthSession,
+  getNotificationSettingsApi,
   getAuthUser,
   getCurrentUser,
   isBackendEnabled,
-  loginWithWechat
+  listNotificationJobsApi,
+  loginWithWechat,
+  updateNotificationSettingApi
 } = require("../../common/api");
+
+const PROFILE_NOTIFICATION_SETTINGS_KEY = "oneMind.profile.notification-settings";
+const PROFILE_NOTIFICATION_JOBS_KEY = "oneMind.profile.notification-jobs";
+const NOTIFICATION_CHANNELS = ["wechat_subscribe", "app_push", "sms"];
 
 function buildCurveData(totalDays) {
   const maxDays = Math.max(Number(totalDays) || 7, 30);
@@ -146,6 +162,270 @@ function buildCurveChart(currentDay, plotWidth = 260, plotHeight = 214) {
   };
 }
 
+function safeGetStorage(key, fallback) {
+  try {
+    const value = wx.getStorageSync(key);
+    return value === undefined || value === "" ? fallback : value;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function safeSetStorage(key, value) {
+  try {
+    wx.setStorageSync(key, value);
+  } catch (error) {
+    // Ignore local cache failures.
+  }
+}
+
+function formatDateText(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.slice(0, 10);
+}
+
+function formatDateTimeText(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) {
+    return text.replace("T", " ").slice(0, 16);
+  }
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+function channelLabel(channel) {
+  const key = String(channel || "").trim();
+  if (key === "wechat_subscribe") return "微信订阅";
+  if (key === "app_push") return "App 推送";
+  if (key === "sms") return "短信兜底";
+  return key || "提醒";
+}
+
+function channelDescription(channel) {
+  const key = String(channel || "").trim();
+  if (key === "wechat_subscribe") return "适合小程序内的订阅提醒与待办同步。";
+  if (key === "app_push") return "App 容器可接入系统级通知。";
+  if (key === "sms") return "作为最稳妥的兜底触达方式。";
+  return "提醒触达配置。";
+}
+
+function periodLabel(period) {
+  const key = String(period || "").trim();
+  if (key === "morning") return "晨起";
+  if (key === "noon") return "午间";
+  if (key === "evening") return "傍晚";
+  if (key === "night") return "夜间";
+  return key || "晨起";
+}
+
+function goalTypeLabel(goalType) {
+  const key = String(goalType || "").trim();
+  if (key === "daily") return "每日目标";
+  if (key === "weekly") return "每周目标";
+  if (key === "festival") return "节日专题";
+  return key || "读诵目标";
+}
+
+function jobStatusLabel(status) {
+  const key = String(status || "").trim();
+  if (key === "pending") return "待发送";
+  if (key === "sent") return "已发送";
+  if (key === "failed") return "发送失败";
+  return key || "待处理";
+}
+
+function jobStatusTone(status) {
+  const key = String(status || "").trim();
+  if (key === "pending") return "pending";
+  if (key === "sent") return "sent";
+  if (key === "failed") return "failed";
+  return "neutral";
+}
+
+function capabilityStatusLabel(status) {
+  const key = String(status || "").trim();
+  if (key === "ready") return "已就绪";
+  if (key === "fallback") return "可降级";
+  return "可用";
+}
+
+function capabilityStatusTone(status) {
+  const key = String(status || "").trim();
+  if (key === "ready") return "ready";
+  if (key === "fallback") return "fallback";
+  return "available";
+}
+
+function checklistStatusTone(status) {
+  const key = String(status || "").trim();
+  if (key === "passed") return "passed";
+  if (key === "failed") return "failed";
+  return "review";
+}
+
+function normalizeQuietHours(quietHours) {
+  const source = quietHours && typeof quietHours === "object" ? quietHours : {};
+  const start = String(source.start || "22:00").slice(0, 5);
+  const end = String(source.end || "07:00").slice(0, 5);
+  return { start, end };
+}
+
+function formatQuietHours(quietHours) {
+  const normalized = normalizeQuietHours(quietHours);
+  return `${normalized.start} - ${normalized.end}`;
+}
+
+function defaultNotificationSetting(channel) {
+  return {
+    id: `local-${channel}`,
+    userId: "local",
+    channel,
+    enabled: channel !== "sms",
+    quietHours: {
+      start: "22:00",
+      end: "07:00"
+    },
+    updatedAt: ""
+  };
+}
+
+function buildDefaultNotificationSettings() {
+  return NOTIFICATION_CHANNELS.map((channel) => defaultNotificationSetting(channel));
+}
+
+function normalizeNotificationSettings(settings) {
+  const byChannel = new Map(buildDefaultNotificationSettings().map((item) => [item.channel, item]));
+  (Array.isArray(settings) ? settings : []).forEach((item) => {
+    if (!item || !item.channel) return;
+    byChannel.set(item.channel, {
+      ...byChannel.get(item.channel),
+      ...item
+    });
+  });
+
+  return NOTIFICATION_CHANNELS.map((channel) => {
+    const source = byChannel.get(channel) || defaultNotificationSetting(channel);
+    const quietHours = normalizeQuietHours(source.quietHours);
+    const enabled = Boolean(source.enabled);
+    return {
+      ...defaultNotificationSetting(channel),
+      ...source,
+      quietHours,
+      channelLabel: channelLabel(channel),
+      channelDescription: channelDescription(channel),
+      quietHoursText: formatQuietHours(quietHours),
+      enabledText: enabled ? "已开启" : "已关闭",
+      toggleText: enabled ? "关闭" : "开启"
+    };
+  });
+}
+
+function buildJobPayloadText(payload) {
+  if (!payload || typeof payload !== "object") return "无额外载荷";
+  const candidates = [
+    payload.title,
+    payload.name,
+    payload.message,
+    payload.contentTitle,
+    payload.scene,
+    payload.note
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  if (candidates.length) return candidates[0].slice(0, 24);
+
+  const keys = Object.keys(payload).slice(0, 3);
+  return keys.length ? keys.join(" · ") : "无额外载荷";
+}
+
+function normalizeNotificationJobs(jobs) {
+  return (Array.isArray(jobs) ? jobs : [])
+    .map((job) => {
+      const payload = job && typeof job.payload === "object" && job.payload ? job.payload : {};
+      return {
+        ...job,
+        channelLabel: channelLabel(job.channel),
+        statusLabel: jobStatusLabel(job.status),
+        statusTone: jobStatusTone(job.status),
+        scheduledAtText: formatDateTimeText(job.scheduledAt),
+        sentAtText: formatDateTimeText(job.sentAt),
+        payloadText: buildJobPayloadText(payload)
+      };
+    })
+    .slice(0, 5);
+}
+
+function normalizeRecitationGoals(goals) {
+  return (Array.isArray(goals) ? goals : []).map((goal) => {
+    const dailyTargetCount = Math.max(1, Number(goal.dailyTargetCount || 1));
+    return {
+      ...goal,
+      preferredPeriodLabel: periodLabel(goal.preferredPeriod),
+      goalTypeLabel: goalTypeLabel(goal.goalType),
+      statusLabel: goal.status === "paused" ? "已暂停" : "进行中",
+      statusTone: goal.status === "paused" ? "muted" : "active",
+      dailyTargetText: `每日 ${dailyTargetCount} 次`,
+      subtitleText: String(goal.preview || goal.scene || "").trim() || "保持当下节律"
+    };
+  });
+}
+
+function normalizeGrowthOverview(overview) {
+  const nextOverview = overview || {};
+  const milestone = nextOverview.latestMilestone;
+  return {
+    ...nextOverview,
+    memorizationStreak: Number(nextOverview.memorizationStreak || 0),
+    recitationStreak: Number(nextOverview.recitationStreak || 0),
+    masteredCount: Number(nextOverview.masteredCount || 0),
+    latestMilestone: milestone ? {
+      ...milestone,
+      title: String(milestone.title || milestone.name || milestone.stage || "最近里程碑").trim(),
+      achievedAt: formatDateText(milestone.achievedAt)
+    } : null
+  };
+}
+
+function getNotificationCache() {
+  return normalizeNotificationSettings(safeGetStorage(PROFILE_NOTIFICATION_SETTINGS_KEY, buildDefaultNotificationSettings()));
+}
+
+function saveNotificationCache(settings) {
+  safeSetStorage(PROFILE_NOTIFICATION_SETTINGS_KEY, normalizeNotificationSettings(settings));
+}
+
+function getNotificationJobCache() {
+  return normalizeNotificationJobs(safeGetStorage(PROFILE_NOTIFICATION_JOBS_KEY, []));
+}
+
+function saveNotificationJobCache(jobs) {
+  safeSetStorage(PROFILE_NOTIFICATION_JOBS_KEY, normalizeNotificationJobs(jobs));
+}
+
+function buildPlatformCapabilities() {
+  return getReminderCapabilities().map((item) => ({
+    ...item,
+    statusLabel: capabilityStatusLabel(item.status),
+    statusTone: capabilityStatusTone(item.status)
+  }));
+}
+
+function buildPlatformChecklist() {
+  return getPlatformChecklist().map((item) => ({
+    ...item,
+    statusTone: checklistStatusTone(item.status),
+    editable: item.key !== "storage" && item.key !== "reminder",
+    updatedAtText: item.updatedAt ? `更新于 ${formatDateText(item.updatedAt)}` : (item.key === "storage" ? "自动检测" : "系统固定")
+  }));
+}
+
 Page({
   data: {
     subTab: "progress",
@@ -160,33 +440,17 @@ Page({
       masteredCount: 0,
       latestMilestone: null
     },
+    platformLabel: "",
+    platformDetailText: "",
+    reminderStrategy: "",
+    reminderCapabilities: [],
+    platformChecklist: [],
+    platformChecklistHint: "",
+    notificationSettings: [],
+    notificationJobs: [],
+    notificationSourceText: "",
+    notificationJobsHint: "",
     recitationGoals: [],
-    orders: [
-      {
-        id: "o1",
-        title: "六字大明咒 · 唱诵冥想",
-        date: "2026-05-20",
-        price: "¥12",
-        status: "已完成",
-        color: "#7E2A1C"
-      },
-      {
-        id: "o2",
-        title: "唐卡 · 度母系列（4 张）",
-        date: "2026-05-15",
-        price: "¥9.9",
-        status: "已完成",
-        color: "#8B5A1E"
-      },
-      {
-        id: "o3",
-        title: "佛菩萨圣诞日历",
-        date: "2026-04-28",
-        price: "¥12",
-        status: "已完成",
-        color: "#A37049"
-      }
-    ],
     plans: [],
     reviewingPlans: [],
     riskPlans: [],
@@ -243,8 +507,9 @@ Page({
         hasPlans: plans.length > 0,
         summaryText: this.buildSummaryText(progress, plans)
       }, () => this.refreshCurveData());
+      this.refreshPlatformPanel();
       this.refreshGrowth();
-      this.refreshAuth();
+      this.refreshAuth().then((session) => this.refreshNotificationPanel(session));
     });
   },
 
@@ -277,28 +542,41 @@ Page({
   },
 
   refreshGrowth() {
-    Promise.all([
+    return Promise.all([
       getGrowthOverviewWithFallback(),
       listRecitationGoalsWithFallback()
     ]).then(([growthOverview, recitationGoals]) => {
-      const nextOverview = growthOverview || this.data.growthOverview;
-      const milestone = nextOverview.latestMilestone;
+      const nextOverview = normalizeGrowthOverview(growthOverview || this.data.growthOverview);
       this.setData({
-        growthOverview: {
-          ...nextOverview,
-          latestMilestone: milestone ? {
-            ...milestone,
-            achievedAt: milestone.achievedAt ? String(milestone.achievedAt).slice(0, 10) : ""
-          } : null
-        },
-        recitationGoals: recitationGoals || []
+        growthOverview: nextOverview,
+        recitationGoals: normalizeRecitationGoals(recitationGoals || [])
       });
+    });
+  },
+
+  refreshPlatformPanel() {
+    const platformInfo = getPlatformInfo();
+    const platformLabel = getPlatformLabel(platformInfo);
+    const platformDetail = [platformInfo.system, platformInfo.model].filter(Boolean).join(" · ")
+      || platformInfo.hostName
+      || "";
+    this.setData({
+      platformLabel,
+      platformDetailText: platformDetail,
+      reminderStrategy: getReminderStrategy(),
+      reminderCapabilities: buildPlatformCapabilities(),
+      platformChecklist: buildPlatformChecklist(),
+      platformChecklistHint: "点击可切换可编辑项的检查状态，存储与提醒项由系统固定。"
     });
   },
 
   refreshAuth() {
     const cachedUser = getAuthUser();
     if (!isBackendEnabled()) {
+      const session = {
+        loggedIn: false,
+        user: cachedUser || null
+      };
       this.setData({
         auth: {
           loggedIn: false,
@@ -308,10 +586,10 @@ Page({
           statusText: "专注修持，无需复杂设置"
         }
       });
-      return;
+      return Promise.resolve(session);
     }
 
-    getCurrentUser().then((session) => {
+    return getCurrentUser().then((session) => {
       const loggedIn = Boolean(session.loggedIn);
       this.setData({
         auth: {
@@ -322,6 +600,71 @@ Page({
           statusText: loggedIn ? "已完成微信授权" : "可选：微信授权同步跨端进度"
         }
       });
+      return session;
+    });
+  },
+
+  refreshNotificationPanel(session) {
+    const resolvedSession = session || { loggedIn: false, user: null };
+    const loggedIn = Boolean(resolvedSession.loggedIn);
+    const useRemote = isBackendEnabled() && loggedIn;
+
+    if (!useRemote) {
+      const cachedSettings = getNotificationCache();
+      const cachedJobs = getNotificationJobCache();
+      this.setData({
+        notificationSettings: cachedSettings,
+        notificationJobs: cachedJobs,
+        notificationSourceText: cachedSettings.some((item) => item.updatedAt)
+          ? "正在使用本地缓存提醒设置"
+          : "当前使用本地默认提醒设置",
+        notificationJobsHint: cachedJobs.length
+          ? "最近提醒任务来自本地缓存"
+          : "登录后可查看最近提醒任务"
+      });
+      return Promise.resolve({
+        notificationSettings: cachedSettings,
+        notificationJobs: cachedJobs
+      });
+    }
+
+    return Promise.all([
+      getNotificationSettingsApi(),
+      listNotificationJobsApi(5)
+    ]).then(([settings, jobs]) => {
+      const nextSettings = normalizeNotificationSettings(settings || []);
+      const nextJobs = normalizeNotificationJobs(jobs || []);
+      saveNotificationCache(nextSettings);
+      saveNotificationJobCache(nextJobs);
+      this.setData({
+        notificationSettings: nextSettings,
+        notificationJobs: nextJobs,
+        notificationSourceText: "提醒设置已同步后台",
+        notificationJobsHint: nextJobs.length
+          ? "最近 5 条提醒任务已同步"
+          : "后台当前暂无最近提醒任务"
+      });
+      return {
+        notificationSettings: nextSettings,
+        notificationJobs: nextJobs
+      };
+    }).catch(() => {
+      const cachedSettings = getNotificationCache();
+      const cachedJobs = getNotificationJobCache();
+      this.setData({
+        notificationSettings: cachedSettings,
+        notificationJobs: cachedJobs,
+        notificationSourceText: cachedSettings.some((item) => item.updatedAt)
+          ? "后台同步失败，已回退到本地缓存"
+          : "后台同步失败，当前使用本地默认提醒设置",
+        notificationJobsHint: cachedJobs.length
+          ? "已回退到本地缓存的提醒任务"
+          : "登录后可查看最近提醒任务"
+      });
+      return {
+        notificationSettings: cachedSettings,
+        notificationJobs: cachedJobs
+      };
     });
   },
 
@@ -344,6 +687,11 @@ Page({
               avatarInitial: (user.nickname || "行").slice(0, 1),
               statusText: "已完成微信授权"
             }
+          }, () => {
+            this.refreshNotificationPanel({
+              loggedIn: true,
+              user
+            });
           });
           wx.showToast({ title: "授权成功", icon: "success" });
         }).catch((error) => {
@@ -366,6 +714,11 @@ Page({
         avatarInitial: "行",
         statusText: "已退出微信授权"
       }
+    }, () => {
+      this.refreshNotificationPanel({
+        loggedIn: false,
+        user: null
+      });
     });
     wx.showToast({ title: "已退出", icon: "success" });
   },
@@ -375,7 +728,7 @@ Page({
       this.authorizeWechatLogin();
       return;
     }
-    wx.showToast({ title: "设置开发中", icon: "none" });
+    this.setData({ subTab: "settings" });
   },
 
   openRecitation(event) {
@@ -406,6 +759,93 @@ Page({
     this.setData({ subTab: tab }, () => {
       if (tab === "progress" && this.data.curveData && this.data.curveData.length) {
         this.measureAndBuildCurveChart();
+      }
+    });
+  },
+
+  toggleNotificationSetting(event) {
+    const channel = event.currentTarget.dataset.channel;
+    if (!channel) return;
+    const current = (this.data.notificationSettings || []).find((item) => item.channel === channel);
+    if (!current) return;
+
+    const nextSetting = {
+      ...current,
+      enabled: !current.enabled,
+      quietHours: normalizeQuietHours(current.quietHours),
+      updatedAt: new Date().toISOString()
+    };
+    const nextSettings = normalizeNotificationSettings(
+      (this.data.notificationSettings || []).map((item) => (item.channel === channel ? nextSetting : item))
+    );
+
+    const applyNotificationSettings = (settings, hint) => {
+      const normalizedSettings = normalizeNotificationSettings(settings);
+      saveNotificationCache(normalizedSettings);
+      this.setData({
+        notificationSettings: normalizedSettings,
+        notificationSourceText: hint
+      });
+      return normalizedSettings;
+    };
+
+    if (this.data.auth.loggedIn && isBackendEnabled()) {
+      updateNotificationSettingApi({
+        channel: nextSetting.channel,
+        enabled: nextSetting.enabled,
+        quietHours: nextSetting.quietHours
+      }).then((updatedSetting) => {
+        const mergedSettings = normalizeNotificationSettings(
+          nextSettings.map((item) => (item.channel === channel ? updatedSetting : item))
+        );
+        applyNotificationSettings(mergedSettings, "提醒设置已同步后台");
+        wx.showToast({
+          title: nextSetting.enabled ? "已开启" : "已关闭",
+          icon: "none"
+        });
+      }).catch(() => {
+        applyNotificationSettings(nextSettings, "后台同步失败，已保存在本地");
+        wx.showToast({
+          title: nextSetting.enabled ? "本地已开启" : "本地已关闭",
+          icon: "none"
+        });
+      });
+      return;
+    }
+
+    applyNotificationSettings(nextSettings, "当前使用本地提醒设置");
+    wx.showToast({
+      title: nextSetting.enabled ? "已开启" : "已关闭",
+      icon: "none"
+    });
+  },
+
+  toggleChecklistItem(event) {
+    const key = event.currentTarget.dataset.key;
+    if (!key) return;
+    const current = (this.data.platformChecklist || []).find((item) => item.key === key);
+    if (current && !current.editable) {
+      wx.showToast({ title: "这项为系统固定", icon: "none" });
+      return;
+    }
+    toggleChecklistStatus(key);
+    this.setData({
+      platformChecklist: buildPlatformChecklist()
+    });
+    wx.showToast({ title: "自检状态已更新", icon: "none" });
+  },
+
+  resetPlatformChecklist() {
+    wx.showModal({
+      title: "重置自检",
+      content: "要把可编辑的自检项恢复到默认状态吗？",
+      success: (result) => {
+        if (!result.confirm) return;
+        resetChecklistStatus();
+        this.setData({
+          platformChecklist: buildPlatformChecklist()
+        });
+        wx.showToast({ title: "已重置", icon: "success" });
       }
     });
   },
@@ -536,16 +976,6 @@ Page({
         ctx.arc(point.x, point.y, 5.2, 0, Math.PI * 2);
         ctx.stroke();
       }
-    });
-  },
-
-  openOrder(event) {
-    const id = event.currentTarget.dataset.id;
-    const order = (this.data.orders || []).find((item) => item.id === id);
-    if (!order) return;
-    wx.showToast({
-      title: `${order.title} · ${order.status}`,
-      icon: "none"
     });
   }
 });

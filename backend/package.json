@@ -1,0 +1,15 @@
+{
+  "name": "onemind-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase 3 backend skeleton for oneMind content, memory plans, and reminders.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/routes.js && node --check src/repositories/memoryStore.js && node --check src/repositories/postgresStore.js && node --check src/repositories/store.js && node --check src/data/seed.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}

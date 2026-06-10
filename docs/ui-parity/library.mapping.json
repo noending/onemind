@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "page": "library",
+    "updatedAt": "2026-06-01",
+    "notes": "Web BrowseScreen 与 MiniApp library 页结构映射基线。"
+  },
+  "mappings": [
+    {
+      "id": "library.title",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 751,
+        "snippet": "选一段内容"
+      },
+      "miniappRef": {
+        "file": "pages/library/index.wxml",
+        "line": 3,
+        "selector": ".page-title",
+        "snippet": "选一段内容"
+      }
+    },
+    {
+      "id": "library.subtitle",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 752,
+        "snippet": "选好后系统会给你方案"
+      },
+      "miniappRef": {
+        "file": "pages/library/index.wxml",
+        "line": 4,
+        "selector": ".page-subtitle",
+        "snippet": "选好后系统会给你方案，无需自己设置频率"
+      }
+    },
+    {
+      "id": "library.filters",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 754,
+        "snippet": "filters.map"
+      },
+      "miniappRef": {
+        "file": "pages/library/index.wxml",
+        "line": 6,
+        "selector": ".filters/.filter",
+        "snippet": "wx:for=\"{{filters}}\""
+      }
+    },
+    {
+      "id": "library.series-entry",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 767,
+        "snippet": "长咒系列入口卡"
+      },
+      "miniappRef": {
+        "file": "pages/library/index.wxml",
+        "line": 10,
+        "selector": ".series-card",
+        "snippet": "longSeries && (activeFilter === '全部' || activeFilter === '长咒')"
+      }
+    },
+    {
+      "id": "library.content-cards",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 789,
+        "snippet": "内容卡列表"
+      },
+      "miniappRef": {
+        "file": "pages/library/index.wxml",
+        "line": 29,
+        "selector": ".content-card",
+        "snippet": "wx:for=\"{{filteredContents}}\""
+      }
+    },
+    {
+      "id": "library.plan-sheet",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 815,
+        "snippet": "系列/计划选择弹层"
+      },
+      "miniappRef": {
+        "file": "pages/library/index.wxml",
+        "line": 47,
+        "selector": ".sheet-mask .plan-sheet",
+        "snippet": "wx:if=\"{{picked}}\""
+      }
+    }
+  ]
+}

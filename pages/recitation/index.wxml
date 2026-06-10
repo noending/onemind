@@ -1,0 +1,99 @@
+<view class="screen recitation-screen">
+  <view class="recitation-header" style="padding-top: {{headerTop}}px;">
+    <view class="header-topbar">
+      <text class="back" bindtap="goBack">‹ 返回训练</text>
+      <text class="header-top-title">经文全文</text>
+      <button class="heart-button {{liked ? 'active' : ''}}" bindtap="toggleLike">{{liked ? '♥' : '♡'}}</button>
+    </view>
+
+    <view class="hero-card">
+      <text class="hero-mark">✦</text>
+      <text class="hero-type">{{content ? content.category : '读诵'}}</text>
+      <text class="hero-title">{{content ? content.title : '读诵内容'}}</text>
+      <text class="hero-subtitle">{{content ? content.scene : '读诵不等于背会，先稳定每日接触。'}}</text>
+    </view>
+  </view>
+
+  <view class="page-body recitation-body">
+    <view wx:if="{{!content}}" class="empty-card card">
+      <text class="empty-title">没有找到这段读诵内容</text>
+      <text class="empty-desc">可以回到选内容页重新选择并加入读诵。</text>
+      <button class="empty-button" bindtap="goBack">返回上一页</button>
+    </view>
+
+    <block wx:if="{{content}}">
+      <view class="stats-strip card">
+        <view class="stat-cell">
+          <text class="stat-main">{{content.segments.length}}</text>
+          <text class="stat-sub">总句数</text>
+        </view>
+        <view class="stat-cell with-border">
+          <text class="stat-main">{{totalTimeText}}</text>
+          <text class="stat-sub">单遍</text>
+        </view>
+        <view class="stat-cell">
+          <text class="stat-main">{{dailyDurationText}}</text>
+          <text class="stat-sub">日修时</text>
+        </view>
+      </view>
+
+      <view class="segment-head">
+        <text class="segment-head-title">全文句段</text>
+        <text class="segment-head-meta">当前 {{activeLine + 1}} / {{content.segments.length}}</text>
+      </view>
+
+      <view class="segment-wrap">
+        <view wx:for="{{content.segments}}" wx:key="index" class="segment-card card {{index === activeLine ? 'active' : ''}}">
+          <text class="segment-index">{{index + 1}}</text>
+          <view class="segment-copy">
+            <text class="segment-text">{{item}}</text>
+            <text wx:if="{{index === activeLine}}" class="segment-status">{{playing ? '正在唱诵这一句' : '当前位置'}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="note-card card">
+        <view class="note-head">
+          <text class="note-icon">✦</text>
+          <text class="note-title">修持要点</text>
+        </view>
+        <text class="note-body">{{practiceTip}}</text>
+      </view>
+
+      <text class="recitation-footer-note">— 经文恭录 · 仅供修持参考 —</text>
+    </block>
+  </view>
+
+  <view wx:if="{{content}}" class="player-footer">
+    <view class="round-inline">
+      <text class="round-inline-label">今日读诵轮次</text>
+      <view class="round-inline-row">
+        <button class="round-inline-btn" bindtap="decreaseRound">－</button>
+        <text class="round-inline-count">{{roundCount}}</text>
+        <button class="round-inline-btn" bindtap="increaseRound">＋</button>
+      </view>
+    </view>
+
+    <view class="time-row">
+      <text class="time">{{currentTimeText}}</text>
+      <slider class="progress-slider" min="0" max="100" step="1" value="{{progress * 100}}" activeColor="#7E2A1C" backgroundColor="#E8D7B4" block-size="14" bindchanging="onSliderChanging" bindchange="onSliderChange"></slider>
+      <text class="time">{{totalTimeText}}</text>
+    </view>
+
+    <view class="control-row">
+      <button class="control-mini {{looping ? 'active' : ''}}" bindtap="toggleLooping">循</button>
+      <view class="control-main">
+        <button class="control-btn" bindtap="skipBackward">«</button>
+        <button class="control-play" bindtap="togglePlay">{{playing ? '❚❚' : '▶'}}</button>
+        <button class="control-btn" bindtap="skipForward">»</button>
+      </view>
+      <button class="control-mini" bindtap="cycleSpeed">{{speed}}×</button>
+    </view>
+
+    <text class="player-hint">♫ 唱诵示意 · {{looping ? '循环开启' : '单次播放'}}</text>
+
+    <button class="complete-button {{completed ? 'done' : ''}}" bindtap="completeRecitation">
+      {{completed ? '今日读诵已完成' : '完成今日读诵'}}
+    </button>
+  </view>
+</view>

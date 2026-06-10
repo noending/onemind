@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>一念法藏 · 管理后台</title>
+    <link rel="stylesheet" href="/admin/admin.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="brand">一念法藏 · Admin</p>
+          <h1>数字法藏管理台</h1>
+          <p class="lead">内容、记忆计划、组织资产与审计记录已接入本地 onemind 数据库。</p>
+        </div>
+        <div class="status-card">
+          <span class="status-dot"></span>
+          <div>
+            <strong id="storeMode">连接中</strong>
+            <small id="healthText">正在检查服务状态</small>
+            <small id="adminRoleText">角色：未登录</small>
+          </div>
+          <button id="logoutButton" class="ghost-button" type="button">退出</button>
+        </div>
+      </section>
+
+      <section class="login-panel" id="loginPanel">
+        <form id="loginForm" class="login-card">
+          <h2>管理后台登录</h2>
+          <p>请输入本地管理员账号后继续管理内容与数字资产。</p>
+          <input name="username" value="magic" placeholder="用户名" required>
+          <input name="password" type="password" placeholder="密码" required>
+          <button type="submit">进入后台</button>
+          <small id="loginMessage">默认本地账号为 magic。</small>
+        </form>
+      </section>
+
+      <section class="metric-grid" id="metrics"></section>
+
+      <section class="panel-grid">
+        <article class="panel span-7">
+          <div class="panel-head">
+            <div>
+              <h2>内容库</h2>
+              <p>公开内容与默认记忆天数</p>
+            </div>
+            <button id="refreshButton">刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>标题</th>
+                  <th>类型</th>
+                  <th>模式</th>
+                  <th>天数</th>
+                  <th>访问</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="contentRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel span-5">
+          <div class="panel-head">
+            <div>
+              <h2>组织资产</h2>
+              <p>公开、组织内、指定人员与私密资料</p>
+            </div>
+          </div>
+          <div id="assetRows" class="asset-list"></div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel span-4" data-permission="content.write">
+          <div class="panel-head">
+            <div>
+              <h2>新增内容</h2>
+              <p>经咒、短偈、经文片段</p>
+            </div>
+          </div>
+          <form id="contentForm" class="form-stack">
+            <input name="title" placeholder="标题，例如：心经·新片段" required>
+            <select name="type">
+              <option value="mantra">短咒</option>
+              <option value="verse">短偈</option>
+              <option value="sutra_segment">经文片段</option>
+              <option value="ritual">仪轨片段</option>
+              <option value="teaching">上师开示</option>
+            </select>
+            <textarea name="body" rows="4" placeholder="正文，用空格或换行分段" required></textarea>
+            <div class="form-grid">
+              <input name="planDays" type="number" min="1" max="30" value="3" placeholder="天数">
+              <select name="lengthTier">
+                <option value="short">短</option>
+                <option value="medium">中</option>
+                <option value="long">长</option>
+              </select>
+            </div>
+            <div class="form-grid">
+              <select name="defaultMode">
+                <option value="scientific">默认科学背诵</option>
+                <option value="playful">默认趣味背诵</option>
+              </select>
+              <input name="supportedModes" placeholder="支持模式：scientific,playful">
+            </div>
+            <div class="form-grid">
+              <input name="recommendedRecitationTime" placeholder="读诵时段：morning/evening/theme">
+              <input name="recitationTheme" placeholder="读诵主题，如晨课安心">
+            </div>
+            <label class="checkbox-row">
+              <input name="supportsRecitation" type="checkbox" checked>
+              <span>支持日常读诵</span>
+            </label>
+            <input name="scene" placeholder="场景，例如：晨课静坐">
+            <button type="submit">保存内容</button>
+          </form>
+        </article>
+
+        <article class="panel span-4" data-permission="content.write">
+          <div class="panel-head">
+            <div>
+              <h2>编辑内容</h2>
+              <p>从内容库点击编辑后，可修改正文和计划</p>
+            </div>
+          </div>
+          <form id="editContentForm" class="form-stack">
+            <input name="id" type="hidden">
+            <input name="title" placeholder="标题" required>
+            <select name="type">
+              <option value="mantra">短咒</option>
+              <option value="verse">短偈</option>
+              <option value="sutra_segment">经文片段</option>
+              <option value="ritual">仪轨片段</option>
+              <option value="teaching">上师开示</option>
+            </select>
+            <textarea name="body" rows="4" placeholder="正文" required></textarea>
+            <div class="form-grid">
+              <input name="planDays" type="number" min="1" max="30" placeholder="天数">
+              <select name="lengthTier">
+                <option value="short">短</option>
+                <option value="medium">中</option>
+                <option value="long">长</option>
+              </select>
+            </div>
+            <div class="form-grid">
+              <select name="defaultMode">
+                <option value="scientific">默认科学背诵</option>
+                <option value="playful">默认趣味背诵</option>
+              </select>
+              <input name="supportedModes" placeholder="支持模式：scientific,playful">
+            </div>
+            <div class="form-grid">
+              <input name="recommendedRecitationTime" placeholder="读诵时段">
+              <input name="recitationTheme" placeholder="读诵主题">
+            </div>
+            <label class="checkbox-row">
+              <input name="supportsRecitation" type="checkbox">
+              <span>支持日常读诵</span>
+            </label>
+            <input name="scene" placeholder="场景">
+            <button type="submit">保存修改</button>
+          </form>
+        </article>
+
+        <article class="panel span-4" data-permission="asset.write">
+          <div class="panel-head">
+            <div>
+              <h2>新增资产</h2>
+              <p>音频、唐卡、文档等资料登记</p>
+            </div>
+          </div>
+          <form id="assetForm" class="form-stack">
+            <input name="title" placeholder="资产标题" required>
+            <select name="type">
+              <option value="audio">音频</option>
+              <option value="image">图片 / 唐卡</option>
+              <option value="document">文档</option>
+              <option value="pdf">PDF</option>
+              <option value="other">其他</option>
+            </select>
+            <input name="url" placeholder="storage:// 或 https:// 地址" required>
+            <select name="accessLevel">
+              <option value="public">公开</option>
+              <option value="registered">登录可见</option>
+              <option value="member">组织成员</option>
+              <option value="restricted">指定人员</option>
+              <option value="private">私密</option>
+            </select>
+            <button type="submit">保存资产</button>
+          </form>
+        </article>
+
+        <article class="panel span-4" data-permission="asset.write">
+          <div class="panel-head">
+            <div>
+              <h2>编辑资产</h2>
+              <p>从组织资产点击编辑后，可修改元数据</p>
+            </div>
+          </div>
+          <form id="editAssetForm" class="form-stack">
+            <input name="id" type="hidden">
+            <input name="title" placeholder="资产标题" required>
+            <select name="type">
+              <option value="audio">音频</option>
+              <option value="image">图片 / 唐卡</option>
+              <option value="document">文档</option>
+              <option value="pdf">PDF</option>
+              <option value="other">其他</option>
+            </select>
+            <input name="url" placeholder="storage:// 或 https:// 地址" required>
+            <select name="accessLevel">
+              <option value="public">公开</option>
+              <option value="registered">登录可见</option>
+              <option value="member">组织成员</option>
+              <option value="restricted">指定人员</option>
+              <option value="private">私密</option>
+            </select>
+            <input name="copyrightStatus" placeholder="版权状态">
+            <button type="submit">保存资产修改</button>
+          </form>
+        </article>
+
+        <article class="panel span-4" data-permission="organization.member.manage">
+          <div class="panel-head">
+            <div>
+              <h2>组织成员</h2>
+              <p>添加维护人或只读成员</p>
+            </div>
+          </div>
+          <form id="memberForm" class="form-stack">
+            <input name="userId" placeholder="用户 UUID" required>
+            <select name="role">
+              <option value="readonly_member">只读成员</option>
+              <option value="asset_maintainer">资料维护人</option>
+              <option value="organization_admin">组织管理员</option>
+            </select>
+            <button type="submit">添加成员</button>
+          </form>
+          <p class="form-note" id="actionMessage">操作结果会显示在这里。</p>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel span-6">
+          <div class="panel-head">
+            <div>
+              <h2>复习计划</h2>
+              <p>最近创建的用户记忆计划</p>
+            </div>
+            <button id="dispatchNotificationsButton" type="button">派发提醒</button>
+          </div>
+          <div id="planRows" class="timeline"></div>
+        </article>
+
+        <article class="panel span-6">
+          <div class="panel-head">
+            <div>
+              <h2>读诵活动</h2>
+              <p>最近记录的日常读诵</p>
+            </div>
+          </div>
+          <div id="recitationRows" class="timeline"></div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel span-12">
+          <div class="panel-head">
+            <div>
+              <h2>审计日志</h2>
+              <p>权限、资产与组织操作留痕</p>
+            </div>
+          </div>
+          <div id="auditRows" class="timeline"></div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/admin/admin.js"></script>
+  </body>
+</html>

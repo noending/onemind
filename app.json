@@ -5,6 +5,7 @@
     "pages/shop/index",
     "pages/profile/index",
     "pages/practice/index",
+    "pages/recitation/index",
     "pages/plan/index"
   ],
   "window": {

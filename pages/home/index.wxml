@@ -1,53 +1,59 @@
 <view class="screen">
-  <app-header />
-
-  <view class="page-body">
+  <view class="page-body home-body">
     <view class="top-row">
-      <view>
-        <text class="date">{{dateLabel}}</text>
-        <text class="page-title">今日修持</text>
-      </view>
-      <button class="pill-button">♨ 连续 0 天</button>
+      <text class="date">{{dateLabel}}</text>
+      <button class="pill-button"><text class="streak-icon">◔</text> 连续 {{streakDays}} 天</button>
     </view>
+    <text class="page-title">今日修持</text>
 
     <view class="today-card">
-      <text class="today-label">TODAY</text>
-      <text class="today-count">{{reviewCount}} 段待复习</text>
-      <text class="today-desc">顺次完成今日小段，让记忆稳稳落地。</text>
+      <text class="today-mark">༜</text>
+      <text class="today-label">TODAY · 今日偈语</text>
+      <text class="today-verse">一切有为法，如梦幻泡影，</text>
+      <text class="today-verse">如露亦如电，应作如是观。</text>
+      <text class="today-quote">——《金刚经》四句偈</text>
+      <view class="today-foot">
+        <text class="today-desc">{{allDone ? '今日修持已圆满' : ('今日待复习 ' + dueList.length + ' 段')}}</text>
+        <button class="today-start" bindtap="startFirstDue">▶ {{allDone ? '明日预告' : '开始复习'}}</button>
+      </view>
     </view>
 
-    <text class="section-title">{{reviewCount > 0 ? '待复习' : '今日安排'}}</text>
+    <view class="list-head">
+      <text class="list-title">待复习</text>
+      <text class="list-count">{{dueList.length}} 段</text>
+    </view>
 
-    <view wx:for="{{reviews}}" wx:key="id" class="review-card card" data-id="{{item.id}}" data-plan-id="{{item.planId}}" bindtap="openPractice">
+    <view wx:if="{{dueList.length === 0}}" class="empty-card card">
+      <text class="empty-title">今日圆满</text>
+      <text class="empty-desc">在「选内容」里再请一段，明日继续修持。</text>
+      <button class="empty-button" bindtap="goLibrary">去选内容</button>
+    </view>
+
+    <view wx:for="{{dueList}}" wx:key="id" class="review-card card" data-id="{{item.contentId}}" data-plan-id="{{item.planId}}" data-goal-id="{{item.goalId}}" data-period="{{item.preferredPeriod}}" data-open-type="{{item.openType}}" bindtap="openDueItem">
       <view class="review-head">
         <view class="tag-row">
-          <text class="tag">{{item.category}}</text>
-          <text class="review-meta">{{item.meta}}</text>
+          <text class="tag-primary">{{item.modeTag}}</text>
+          <text class="tag-secondary">{{item.metaTag}}</text>
+          <text class="tag-secondary">{{item.methodTag}}</text>
         </view>
         <text class="arrow">›</text>
       </view>
       <text class="review-title">{{item.title}}</text>
       <text class="review-body">{{item.body}}</text>
+      <text class="review-meta">◷ {{item.meta}}</text>
     </view>
 
-    <view wx:if="{{reviewCount === 0}}" class="empty-today card">
-      <text class="empty-title">{{hasPlans ? '今日已清净' : '从一小段开始'}}</text>
-      <text class="empty-desc">{{hasPlans ? '今天没有到期复习。可以静读一遍，或者去选下一段内容。' : '选择一段短咒或经文片段，系统会自动安排记忆曲线。'}}</text>
-      <button class="empty-button" bindtap="goLibrary">{{hasPlans ? '选下一段' : '去选内容'}}</button>
-    </view>
-
-    <view class="festival-card">
+    <view wx:if="{{featuredFestival}}" class="festival-card" bindtap="openFestival">
       <view class="festival-icon">✣</view>
       <view class="festival-copy">
-        <text class="festival-date">农历二月十九</text>
-        <text class="festival-title">观音菩萨圣诞 · 精选</text>
+        <text class="festival-date">{{featuredFestival.date}} · 节日精选</text>
+        <text class="festival-title">{{featuredFestival.name}}</text>
+        <text class="festival-desc">{{featuredFestival.reason || '推荐相关经咒内容'}}</text>
       </view>
       <text class="arrow">›</text>
     </view>
 
-    <view class="demo-card">
-      <text>» Demo：快讲一天、体验明日复习</text>
-    </view>
+    <text class="home-note">Demo · 快讲一天，体验明日复习</text>
   </view>
 
   <app-tabbar active="home" />

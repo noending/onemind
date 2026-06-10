@@ -1,6 +1,7 @@
 <view class="screen">
   <view class="page-body profile-body">
     <view class="hero-panel">
+      <text class="hero-mark">✦</text>
       <view class="auth-card card">
         <view class="auth-avatar-wrap">
           <image wx:if="{{auth.avatarUrl}}" class="auth-avatar" src="{{auth.avatarUrl}}" mode="aspectFill"></image>
@@ -12,12 +13,13 @@
             <text class="auth-name">{{auth.nickname}}</text>
             <text class="auth-level">Lv.2 行愿</text>
           </view>
-          <text class="auth-desc">◔ 已坚持 {{growthOverview.memorizationStreak}} 天 · 在家修行</text>
+          <text class="auth-desc">◔ 记忆 {{growthOverview.memorizationStreak}} 天 · 读诵 {{growthOverview.recitationStreak}} 天</text>
         </view>
-        <button class="auth-button settings" bindtap="onAuthAction">⚙</button>
+        <button class="auth-button settings" bindtap="onAuthAction">⋯</button>
       </view>
 
       <view class="daily-card">
+        <text class="daily-mark">✦</text>
         <text class="daily-kicker">今日寄语</text>
         <text class="daily-title">念念相续，无有间断</text>
         <text class="daily-desc">心定则慧生 · 慧生则烦恼断</text>
@@ -27,39 +29,81 @@
     <view class="growth-grid">
       <view class="growth-card card">
         <text class="growth-number">{{growthOverview.memorizationStreak}}</text>
-        <text class="growth-label">连续天数</text>
+        <text class="growth-label">记忆连续</text>
       </view>
       <view class="growth-card card">
-        <text class="growth-number">{{stats.mastered}}</text>
-        <text class="growth-label">已背会</text>
+        <text class="growth-number">{{growthOverview.recitationStreak}}</text>
+        <text class="growth-label">读诵连续</text>
       </view>
       <view class="growth-card card">
-        <text class="growth-number">{{plans.length}}</text>
-        <text class="growth-label">累计学习</text>
+        <text class="growth-number">{{growthOverview.masteredCount}}</text>
+        <text class="growth-label">已掌握</text>
       </view>
+    </view>
+
+    <view wx:if="{{growthOverview.latestMilestone}}" class="milestone-card card">
+      <view class="milestone-head">
+        <text class="milestone-kicker">最近里程碑</text>
+        <text class="milestone-date">{{growthOverview.latestMilestone.achievedAt}}</text>
+      </view>
+      <text class="milestone-title">{{growthOverview.latestMilestone.title}}</text>
+      <text class="milestone-desc">{{growthOverview.latestMilestone.title}} 已被记录为新的成长节点</text>
+    </view>
+
+    <view wx:else class="milestone-card card milestone-empty">
+      <text class="milestone-kicker">最近里程碑</text>
+      <text class="milestone-title">继续保持当前节律</text>
+      <text class="milestone-desc">新的里程碑会在这里显示</text>
     </view>
 
     <view class="sub-tabs">
       <button class="sub-tab {{subTab === 'progress' ? 'active' : ''}}" data-tab="progress" bindtap="changeSubTab">⟳ 进度</button>
-      <button class="sub-tab {{subTab === 'orders' ? 'active' : ''}}" data-tab="orders" bindtap="changeSubTab">◫ 订单</button>
+      <button class="sub-tab {{subTab === 'settings' ? 'active' : ''}}" data-tab="settings" bindtap="changeSubTab">⚙ 设置</button>
     </view>
 
     <block wx:if="{{subTab === 'progress'}}">
-      <view class="summary-card card">
-        <view class="summary-item review">
-          <text class="summary-kicker">⟳ 复习中</text>
-          <text class="summary-value">{{stats.reviewing}}</text>
-          <text class="summary-label">进行中</text>
+      <view class="summary-strip">
+        <view class="summary-pill review">
+          <view class="summary-icon">⟳</view>
+          <view class="summary-copy">
+            <text class="summary-kicker">复习中</text>
+            <text class="summary-value">{{stats.reviewing}}</text>
+          </view>
         </view>
-        <view class="summary-item risk">
-          <text class="summary-kicker">⚠ 遗忘风险</text>
-          <text class="summary-value">{{stats.atRisk}}</text>
-          <text class="summary-label">需优先回稳</text>
+        <view class="summary-pill risk">
+          <view class="summary-icon">⚠</view>
+          <view class="summary-copy">
+            <text class="summary-kicker">遗忘风险</text>
+            <text class="summary-value">{{stats.atRisk}}</text>
+          </view>
         </view>
-        <view class="summary-item done">
-          <text class="summary-kicker">✓ 已背会</text>
-          <text class="summary-value">{{stats.mastered}}</text>
-          <text class="summary-label">进入长期记忆</text>
+        <view class="summary-pill done">
+          <view class="summary-icon">✓</view>
+          <view class="summary-copy">
+            <text class="summary-kicker">已背会</text>
+            <text class="summary-value">{{stats.mastered}}</text>
+          </view>
+        </view>
+      </view>
+      <text class="summary-note">{{summaryText}}</text>
+
+      <view wx:if="{{recitationGoals.length}}" class="section-head">
+        <text class="section-title">读诵目标</text>
+      </view>
+      <view wx:for="{{recitationGoals}}" wx:key="id" class="goal-card card" data-id="{{item.contentId}}" data-goal-id="{{item.id}}" data-period="{{item.preferredPeriod}}" bindtap="openRecitation">
+        <view class="goal-row">
+          <view class="goal-main">
+            <text class="goal-title">{{item.title}}</text>
+            <text class="goal-subtitle">{{item.subtitleText}}</text>
+          </view>
+          <view class="goal-meta">
+            <text class="goal-target">{{item.dailyTargetText}}</text>
+            <text class="goal-period">{{item.preferredPeriodLabel}}</text>
+          </view>
+        </view>
+        <view class="goal-badges">
+          <text class="goal-badge">{{item.goalTypeLabel}}</text>
+          <text class="goal-badge {{item.statusTone}}">{{item.statusLabel}}</text>
         </view>
       </view>
 
@@ -97,6 +141,11 @@
             <text class="curve-note-label {{item.active ? 'active' : ''}}">{{item.label}}</text>
           </view>
         </view>
+      </view>
+      <view wx:else class="curve-empty card">
+        <text class="curve-empty-icon">◌</text>
+        <text class="curve-empty-title">开始一段内容后</text>
+        <text class="curve-empty-desc">这里会显示你的记忆曲线与复习节点。</text>
       </view>
 
       <view wx:if="{{reviewingPlans.length}}" class="section-head">
@@ -149,23 +198,118 @@
     </block>
 
     <block wx:else>
-      <view class="order-head">订单记录</view>
-      <view wx:if="{{orders.length === 0}}" class="empty-card card">
-        <text class="empty-title">暂无订单记录</text>
-        <text class="empty-desc">已购内容会在这里长期可查。</text>
-      </view>
-      <view wx:for="{{orders}}" wx:key="id" class="order-card card" data-id="{{item.id}}" bindtap="openOrder">
-        <view class="order-icon" style="background-color: {{item.color}};">藏</view>
-        <view class="order-main">
-          <text class="order-title">{{item.title}}</text>
-          <text class="order-date">{{item.date}}</text>
+      <view class="settings-section">
+        <view class="section-head">
+          <text class="section-title">微信授权</text>
         </view>
-        <view class="order-right">
-          <text class="order-price">{{item.price}}</text>
-          <text class="order-status">{{item.status}}</text>
+        <view class="settings-card card">
+          <view class="settings-head">
+            <view class="settings-copy">
+              <text class="settings-title">授权状态</text>
+              <text class="settings-desc">{{auth.statusText}}</text>
+            </view>
+          </view>
+          <view class="settings-action-row">
+            <button class="settings-action primary" bindtap="authorizeWechatLogin">{{auth.loggedIn ? '重新授权' : '微信授权'}}</button>
+            <button wx:if="{{auth.loggedIn}}" class="settings-action ghost" bindtap="logoutWechat">退出授权</button>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title">平台能力</text>
+        </view>
+        <view class="settings-card card">
+          <view class="settings-head">
+            <view class="settings-copy">
+              <text class="settings-title">{{platformLabel}}</text>
+              <text class="settings-desc">{{reminderStrategy}}</text>
+            </view>
+          </view>
+          <text wx:if="{{platformDetailText}}" class="platform-detail">{{platformDetailText}}</text>
+          <view class="capability-grid">
+            <view wx:for="{{reminderCapabilities}}" wx:key="key" class="capability-card">
+              <view class="capability-row">
+                <text class="capability-title">{{item.title}}</text>
+                <text class="capability-status {{item.statusTone}}">{{item.statusLabel}}</text>
+              </view>
+              <text class="capability-desc">{{item.desc}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title">提醒设置</text>
+        </view>
+        <view class="settings-card card">
+          <view class="settings-head">
+            <view class="settings-copy">
+              <text class="settings-title">当前策略</text>
+              <text class="settings-desc">{{notificationSourceText}}</text>
+            </view>
+          </view>
+          <view class="notification-list">
+            <view wx:for="{{notificationSettings}}" wx:key="channel" class="notification-row" data-channel="{{item.channel}}" bindtap="toggleNotificationSetting">
+              <view class="notification-main">
+                <view class="notification-row-head">
+                  <text class="notification-title">{{item.channelLabel}}</text>
+                  <text class="notification-status {{item.enabled ? 'on' : 'off'}}">{{item.enabledText}}</text>
+                </view>
+                <text class="notification-desc">{{item.channelDescription}}</text>
+                <text class="notification-quiet">静默时段 {{item.quietHoursText}}</text>
+              </view>
+              <view class="notification-toggle {{item.enabled ? 'on' : 'off'}}">{{item.toggleText}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title">最近提醒任务</text>
+        </view>
+        <view class="settings-card card">
+          <text class="settings-desc">{{notificationJobsHint}}</text>
+          <view wx:if="{{notificationJobs.length}}" class="job-list">
+            <view wx:for="{{notificationJobs}}" wx:key="id" class="job-row">
+              <view class="job-main">
+                <view class="job-row-head">
+                  <text class="job-title">{{item.channelLabel}}</text>
+                  <text class="job-status {{item.statusTone}}">{{item.statusLabel}}</text>
+                </view>
+                <text class="job-meta">计划时间 {{item.scheduledAtText}}</text>
+                <text class="job-payload">{{item.payloadText}}</text>
+              </view>
+              <text class="job-time">{{item.sentAtText || item.scheduledAtText}}</text>
+            </view>
+          </view>
+          <view wx:else class="empty-inline">
+            <text class="empty-inline-text">暂无提醒任务</text>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title">多端自检</text>
+        </view>
+        <view class="settings-card card">
+          <view class="settings-head">
+            <view class="settings-copy">
+              <text class="settings-title">检查清单</text>
+              <text class="settings-desc">{{platformChecklistHint}}</text>
+            </view>
+            <button class="checklist-reset" bindtap="resetPlatformChecklist">重置</button>
+          </view>
+          <view class="checklist-list">
+            <view wx:for="{{platformChecklist}}" wx:key="key" class="checklist-row" data-key="{{item.key}}" bindtap="toggleChecklistItem">
+              <view class="checklist-main">
+                <text class="checklist-title">{{item.title}}</text>
+                <text class="checklist-desc">{{item.desc}}</text>
+              </view>
+              <view class="checklist-side">
+                <text class="checklist-status {{item.statusTone}}">{{item.statusText}}</text>
+                <text class="checklist-updated">{{item.updatedAtText}}</text>
+              </view>
+            </view>
+          </view>
         </view>
       </view>
-      <text class="orders-note">所有内容承诺无水印 · 一次购买长期可用</text>
     </block>
 
     <view class="profile-brand">

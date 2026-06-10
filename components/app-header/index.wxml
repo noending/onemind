@@ -1,1 +1,8 @@
-<view class="app-header" style="height: {{statusBarHeight}}px;"></view>
+<view class="app-header">
+  <view style="height: {{statusBarHeight}}px;"></view>
+  <view class="top-bar">
+    <view class="top-spacer"></view>
+    <text class="top-title">心 经 记</text>
+    <text class="top-more">•••</text>
+  </view>
+</view>

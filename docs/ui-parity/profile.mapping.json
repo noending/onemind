@@ -1,0 +1,121 @@
+{
+  "meta": {
+    "page": "profile",
+    "updatedAt": "2026-06-03",
+    "notes": "Web MineScreen 与 MiniApp profile 页结构映射基线。"
+  },
+  "mappings": [
+    {
+      "id": "profile.hero-header",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1303,
+        "snippet": "Hero header with subtle texture"
+      },
+      "miniappRef": {
+        "file": "pages/profile/index.wxml",
+        "line": 3,
+        "selector": ".hero-panel",
+        "snippet": "hero-panel"
+      }
+    },
+    {
+      "id": "profile.daily-verse",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1338,
+        "snippet": "今日寄语"
+      },
+      "miniappRef": {
+        "file": "pages/profile/index.wxml",
+        "line": 20,
+        "selector": ".daily-card",
+        "snippet": "今日寄语"
+      }
+    },
+    {
+      "id": "profile.stats-row",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1349,
+        "snippet": "Stats Row — three-pillar"
+      },
+      "miniappRef": {
+        "file": "pages/profile/index.wxml",
+        "line": 26,
+        "selector": ".growth-grid",
+        "snippet": "growth-grid"
+      }
+    },
+    {
+      "id": "profile.sub-tabs",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1368,
+        "snippet": "Sub-tabs"
+      },
+      "miniappRef": {
+        "file": "pages/profile/index.wxml",
+        "line": 40,
+        "selector": ".sub-tabs",
+        "snippet": "sub-tabs"
+      }
+    },
+    {
+      "id": "profile.status-pills",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1118,
+        "snippet": "Status pills"
+      },
+      "miniappRef": {
+        "file": "pages/profile/index.wxml",
+        "line": 47,
+        "selector": ".summary-strip",
+        "snippet": "summary-pill review/risk/done"
+      }
+    },
+    {
+      "id": "profile.memory-curve",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1142,
+        "snippet": "记忆曲线"
+      },
+      "miniappRef": {
+        "file": "pages/profile/index.wxml",
+        "line": 70,
+        "selector": ".curve-card",
+        "snippet": "curve-card"
+      }
+    },
+    {
+      "id": "profile.plan-cards",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1228,
+        "snippet": "PlanCard"
+      },
+      "miniappRef": {
+        "file": "pages/profile/index.wxml",
+        "line": 101,
+        "selector": ".mini-plan-card",
+        "snippet": "mini-plan-card"
+      }
+    },
+    {
+      "id": "profile.orders",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1393,
+        "snippet": "OrdersPanel"
+      },
+      "miniappRef": {
+        "file": "pages/profile/index.wxml",
+        "line": 151,
+        "selector": ".order-card",
+        "snippet": "order-card"
+      }
+    }
+  ]
+}

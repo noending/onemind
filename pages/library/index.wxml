@@ -1,26 +1,45 @@
 <view class="screen">
-  <app-header />
-
   <view class="page-body library-body">
     <text class="page-title">选一段内容</text>
-    <text class="page-subtitle">选好后系统会给你方案，无需自己设置频率。</text>
+    <text class="page-subtitle">选好后系统会给你方案，无需自己设置频率</text>
 
     <view class="filters">
       <text wx:for="{{filters}}" wx:key="*this" class="filter {{activeFilter === item ? 'active' : ''}}" data-filter="{{item}}" bindtap="changeFilter">{{item}}</text>
+    </view>
+
+    <view wx:if="{{longSeries && (activeFilter === '全部' || activeFilter === '长咒')}}" class="series-card" bindtap="pickLongSeries">
+      <view class="series-tags">
+        <text class="series-tag">长咒 · 系列</text>
+        <text class="series-tag">共 {{longSeries.total}} 段</text>
+        <text wx:if="{{longSeries.inPlanCount > 0}}" class="series-tag active">{{longSeries.inPlanCount}} 段进行中</text>
+      </view>
+      <text class="series-title">{{longSeries.title}}</text>
+      <text class="series-subtitle">{{longSeries.subtitle}}</text>
+      <view class="series-foot">
+        <text class="series-foot-copy">点击进入系列修持方案</text>
+        <text class="arrow">›</text>
+      </view>
+    </view>
+
+    <view wx:if="{{loading}}" class="content-card card">
+      <text class="content-title">正在载入内容</text>
+      <text class="content-body">请稍候，系统正在准备可修持内容。</text>
     </view>
 
     <view wx:for="{{filteredContents}}" wx:key="id" class="content-card card" data-id="{{item.id}}" bindtap="pickContent">
       <view class="tag-row">
         <text class="tag">{{item.category}}</text>
         <text class="tag">{{item.lengthLabel}}</text>
+        <text wx:if="{{item.supportedModes.indexOf('playful') >= 0}}" class="tag">趣味</text>
+        <text wx:if="{{item.supportsRecitation}}" class="tag">读诵</text>
+        <text wx:if="{{item.inPlan}}" class="tag tag-plan">已在计划中</text>
         <text wx:if="{{item.festivalTag}}" class="tag tag-strong">✣ {{item.festivalTag}}</text>
       </view>
       <text class="content-title">{{item.title}}</text>
       <text class="content-body">{{item.preview}}</text>
       <view class="content-meta">
-        <text>◷ {{item.dayText}}</text>
-        <text>·</text>
-        <text>{{item.scene}}</text>
+        <text class="content-day">◷ {{item.dayText}}</text>
+        <text class="content-scene">{{item.scene}}</text>
       </view>
     </view>
   </view>
@@ -29,40 +48,45 @@
     <view class="plan-sheet">
       <view class="sheet-head">
         <view>
-          <text class="sheet-label">系统已为你生成方案</text>
+          <text class="sheet-label">选择修持方式</text>
           <text class="sheet-title">{{picked.title}}</text>
         </view>
         <text class="sheet-close" bindtap="closeSheet">×</text>
       </view>
 
       <view wx:if="{{showLongTip}}" class="long-tip">
-        这是较长内容，首发版本暂不支持完整训练，建议先从其中一小段开始。
+        这是较长内容，建议先从科学背诵或日常读诵进入，再逐步推进趣味背诵。
       </view>
 
       <view class="sheet-plan">
         <view class="plan-metrics">
           <view>
             <text class="metric-num">{{picked.planDays}}</text>
-            <text class="metric-label">天完成</text>
+            <text class="metric-label">建议天数</text>
           </view>
           <view>
             <text class="metric-num">{{picked.segments.length}}</text>
             <text class="metric-label">个拆段</text>
           </view>
           <view>
-            <text class="metric-num">4</text>
-            <text class="metric-label">种训练法</text>
+            <text class="metric-num">{{modeCards.length}}</text>
+            <text class="metric-label">条路径</text>
           </view>
-        </view>
-        <view class="sheet-rules">
-          <text>· 默认每日 1 次小段训练，节奏依据记忆曲线安排</text>
-          <text>· 顺序：拆段跟读 → 首字提示 → 遮挡回忆 → 填空复现</text>
-          <text>· 漏一天会自动顺延，不让计划失效</text>
         </view>
       </view>
 
-      <button class="accept-button" bindtap="acceptPlan">一键接受 · 开始第 1 天</button>
-      <text class="sheet-back" bindtap="goHome">加入后回到首页</text>
+      <view class="mode-list">
+        <view wx:for="{{modeCards}}" wx:key="key" class="mode-card card">
+          <view class="mode-copy">
+            <text class="mode-title">{{item.title}}</text>
+            <text class="mode-desc">{{item.desc}}</text>
+          </view>
+          <button wx:if="{{item.key !== 'recitation'}}" class="mode-button" data-mode="{{item.key}}" bindtap="acceptPlan">{{item.button}}</button>
+          <button wx:else class="mode-button light" bindtap="startRecitation">{{item.button}}</button>
+        </view>
+      </view>
+
+      <text class="sheet-back" bindtap="goHome">稍后决定，先回首页</text>
     </view>
   </view>
 

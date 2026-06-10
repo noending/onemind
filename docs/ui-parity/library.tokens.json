@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "page": "library",
+    "source": "design/src/app/App.tsx#BrowseScreen",
+    "target": "pages/library/index.(wxml|wxss|js)",
+    "updatedAt": "2026-06-01",
+    "designFrame": {
+      "widthPx": 390,
+      "heightPx": 844
+    },
+    "conversion": {
+      "miniProgramWidthRpx": 750,
+      "rpxPerPx": 1.9230769231,
+      "rounding": "round-half-up"
+    }
+  },
+  "palette": {
+    "pageBg": "#f6ecd7",
+    "headline": "#351b18",
+    "subtle": "#80655c",
+    "seriesStart": "#7e2a1c",
+    "seriesEnd": "#5c1f14",
+    "seriesText": "#fbe9c8",
+    "cardBg": "#f7f4ee",
+    "activeFilter": "#a63127"
+  },
+  "typography": {
+    "pageTitle": {
+      "designPx": 30,
+      "miniRpx": 58,
+      "implementedRpx": 58
+    },
+    "seriesTitle": {
+      "designPx": 26,
+      "miniRpx": 50,
+      "implementedRpx": 46
+    },
+    "contentTitle": {
+      "designPx": 22,
+      "miniRpx": 42,
+      "implementedRpx": 31
+    },
+    "filterText": {
+      "designPx": 13,
+      "miniRpx": 25,
+      "implementedRpx": 21
+    }
+  },
+  "shape": {
+    "seriesRadius": {
+      "designPx": 22,
+      "miniRpx": 42,
+      "implementedRpx": 34
+    },
+    "contentRadius": {
+      "designPx": 20,
+      "miniRpx": 38,
+      "implementedRpx": 36
+    },
+    "sheetRadius": {
+      "designPx": 36,
+      "miniRpx": 69,
+      "implementedRpx": 42
+    }
+  },
+  "spacing": {
+    "pageTop": {
+      "designPx": 8,
+      "miniRpx": 15,
+      "implementedRpx": 26
+    },
+    "filterMarginTop": {
+      "designPx": 20,
+      "miniRpx": 38,
+      "implementedRpx": 20
+    },
+    "cardGap": {
+      "designPx": 12,
+      "miniRpx": 23,
+      "implementedRpx": 14
+    }
+  },
+  "selectorSnapshot": {
+    ".library-body": [
+      "padding-top: 26rpx"
+    ],
+    ".filters": [
+      "margin: 20rpx 0 24rpx",
+      "overflow-x: auto"
+    ],
+    ".series-card": [
+      "border-radius: 34rpx",
+      "background: linear-gradient(140deg, #7e2a1c, #5c1f14)"
+    ],
+    ".content-card": [
+      "padding: 22rpx",
+      "border-radius: 36rpx"
+    ],
+    ".plan-sheet": [
+      "border-radius: 42rpx 42rpx 0 0",
+      "background: #fffaf2"
+    ]
+  }
+}

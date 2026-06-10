@@ -112,7 +112,7 @@ const contents = [
     category: "经文片段",
     body: "南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶。",
     preview: "南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶。",
-    segments: ["南无喝啰怛那哆啰夜耶", "南无阿唎耶", "婆卢羯帝烁钵啰耶"],
+    segments: ["南无", "喝啰怛那", "哆啰夜耶", "南无", "阿唎耶", "婆卢羯帝", "烁钵啰耶"],
     lengthTier: "long",
     lengthLevel: "long",
     planDays: 10,

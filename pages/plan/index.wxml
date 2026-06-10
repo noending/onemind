@@ -2,6 +2,7 @@
   <app-header />
 
   <view class="page-body plan-body">
+    <text class="plan-back" bindtap="goBack">‹ 返回</text>
     <text class="page-title">复习计划</text>
     <text class="page-subtitle">按记忆曲线生成节点，完成后会同步到我的进度。</text>
 
@@ -28,4 +29,5 @@
       </view>
     </view>
   </view>
+
 </view>

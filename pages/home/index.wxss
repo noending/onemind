@@ -1,152 +1,253 @@
+.home-body {
+  padding-top: 28rpx;
+}
+
 .top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16rpx;
 }
 
 .date {
-  display: block;
-  margin-bottom: 12rpx;
   color: #80655c;
-  font-size: 31rpx;
-  font-weight: 700;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.page-title {
+  margin-top: 10rpx;
+  font-size: 64rpx;
+  line-height: 1.14;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+.pill-button {
+  height: 56rpx;
+  padding: 0 24rpx;
+  font-size: 27rpx;
+  line-height: 56rpx;
+}
+
+.streak-icon {
+  margin-right: 6rpx;
+  font-size: 22rpx;
 }
 
 .today-card {
-  margin-top: 34rpx;
-  padding: 42rpx 36rpx;
-  border-radius: 44rpx;
-  background: linear-gradient(135deg, #aa332b, #873327);
-  box-shadow: 0 26rpx 60rpx rgba(132, 43, 34, 0.18);
+  position: relative;
+  margin-top: 24rpx;
+  padding: 32rpx;
+  border-radius: 42rpx;
+  background: linear-gradient(140deg, #962f22, #7f271a 65%, #722114);
+  color: #fbe9c8;
+  box-shadow: 0 18rpx 42rpx rgba(126, 42, 28, 0.19);
+  border: 1rpx solid rgba(251, 233, 200, 0.08);
+}
+
+.today-mark {
+  position: absolute;
+  right: 34rpx;
+  top: 28rpx;
+  color: rgba(234, 190, 145, 0.44);
+  font-size: 40rpx;
 }
 
 .today-label {
   display: block;
-  color: rgba(255, 248, 237, 0.82);
-  font-size: 23rpx;
-  letter-spacing: 6rpx;
+  color: rgba(233, 184, 106, 0.95);
+  font-size: 22rpx;
+  font-weight: 700;
+  letter-spacing: 3rpx;
 }
 
-.today-count {
+.today-verse {
   display: block;
-  margin-top: 20rpx;
-  color: #fff8ed;
-  font-size: 64rpx;
-  font-weight: 500;
-  line-height: 1.18;
+  margin-top: 12rpx;
+  font-size: 36rpx;
+  line-height: 1.36;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+.today-quote {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 23rpx;
+  color: rgba(233, 184, 106, 0.88);
+  letter-spacing: 1rpx;
+}
+
+.today-foot {
+  margin-top: 18rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid rgba(251, 233, 200, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
 }
 
 .today-desc {
-  display: block;
-  margin-top: 14rpx;
-  color: rgba(255, 248, 237, 0.9);
-  font-size: 29rpx;
+  flex: 1;
+  color: rgba(251, 233, 200, 0.86);
+  font-size: 26rpx;
+}
+
+.today-start {
+  flex-shrink: 0;
+  height: 54rpx;
+  padding: 0 24rpx;
+  border-radius: 999rpx;
+  background: #fbe9c8;
+  color: #7e2a1c;
+  font-size: 24rpx;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 54rpx;
 }
 
-.review-card {
-  margin-bottom: 20rpx;
-  padding: 30rpx;
-}
-
-.review-head {
+.list-head {
+  margin: 24rpx 2rpx 12rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.tag-row {
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-}
-
-.review-meta {
+.list-title {
   color: #80655c;
   font-size: 24rpx;
-  font-weight: 700;
+  letter-spacing: 2rpx;
 }
 
-.arrow {
-  color: #80655c;
-  font-size: 50rpx;
-  line-height: 1;
+.list-count {
+  color: #b09f94;
+  font-size: 22rpx;
 }
 
-.review-title {
-  display: block;
-  margin-top: 20rpx;
-  color: #351b18;
-  font-size: 50rpx;
-  font-weight: 500;
-  line-height: 1.2;
-}
-
-.review-body {
-  display: block;
-  margin-top: 14rpx;
-  color: #80655c;
-  font-size: 34rpx;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.empty-today {
-  padding: 34rpx 30rpx;
+.empty-card {
+  padding: 28rpx;
 }
 
 .empty-title {
   display: block;
   color: #351b18;
-  font-size: 46rpx;
-  font-weight: 500;
-  line-height: 1.2;
+  font-size: 32rpx;
+  font-weight: 700;
 }
 
 .empty-desc {
   display: block;
-  margin-top: 14rpx;
+  margin-top: 10rpx;
   color: #80655c;
-  font-size: 30rpx;
-  font-weight: 600;
+  font-size: 24rpx;
   line-height: 1.45;
 }
 
 .empty-button {
-  margin-top: 24rpx;
-  width: 180rpx;
-  height: 58rpx;
+  margin-top: 18rpx;
+  width: 168rpx;
+  height: 54rpx;
   border-radius: 999rpx;
   background: #a63127;
   color: #fff8ed;
-  font-size: 26rpx;
+  font-size: 24rpx;
   font-weight: 700;
-  line-height: 58rpx;
+  line-height: 54rpx;
+}
+
+.review-card {
+  margin-bottom: 14rpx;
+  padding: 24rpx;
+  border-radius: 36rpx;
+  background: #f7f4ee;
+  border: 1rpx solid rgba(232, 216, 194, 0.85);
+  box-shadow: 0 6rpx 18rpx rgba(83, 56, 36, 0.03);
+}
+
+.review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.tag-row {
+  display: flex;
+  gap: 10rpx;
+  flex-wrap: wrap;
+}
+
+.tag-primary,
+.tag-secondary {
+  height: 34rpx;
+  padding: 0 12rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 34rpx;
+}
+
+.tag-primary {
+  background: rgba(126, 42, 28, 0.1);
+  color: #7e2a1c;
+}
+
+.tag-secondary {
+  background: #efe3cb;
+  color: #8a7860;
+}
+
+.arrow {
+  color: #b09b8e;
+  font-size: 34rpx;
+  line-height: 1;
+}
+
+.review-title {
+  display: block;
+  margin-top: 12rpx;
+  color: #7e2a1c;
+  font-size: 44rpx;
+  font-weight: 500;
+  line-height: 1.2;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+.review-body {
+  display: block;
+  margin-top: 8rpx;
+  color: #5c4838;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.review-meta {
+  display: block;
+  margin-top: 10rpx;
+  color: #8a7860;
+  font-size: 21rpx;
+  line-height: 1.35;
 }
 
 .festival-card {
-  margin-top: 36rpx;
-  padding: 30rpx 28rpx;
+  margin-top: 20rpx;
+  padding: 24rpx;
   display: flex;
   align-items: center;
-  gap: 22rpx;
+  gap: 18rpx;
   border: 1rpx solid #ebcaa9;
-  border-radius: 36rpx;
-  background: #ffe1c4;
+  border-radius: 30rpx;
+  background: linear-gradient(90deg, #f4d8a5, rgba(233, 184, 106, 0.8));
 }
 
 .festival-icon {
-  width: 68rpx;
-  height: 68rpx;
+  width: 58rpx;
+  height: 58rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f2a33b;
-  color: #351b18;
-  font-size: 42rpx;
+  background: rgba(255, 250, 242, 0.62);
+  color: #8b3322;
+  font-size: 28rpx;
 }
 
 .festival-copy {
@@ -156,27 +257,30 @@
 }
 
 .festival-date {
-  color: #80655c;
-  font-size: 31rpx;
-  font-weight: 500;
+  color: rgba(126, 42, 28, 0.8);
+  font-size: 21rpx;
 }
 
 .festival-title {
-  margin-top: 6rpx;
+  margin-top: 4rpx;
   color: #351b18;
-  font-size: 46rpx;
+  font-size: 32rpx;
   font-weight: 500;
-  line-height: 1.25;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
 }
 
-.demo-card {
-  margin-top: 54rpx;
-  height: 72rpx;
-  border: 1rpx dashed #ead8c2;
-  border-radius: 999rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #80655c;
-  font-size: 24rpx;
+.festival-desc {
+  margin-top: 8rpx;
+  color: rgba(126, 42, 28, 0.72);
+  font-size: 22rpx;
+  line-height: 1.4;
+}
+
+.home-note {
+  display: block;
+  margin-top: 22rpx;
+  margin-bottom: 8rpx;
+  text-align: center;
+  color: rgba(138, 120, 96, 0.66);
+  font-size: 21rpx;
 }

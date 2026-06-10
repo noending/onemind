@@ -1,74 +1,97 @@
 <view class="screen">
-  <app-header />
-
   <view class="page-body shop-body">
-    <view class="shop-kicker">
-      <text class="shop-icon">▢</text>
-      <text>SHOP</text>
+    <view class="shop-title-row">
+      <text class="page-title">心经记 · 商城</text>
+      <view class="cart-button">
+        <view class="cart-icon">
+          <view class="cart-handle"></view>
+          <view class="cart-basket"></view>
+          <view class="cart-wheel left"></view>
+          <view class="cart-wheel right"></view>
+        </view>
+        <text wx:if="{{cartCount > 0}}" class="cart-count">{{cartCount}}</text>
+      </view>
     </view>
-    <text class="page-title">心经记 · 商城</text>
-    <text class="page-subtitle">为修行而选 · 经文音乐 · 唐卡能量画</text>
+    <text class="page-subtitle">为修行而选 · 经文音频 · 唐卡视觉</text>
 
-    <view class="theme-card">
-      <text class="theme-label">本月主题</text>
-      <text class="theme-title">观音法门 · 音画合辑</text>
-      <text class="theme-desc">搭配你的记忆计划，一同请回家中供奉与聆听。</text>
+    <view wx:if="{{featuredProduct}}" class="theme-card" data-id="{{featuredProduct.id}}" bindtap="openProduct">
+      <text class="theme-label">{{featuredProduct.tag}}</text>
+      <text class="theme-title">{{featuredProduct.title}}</text>
+      <text class="theme-desc">{{featuredProduct.subtitle}}</text>
       <view class="discount-row">
-        <text class="discount">限时 8.8 折</text>
-        <text>满 ¥299 包邮</text>
+        <text class="discount">限时 ¥{{featuredProduct.price}}</text>
+        <text wx:if="{{featuredProduct.originalPrice}}" class="line-through">¥{{featuredProduct.originalPrice}}</text>
       </view>
     </view>
 
     <view class="shop-tabs">
-      <text class="shop-tab {{activeTab === 'music' ? 'active' : ''}}" data-tab="music" bindtap="switchTab">经文音乐</text>
-      <text class="shop-tab {{activeTab === 'thangka' ? 'active' : ''}}" data-tab="thangka" bindtap="switchTab">唐卡 / 能量画</text>
+      <view wx:for="{{categories}}" wx:key="*this" class="shop-tab tab-{{index}} {{activeCategory === item ? 'active' : ''}}" data-tab="{{item}}" bindtap="switchTab">
+        <text class="shop-tab-text">{{item}}{{item === '收藏' && favorites.length ? ' (' + favorites.length + ')' : ''}}</text>
+      </view>
     </view>
 
-    <view wx:if="{{activeTab === 'music'}}">
-      <view wx:for="{{music}}" wx:key="id" class="product-card card">
-        <view class="cover">
-          <image class="cover-image" src="{{item.cover}}" mode="aspectFill" />
-          <text class="play">▶</text>
+    <view wx:if="{{visibleProducts.length}}">
+      <view wx:for="{{visibleProducts}}" wx:key="id" class="product-card card" data-id="{{item.id}}" bindtap="openProduct">
+        <view class="cover" style="background: {{item.color}};">
+          <text class="cover-tag">{{item.tag}}</text>
+          <text class="cover-mark">༜</text>
         </view>
         <view class="product-main">
-          <view class="product-title-row">
-            <text class="tag">{{item.tag}}</text>
-            <text class="product-title">{{item.title}}</text>
-          </view>
-          <text class="product-subtitle">{{item.artist}} · {{item.duration}}</text>
+          <text class="product-title">{{item.title}}</text>
+          <text class="product-subtitle">{{item.subtitle}}</text>
           <view class="product-bottom">
-            <text class="price">¥{{item.price}}</text>
-            <text class="unit">/ 专辑</text>
+            <view class="price-wrap">
+              <text class="price">¥{{item.price}}</text>
+              <text wx:if="{{item.originalPrice}}" class="unit line-through">¥{{item.originalPrice}}</text>
+            </view>
+            <view class="product-actions">
+              <text class="heart {{item.isFavorite ? 'active' : ''}}" data-id="{{item.id}}" catchtap="toggleFavorite">{{item.isFavorite ? '★' : '☆'}}</text>
+              <text class="card-arrow">›</text>
+            </view>
           </view>
-        </view>
-        <view class="product-actions">
-          <text class="heart">♡</text>
-          <button class="red-button">请回家</button>
         </view>
       </view>
     </view>
 
-    <view wx:if="{{activeTab === 'thangka'}}" class="thangka-grid">
-      <view wx:for="{{thangka}}" wx:key="id" class="thangka-card card">
-        <view class="thangka-cover">
-          <image class="thangka-image" src="{{item.image}}" mode="aspectFill" />
-          <text class="thangka-tag">{{item.tag}}</text>
-          <text class="thangka-heart">♡</text>
-        </view>
-        <view class="thangka-copy">
-          <text class="thangka-title">{{item.title}}</text>
-          <text class="thangka-desc">{{item.desc}}</text>
-          <text class="thangka-size">尺寸 {{item.size}}</text>
-          <view class="thangka-bottom">
-            <text class="price small-price">¥{{item.price}}</text>
-            <text class="rating">★ 4.9</text>
-          </view>
-          <button class="red-button thangka-button">请回家</button>
-        </view>
-      </view>
+    <view wx:else class="empty-card card">
+      <text class="empty-title">该分类暂无商品</text>
+      <text class="empty-desc">可以切换到其他分类，或先收藏你喜欢的内容。</text>
     </view>
 
-    <text class="shop-note">所有内容均为修行辅助 · 请以恭敬心请购</text>
+    <text class="shop-note">所有内容承诺无水印 · 一次购买长期可用</text>
+  </view>
+
+  <view wx:if="{{selectedProduct}}" class="sheet-mask" bindtap="closeProduct">
+    <view class="product-sheet" catchtap="noop">
+      <view class="sheet-head">
+        <text class="sheet-title">商品详情</text>
+        <text class="sheet-close" bindtap="closeProduct">×</text>
+      </view>
+
+      <view class="sheet-cover-wrap">
+        <image class="sheet-cover" src="{{selectedProduct.cover}}" mode="aspectFill" />
+        <text class="sheet-tag">{{selectedProduct.tag}}</text>
+      </view>
+
+      <view class="sheet-price-row">
+        <text class="sheet-product-title">{{selectedProduct.title}}</text>
+        <view class="sheet-price-wrap">
+          <text class="sheet-price">¥{{selectedProduct.price}}</text>
+          <text wx:if="{{selectedProduct.originalPrice}}" class="sheet-origin">¥{{selectedProduct.originalPrice}}</text>
+        </view>
+      </view>
+      <text class="sheet-subtitle">{{selectedProduct.subtitle}}</text>
+      <text class="sheet-desc">{{selectedProduct.description}}</text>
+
+      <view class="sheet-features">
+        <text wx:for="{{selectedProduct.features}}" wx:key="*this" class="sheet-feature">• {{item}}</text>
+      </view>
+
+      <view class="sheet-actions">
+        <button class="sheet-btn ghost" bindtap="closeProduct">再看看</button>
+        <button class="sheet-btn primary" bindtap="addToCart">加入购物车</button>
+      </view>
+    </view>
   </view>
 
   <app-tabbar active="shop" />

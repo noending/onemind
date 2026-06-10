@@ -1,46 +1,85 @@
 <view class="screen train-screen">
   <view class="train-header" style="padding-top: {{headerTop}}px;">
-    <view class="back-row">
+    <view class="topbar">
       <text class="back" bindtap="goBack">‹ 返回</text>
+      <text class="topbar-meta">{{stepIndex + 1}} / {{stepTotal}} · {{stepTitle}}</text>
+      <button class="fulltext-button" bindtap="openFullText">查看全文</button>
     </view>
+    <view class="train-progress">
+      <view class="train-progress-bar" style="width: {{((stepIndex + 1) / stepTotal) * 100}}%;"></view>
+    </view>
+
+    <view class="train-chip-row">
+      <text class="train-info-chip strong">{{content.category || '经文片段'}}</text>
+      <text class="train-info-chip">第 {{currentDay}}/{{totalDays}} 天</text>
+    </view>
+
     <view class="train-title-row">
-      <view>
-        <text class="train-meta">第 {{currentDay}}/{{totalDays}} 天 · {{method}}</text>
+      <view class="title-copy">
+        <text class="train-mode-chip {{mode === 'playful' ? 'playful' : ''}}">{{heroLabel}}</text>
         <text class="train-title">{{content.title}}</text>
+        <text wx:if="{{scene}}" class="train-scene">{{scene}}</text>
       </view>
-      <text wx:if="{{content.hasAudio}}" class="audio">♪</text>
+      <view class="stage-badge">
+        <text class="stage-label">阶段</text>
+        <text class="stage-text">{{growthStage}}</text>
+      </view>
     </view>
-    <view class="train-track">
-      <view class="train-bar" style="width: {{progressPct}}%;"></view>
-    </view>
+    <text class="helper-text">{{helperText}}</text>
+    <text class="step-tip">步骤 {{stepIndex + 1}} / {{stepTotal}}</text>
   </view>
 
   <view class="train-body">
-    <text class="segment-label">拆段 · {{displaySegments.length}} 句</text>
+    <view wx:if="{{riskTitle}}" class="risk-card">
+      <view class="risk-top">
+        <text class="risk-pill">AT RISK</text>
+        <text class="risk-stage">{{growthStage}}</text>
+      </view>
+      <text class="risk-title">{{riskTitle}}</text>
+      <text class="risk-body">{{riskBody}}</text>
+    </view>
 
-    <view wx:for="{{displaySegments}}" wx:key="i" class="segment-card {{item.revealed ? 'revealed' : ''}}" data-index="{{index}}" bindtap="reveal">
-      <text class="segment-index">{{index + 1}}</text>
+    <view wx:if="{{stepIndex < stepTotal - 1}}" class="insight-card {{mode === 'playful' ? 'playful' : ''}}">
+      <text class="insight-title">{{insightTitle}}</text>
+      <text class="insight-body">{{insightBody}}</text>
+    </view>
+
+    <view wx:if="{{stepIndex < stepTotal - 1}}" class="segment-head">
+      <text class="segment-label">{{mode === 'playful' ? '节奏卡片' : '拆段练习'}} · {{displaySegments.length}} 句</text>
+      <text class="segment-progress">已揭开 {{revealed.length}} / {{displaySegments.length}}</text>
+    </view>
+
+    <view wx:if="{{stepIndex < stepTotal - 1}}" wx:for="{{displaySegments}}" wx:key="i" class="segment-card {{item.revealed ? 'revealed' : ''}} {{mode === 'playful' ? 'playful' : ''}}" data-index="{{index}}" bindtap="reveal">
+      <view class="segment-audio">
+        <text class="segment-audio-icon">♫</text>
+      </view>
       <view class="segment-copy">
+        <text class="segment-index">{{index + 1}} / {{displaySegments.length}}</text>
         <text class="segment-text">{{item.text}}</text>
         <text wx:if="{{item.hint}}" class="segment-hint">◉ {{item.hint}}</text>
       </view>
     </view>
+
+    <view wx:if="{{stepIndex < stepTotal - 1}}" class="step-actions">
+      <button class="step-btn ghost" bindtap="prevStep">上一步</button>
+      <button class="step-btn primary" bindtap="nextStep">下一步</button>
+    </view>
   </view>
 
-  <view class="feedback">
-    <text class="feedback-label">这次感觉如何？</text>
+  <view wx:if="{{stepIndex === stepTotal - 1}}" class="feedback">
+    <text class="feedback-label">{{feedbackLabel}}</text>
     <view class="feedback-grid">
       <button class="feedback-button {{finished ? 'disabled' : ''}}" bindtap="needsWork">
         <text>需加强</text>
         <text class="feedback-sub">明日再练</text>
       </button>
       <button class="feedback-button {{finished ? 'disabled' : ''}}" bindtap="stronger">
-        <text>更熟了</text>
-        <text class="feedback-sub">按计划推进</text>
+        <text>{{strongerTitle}}</text>
+        <text class="feedback-sub">{{strongerSub}}</text>
       </button>
-      <button class="feedback-button primary {{finished ? 'disabled' : ''}}" bindtap="mastered">
-        <text>已掌握</text>
-        <text class="feedback-sub light">提前巩固</text>
+      <button class="feedback-button primary wide {{mode === 'playful' ? 'playful' : ''}} {{finished ? 'disabled' : ''}}" bindtap="mastered">
+        <text>{{primaryTitle}}</text>
+        <text class="feedback-sub light">{{primarySub}}</text>
       </button>
     </view>
 

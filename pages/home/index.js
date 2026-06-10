@@ -1,25 +1,125 @@
-const { getTodayReviews, hasPlans } = require("../../common/memory");
+const { listFestivals } = require("../../common/api");
+const {
+  getGrowthOverviewWithFallback,
+  hasPlans,
+  listTodayFocusWithFallback,
+  syncPlansFromBackend
+} = require("../../common/memory");
 
 function formatDateLabel(now = new Date()) {
   const weekdays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
-  return `${now.getMonth() + 1}月${now.getDate()}日${weekdays[now.getDay()]}`;
+  return `${now.getMonth() + 1}月${now.getDate()}日 · ${weekdays[now.getDay()]}`;
+}
+
+function withTimeout(promise, fallback, timeout = 2500) {
+  return new Promise((resolve) => {
+    let finished = false;
+    const finish = (value) => {
+      if (finished) return;
+      finished = true;
+      resolve(value);
+    };
+
+    const timer = setTimeout(() => finish(fallback), timeout);
+    Promise.resolve(promise)
+      .then((value) => finish(value))
+      .catch(() => finish(fallback))
+      .finally(() => clearTimeout(timer));
+  });
+}
+
+function estimateMinutesByCategory(category, totalDays) {
+  if (category === "短咒" || category === "短偈") return 3;
+  if (category === "长咒") return 12;
+  return Math.max(4, Math.min(10, Number(totalDays || 1) * 2));
 }
 
 Page({
   data: {
-    reviews: [],
-    reviewCount: 0,
+    scientificTasks: [],
+    playfulTasks: [],
+    recitationTasks: [],
+    dueList: [],
+    allDone: false,
+    totalFocusCount: 0,
     dateLabel: "",
-    hasPlans: false
+    streakDays: 0,
+    hasPlans: false,
+    featuredFestival: null,
+    festivalSource: "local"
   },
 
   onShow() {
-    const reviews = getTodayReviews();
     this.setData({
-      reviews,
-      reviewCount: reviews.length,
       dateLabel: formatDateLabel(),
       hasPlans: hasPlans()
+    });
+
+    Promise.all([
+      withTimeout(syncPlansFromBackend(), null, 2200),
+      withTimeout(
+        listTodayFocusWithFallback(),
+        { scientificTasks: [], playfulTasks: [], recitationTasks: [] },
+        2600
+      ),
+      withTimeout(
+        listFestivals(),
+        { festivals: [], source: "fallback" },
+        2600
+      ),
+      withTimeout(
+        getGrowthOverviewWithFallback(),
+        { memorizationStreak: 0 },
+        2600
+      )
+    ]).then((results) => {
+      const focus = results[1] || { scientificTasks: [], playfulTasks: [], recitationTasks: [] };
+      const festivalResult = results[2] || { festivals: [], source: "fallback" };
+      const featuredFestival = (festivalResult.festivals || [])[0] || null;
+      const growthOverview = results[3] || { memorizationStreak: 0 };
+      const scientificTasks = focus.scientificTasks || [];
+      const playfulTasks = focus.playfulTasks || [];
+      const recitationTasks = focus.recitationTasks || [];
+      const dueList = []
+        .concat(scientificTasks.map((item) => ({
+          ...item,
+          openType: "practice",
+          modeTag: item.category || "经文片段",
+          metaTag: `第 ${item.currentDay}/${item.totalDays} 天`,
+          methodTag: item.method || "拆段跟读",
+          body: item.body || item.reasonText || "按记忆曲线安排复习。",
+          meta: `约 ${estimateMinutesByCategory(item.category, item.totalDays)} 分钟 · ${item.scene || "拆段跟读"}`
+        })))
+        .concat(playfulTasks.map((item) => ({
+          ...item,
+          openType: "practice",
+          modeTag: item.category || "经文片段",
+          metaTag: `第 ${item.currentDay}/${item.totalDays} 天`,
+          methodTag: item.method || "节奏卡片",
+          body: item.body || "完成一段推进，并回看一段旧记忆。",
+          meta: `约 ${estimateMinutesByCategory(item.category, item.totalDays)} 分钟 · ${item.scene || "节奏卡片"}`
+        })))
+        .concat(recitationTasks.map((item) => ({
+          ...item,
+          openType: "recitation",
+          modeTag: "读诵",
+          metaTag: item.preferredPeriod === "evening" ? "晚课" : item.preferredPeriod === "theme" ? "主题" : "晨课",
+          methodTag: `每日 ${item.dailyTargetCount} 轮`,
+          body: item.preview || `今日目标 ${item.dailyTargetCount} 轮，点击进入开始读诵。`,
+          meta: `${item.scene || "读诵熏修"}`
+        })));
+      this.setData({
+        scientificTasks,
+        playfulTasks,
+        recitationTasks,
+        dueList,
+        allDone: dueList.length === 0,
+        totalFocusCount: scientificTasks.length + playfulTasks.length + recitationTasks.length,
+        hasPlans: hasPlans(),
+        streakDays: growthOverview.memorizationStreak || 0,
+        featuredFestival,
+        festivalSource: festivalResult.source || "fallback"
+      });
     });
   },
 
@@ -30,7 +130,51 @@ Page({
     wx.navigateTo({ url: `/pages/practice/index?${query}` });
   },
 
+  startFirstDue() {
+    const first = (this.data.dueList || [])[0];
+    if (!first) {
+      wx.showToast({ title: "今日已完成", icon: "success" });
+      return;
+    }
+    if (first.openType === "recitation") {
+      wx.navigateTo({
+        url: `/pages/recitation/index?id=${first.contentId}&goalId=${first.goalId || ""}&period=${first.preferredPeriod || "morning"}`
+      });
+      return;
+    }
+    wx.navigateTo({
+      url: `/pages/practice/index?id=${first.contentId}&planId=${first.planId || ""}`
+    });
+  },
+
+  openDueItem(event) {
+    const contentId = event.currentTarget.dataset.id;
+    const openType = event.currentTarget.dataset.openType;
+    if (openType === "recitation") {
+      wx.navigateTo({
+        url: `/pages/recitation/index?id=${contentId}&goalId=${event.currentTarget.dataset.goalId || ""}&period=${event.currentTarget.dataset.period || "morning"}`
+      });
+      return;
+    }
+    wx.navigateTo({
+      url: `/pages/practice/index?id=${contentId}&planId=${event.currentTarget.dataset.planId || ""}`
+    });
+  },
+
+  openRecitation(event) {
+    const id = event.currentTarget.dataset.id;
+    const goalId = event.currentTarget.dataset.goalId || "";
+    const period = event.currentTarget.dataset.period || "morning";
+    wx.navigateTo({
+      url: `/pages/recitation/index?id=${id}&goalId=${goalId}&period=${period}`
+    });
+  },
+
   goLibrary() {
-    wx.redirectTo({ url: "/pages/library/index" });
+    wx.reLaunch({ url: "/pages/library/index" });
+  },
+
+  openFestival() {
+    wx.reLaunch({ url: "/pages/library/index" });
   }
 });
