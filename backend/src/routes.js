@@ -109,14 +109,14 @@ async function handleRequest(req, res, body) {
   }
 
   if (req.method === 'GET' && pathname.startsWith('/admin/')) {
-    const assetName = pathname.replace('/admin/', '');
-    const safeAssetName = path.basename(assetName);
-    const contentType = safeAssetName.endsWith('.css')
-      ? 'text/css; charset=utf-8'
-      : safeAssetName.endsWith('.js')
-        ? 'application/javascript; charset=utf-8'
-        : 'application/octet-stream';
-    return sendFile(res, path.join(ADMIN_DIR, safeAssetName), contentType);
+    const resolvedFile = resolveAdminFile(pathname);
+    if (resolvedFile) {
+      return sendFile(res, resolvedFile, contentTypeForFile(resolvedFile));
+    }
+    if (!path.extname(pathname)) {
+      return sendFile(res, path.join(ADMIN_DIR, 'index.html'), 'text/html; charset=utf-8');
+    }
+    return sendJson(res, 404, { error: 'NOT_FOUND' });
   }
 
   if (req.method === 'GET' && pathname === '/health') {
@@ -496,6 +496,30 @@ function sendFile(res, filePath, contentType) {
     'Content-Length': body.length
   });
   res.end(body);
+}
+
+function resolveAdminFile(pathname) {
+  const assetPath = pathname.replace(/^\/admin\//, '');
+  const resolvedPath = path.resolve(ADMIN_DIR, assetPath);
+  if (!resolvedPath.startsWith(ADMIN_DIR)) return null;
+  if (!fs.existsSync(resolvedPath)) return null;
+  if (fs.statSync(resolvedPath).isDirectory()) {
+    const indexPath = path.join(resolvedPath, 'index.html');
+    return fs.existsSync(indexPath) ? indexPath : null;
+  }
+  return resolvedPath;
+}
+
+function contentTypeForFile(filePath) {
+  if (filePath.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (filePath.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (filePath.endsWith('.js')) return 'application/javascript; charset=utf-8';
+  if (filePath.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (filePath.endsWith('.svg')) return 'image/svg+xml';
+  if (filePath.endsWith('.png')) return 'image/png';
+  if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) return 'image/jpeg';
+  if (filePath.endsWith('.woff2')) return 'font/woff2';
+  return 'application/octet-stream';
 }
 
 function resolveAdminCredentials(payload = {}) {

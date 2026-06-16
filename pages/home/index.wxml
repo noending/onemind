@@ -1,8 +1,14 @@
 <view class="screen">
   <view class="page-body home-body">
     <view class="top-row">
-      <text class="date">{{dateLabel}}</text>
-      <button class="pill-button"><text class="streak-icon">◔</text> 连续 {{streakDays}} 天</button>
+      <view>
+        <text class="date">{{dateLabel}}</text>
+        <text class="sync-status">更新于 {{lastUpdatedText || '--:--'}} · {{sourceText}}</text>
+      </view>
+      <view class="top-actions">
+        <button class="pill-button"><text class="streak-icon">◔</text> 连续 {{streakDays}} 天</button>
+        <button class="ghost-button" bindtap="refreshToday" loading="{{refreshing}}">刷新</button>
+      </view>
     </view>
     <text class="page-title">今日修持</text>
 
@@ -12,35 +18,72 @@
       <text class="today-verse">一切有为法，如梦幻泡影，</text>
       <text class="today-verse">如露亦如电，应作如是观。</text>
       <text class="today-quote">——《金刚经》四句偈</text>
+      <view wx:if="{{nextDueCard}}" class="today-next">
+        <text class="today-next-kicker">接下来先做</text>
+        <text class="today-next-title">{{nextDueCard.title}}</text>
+        <text class="today-next-meta">{{nextDueCard.metaTag}} · {{nextDueCard.methodTag}}</text>
+      </view>
       <view class="today-foot">
         <text class="today-desc">{{allDone ? '今日修持已圆满' : ('今日待复习 ' + dueList.length + ' 段')}}</text>
         <button class="today-start" bindtap="startFirstDue">▶ {{allDone ? '明日预告' : '开始复习'}}</button>
       </view>
     </view>
 
+    <view class="summary-strip">
+      <view wx:for="{{summaryCards}}" wx:key="key" class="summary-card {{item.count > 0 ? 'active' : ''}}">
+        <text class="summary-count">{{item.count}}</text>
+        <text class="summary-label">{{item.label}}</text>
+        <text class="summary-desc">{{item.desc}}</text>
+      </view>
+    </view>
+
     <view class="list-head">
-      <text class="list-title">待复习</text>
+      <text class="list-title">今日任务</text>
       <text class="list-count">{{dueList.length}} 段</text>
     </view>
 
-    <view wx:if="{{dueList.length === 0}}" class="empty-card card">
+    <view wx:if="{{loading}}" class="loading-list">
+      <view class="loading-card card" wx:for="{{[1,2]}}" wx:key="*this">
+        <view class="loading-line short"></view>
+        <view class="loading-line title"></view>
+        <view class="loading-line body"></view>
+        <view class="loading-line body small"></view>
+      </view>
+    </view>
+
+    <view wx:elif="{{dueList.length === 0}}" class="empty-card card">
       <text class="empty-title">今日圆满</text>
       <text class="empty-desc">在「选内容」里再请一段，明日继续修持。</text>
       <button class="empty-button" bindtap="goLibrary">去选内容</button>
     </view>
 
-    <view wx:for="{{dueList}}" wx:key="id" class="review-card card" data-id="{{item.contentId}}" data-plan-id="{{item.planId}}" data-goal-id="{{item.goalId}}" data-period="{{item.preferredPeriod}}" data-open-type="{{item.openType}}" bindtap="openDueItem">
-      <view class="review-head">
-        <view class="tag-row">
-          <text class="tag-primary">{{item.modeTag}}</text>
-          <text class="tag-secondary">{{item.metaTag}}</text>
-          <text class="tag-secondary">{{item.methodTag}}</text>
+    <view wx:else>
+      <view wx:for="{{focusGroups}}" wx:key="key" class="focus-group">
+        <view class="group-head">
+          <view>
+            <text class="group-title">{{item.title}}</text>
+            <text class="group-desc">{{item.desc}}</text>
+          </view>
+          <button class="group-button" data-group-key="{{item.key}}" bindtap="openFirstInGroup">先做这组</button>
         </view>
-        <text class="arrow">›</text>
+
+        <view wx:for="{{item.tasks}}" wx:key="contentId" wx:for-item="task" class="review-card card" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}" bindtap="openDueItem" hover-class="review-card-hover">
+          <view class="review-head">
+            <view class="tag-row">
+              <text class="tag-primary">{{task.modeTag}}</text>
+              <text class="tag-secondary">{{task.metaTag}}</text>
+              <text class="tag-secondary">{{task.methodTag}}</text>
+            </view>
+            <text class="arrow">›</text>
+          </view>
+          <text class="review-title">{{task.title}}</text>
+          <text class="review-body">{{task.body}}</text>
+          <view class="review-foot">
+            <text class="review-meta">◷ {{task.meta}}</text>
+            <button class="review-action" catchtap="openDueItem" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}">{{task.actionText}}</button>
+          </view>
+        </view>
       </view>
-      <text class="review-title">{{item.title}}</text>
-      <text class="review-body">{{item.body}}</text>
-      <text class="review-meta">◷ {{item.meta}}</text>
     </view>
 
     <view wx:if="{{featuredFestival}}" class="festival-card" bindtap="openFestival">
@@ -53,7 +96,7 @@
       <text class="arrow">›</text>
     </view>
 
-    <text class="home-note">Demo · 快讲一天，体验明日复习</text>
+    <text class="home-note">{{sourceText}} · 下拉页面也可刷新今日任务</text>
   </view>
 
   <app-tabbar active="home" />

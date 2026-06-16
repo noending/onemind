@@ -6,12 +6,28 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 20rpx;
 }
 
 .date {
+  display: block;
   color: #80655c;
   font-size: 26rpx;
   font-weight: 600;
+}
+
+.sync-status {
+  display: block;
+  margin-top: 6rpx;
+  color: #a18b7f;
+  font-size: 20rpx;
+  line-height: 1.4;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
 }
 
 .page-title {
@@ -26,6 +42,18 @@
   padding: 0 24rpx;
   font-size: 27rpx;
   line-height: 56rpx;
+}
+
+.ghost-button {
+  height: 56rpx;
+  padding: 0 22rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid #dcc7ac;
+  background: rgba(255, 250, 242, 0.72);
+  color: #7e2a1c;
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 54rpx;
 }
 
 .streak-icon {
@@ -76,6 +104,35 @@
   letter-spacing: 1rpx;
 }
 
+.today-next {
+  margin-top: 18rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 28rpx;
+  background: rgba(251, 233, 200, 0.12);
+}
+
+.today-next-kicker {
+  display: block;
+  color: rgba(233, 184, 106, 0.9);
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+}
+
+.today-next-title {
+  display: block;
+  margin-top: 8rpx;
+  color: #fff4dc;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.today-next-meta {
+  display: block;
+  margin-top: 6rpx;
+  color: rgba(251, 233, 200, 0.82);
+  font-size: 22rpx;
+}
+
 .today-foot {
   margin-top: 18rpx;
   padding-top: 16rpx;
@@ -109,6 +166,48 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.summary-strip {
+  margin-top: 18rpx;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.summary-card {
+  padding: 20rpx 18rpx;
+  border-radius: 28rpx;
+  border: 1rpx solid rgba(232, 216, 194, 0.9);
+  background: rgba(255, 250, 242, 0.72);
+}
+
+.summary-card.active {
+  background: #f8f0e4;
+  box-shadow: 0 8rpx 18rpx rgba(83, 56, 36, 0.04);
+}
+
+.summary-count {
+  display: block;
+  color: #7e2a1c;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.summary-label {
+  display: block;
+  margin-top: 8rpx;
+  color: #5c4838;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.summary-desc {
+  display: block;
+  margin-top: 6rpx;
+  color: #8a7860;
+  font-size: 20rpx;
 }
 
 .list-title {
@@ -153,6 +252,85 @@
   line-height: 54rpx;
 }
 
+.loading-list {
+  display: grid;
+  gap: 14rpx;
+}
+
+.loading-card {
+  padding: 24rpx;
+  border-radius: 36rpx;
+  background: #f7f4ee;
+  overflow: hidden;
+}
+
+.loading-line {
+  height: 22rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, rgba(232, 216, 194, 0.55), rgba(247, 244, 238, 0.95), rgba(232, 216, 194, 0.55));
+  background-size: 240rpx 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.loading-line + .loading-line {
+  margin-top: 14rpx;
+}
+
+.loading-line.short {
+  width: 180rpx;
+}
+
+.loading-line.title {
+  width: 300rpx;
+  height: 34rpx;
+}
+
+.loading-line.body {
+  width: 100%;
+}
+
+.loading-line.body.small {
+  width: 72%;
+}
+
+.focus-group + .focus-group {
+  margin-top: 26rpx;
+}
+
+.group-head {
+  margin: 10rpx 4rpx 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.group-title {
+  display: block;
+  color: #5f4639;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.group-desc {
+  display: block;
+  margin-top: 6rpx;
+  color: #9a8579;
+  font-size: 20rpx;
+}
+
+.group-button {
+  flex-shrink: 0;
+  height: 50rpx;
+  padding: 0 20rpx;
+  border-radius: 999rpx;
+  background: #efe3cb;
+  color: #7e2a1c;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 50rpx;
+}
+
 .review-card {
   margin-bottom: 14rpx;
   padding: 24rpx;
@@ -160,6 +338,11 @@
   background: #f7f4ee;
   border: 1rpx solid rgba(232, 216, 194, 0.85);
   box-shadow: 0 6rpx 18rpx rgba(83, 56, 36, 0.03);
+}
+
+.review-card-hover {
+  transform: scale(0.995);
+  background: #f4efe7;
 }
 
 .review-head {
@@ -221,10 +404,29 @@
 
 .review-meta {
   display: block;
-  margin-top: 10rpx;
   color: #8a7860;
   font-size: 21rpx;
   line-height: 1.35;
+}
+
+.review-foot {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.review-action {
+  flex-shrink: 0;
+  height: 50rpx;
+  padding: 0 20rpx;
+  border-radius: 999rpx;
+  background: #a63127;
+  color: #fff8ed;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 50rpx;
 }
 
 .festival-card {
@@ -278,9 +480,40 @@
 
 .home-note {
   display: block;
-  margin-top: 22rpx;
-  margin-bottom: 8rpx;
-  text-align: center;
-  color: rgba(138, 120, 96, 0.66);
-  font-size: 21rpx;
+  margin: 24rpx 4rpx 0;
+  color: #9a8579;
+  font-size: 20rpx;
+  line-height: 1.5;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 240rpx 0;
+  }
+
+  to {
+    background-position: -240rpx 0;
+  }
+}
+
+@media (max-width: 375px) {
+  .summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .top-row {
+    align-items: flex-start;
+  }
+
+  .top-actions {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .today-foot,
+  .review-foot,
+  .group-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
