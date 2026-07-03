@@ -237,6 +237,9 @@ function normalizeContent(item) {
   const segments = Array.isArray(item.segments) && item.segments.length
     ? item.segments
     : splitBodyToSegments(item.body || item.preview || "");
+  const pinyinSegments = Array.isArray(item.pinyinSegments) && item.pinyinSegments.length
+    ? item.pinyinSegments
+    : [];
 
   return {
     id: item.id,
@@ -245,6 +248,7 @@ function normalizeContent(item) {
     body: item.body || item.preview || "",
     preview: item.preview || item.body || "",
     segments,
+    pinyinSegments,
     lengthTier,
     lengthLevel: lengthTier,
     planDays,

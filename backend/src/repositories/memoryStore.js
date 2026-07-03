@@ -29,6 +29,7 @@ const state = {
   practiceSessions: [],
   recitationGoals: [],
   recitationSessions: [],
+  contentVersions: [],
   notificationSettings: [],
   notificationJobs: [],
   organizations: [...organizations],
@@ -164,7 +165,46 @@ function listContents(filters = {}) {
   return contents
     .filter((content) => content.publishStatus === 'published')
     .filter((content) => !filters.type || content.type === filters.type)
+    .filter((content) => !filters.organizationId || content.organizationId === filters.organizationId)
+    .filter((content) => !filters.mode || matchesContentMode(content, filters.mode))
     .map(toContentSummary);
+}
+
+function listAdminContents(filters = {}) {
+  return contents
+    .filter((content) => !filters.type || content.type === filters.type)
+    .filter((content) => !filters.organizationId || content.organizationId === filters.organizationId)
+    .filter((content) => !filters.publishStatus || content.publishStatus === filters.publishStatus)
+    .filter((content) => !filters.reviewStatus || (content.reviewStatus || 'draft') === filters.reviewStatus)
+    .filter((content) => !filters.mode || matchesContentMode(content, filters.mode))
+    .map(toContentSummary);
+}
+
+function nextContentVersionNo(contentId) {
+  return state.contentVersions
+    .filter((item) => item.contentId === contentId)
+    .reduce((max, item) => Math.max(max, Number(item.versionNo || 0)), 0) + 1;
+}
+
+function createContentVersionSnapshot(content, { changeNote = '' } = {}) {
+  const version = {
+    id: createId('content_version'),
+    contentId: content.id,
+    versionNo: nextContentVersionNo(content.id),
+    snapshotJson: toContentDetail(content),
+    changeNote: String(changeNote || '').trim() || content.versionNote || '自动保存版本快照',
+    createdBy: 'system',
+    createdAt: new Date().toISOString()
+  };
+  state.contentVersions.unshift(version);
+  return version;
+}
+
+function listContentVersions(contentId) {
+  return state.contentVersions
+    .filter((item) => item.contentId === contentId)
+    .slice()
+    .sort((left, right) => Number(right.versionNo || 0) - Number(left.versionNo || 0));
 }
 
 function createContent(payload = {}) {
@@ -187,16 +227,96 @@ function createContent(payload = {}) {
     planDays: Math.max(1, Number(payload.planDays || 1)),
     scene: payload.scene || '后台新增内容',
     segments: normalizeSegments(payload.segments, body),
+    organizationId: payload.organizationId || organizations[0]?.id || '',
     defaultMode: normalizeMode(payload.defaultMode || 'scientific'),
     supportedModes: normalizeSupportedModes(payload.supportedModes, payload.defaultMode || 'scientific'),
     supportsRecitation: payload.supportsRecitation !== undefined ? Boolean(payload.supportsRecitation) : true,
     recommendedRecitationTime: payload.recommendedRecitationTime || 'morning',
     recitationTheme: payload.recitationTheme || title,
+    sourceNote: payload.sourceNote || '',
+    versionNote: payload.versionNote || '',
+    sourceContentId: payload.sourceContentId || '',
+    sourceVersionNo: payload.sourceVersionNo ? Number(payload.sourceVersionNo) : null,
     accessLevel: payload.accessLevel || 'public',
-    publishStatus: payload.publishStatus || 'published'
+    publishStatus: payload.publishStatus || 'draft',
+    reviewStatus: payload.reviewStatus || ((payload.publishStatus || 'draft') === 'published' ? 'approved' : 'draft'),
+    reviewedAt: (payload.reviewStatus || ((payload.publishStatus || 'draft') === 'published' ? 'approved' : 'draft')) !== 'draft'
+      ? new Date().toISOString()
+      : null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
   contents.push(content);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: content.organizationId,
+    action: 'content.created',
+    targetType: 'content',
+    targetId: content.id,
+    detail: {
+      title: content.title,
+      type: content.type,
+      publishStatus: content.publishStatus,
+      reviewStatus: content.reviewStatus
+    }
+  });
   return toContentDetail(content);
+}
+
+function copyContentAsNewVersion(contentId, payload = {}) {
+  const source = getContent(contentId);
+  if (!source) {
+    const error = new Error('Content not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const snapshot = createContentVersionSnapshot(source, {
+    changeNote: payload.changeNote || `复制新版本前保存 ${source.title} 的当前快照`
+  });
+  const versionNote = String(payload.versionNote || '').trim() || `基于版本 v${snapshot.versionNo} 复制`;
+  const cloned = createContent({
+    title: source.title,
+    subtitle: source.subtitle,
+    type: source.type,
+    body: source.body,
+    preview: source.preview,
+    planDays: source.planDays,
+    lengthTier: source.lengthTier,
+    scene: source.scene,
+    organizationId: source.organizationId,
+    defaultMode: source.defaultMode,
+    supportedModes: source.supportedModes,
+    supportsRecitation: source.supportsRecitation,
+    recommendedRecitationTime: source.recommendedRecitationTime,
+    recitationTheme: source.recitationTheme,
+    sourceNote: source.sourceNote,
+    versionNote,
+    accessLevel: source.accessLevel,
+    publishStatus: 'draft',
+    reviewStatus: 'reviewing',
+    sourceContentId: source.id,
+    sourceVersionNo: snapshot.versionNo,
+    segments: source.segments
+  });
+
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: source.organizationId,
+    action: 'content.version_copied',
+    targetType: 'content',
+    targetId: cloned.id,
+    detail: {
+      sourceContentId: source.id,
+      sourceTitle: source.title,
+      sourceVersionNo: snapshot.versionNo,
+      versionNote
+    }
+  });
+
+  return cloned;
 }
 
 function updateContent(contentId, payload = {}) {
@@ -207,19 +327,92 @@ function updateContent(contentId, payload = {}) {
     throw error;
   }
 
+  const previous = { ...contents[index] };
+  if (previous.publishStatus === 'published') {
+    createContentVersionSnapshot(previous, {
+      changeNote: payload.versionNote || '更新已发布内容前自动保存版本快照'
+    });
+  }
+  const nextPublishStatus = payload.publishStatus !== undefined ? payload.publishStatus : previous.publishStatus;
+  const nextReviewStatus = payload.reviewStatus !== undefined
+    ? payload.reviewStatus
+    : nextPublishStatus === 'published'
+      ? (previous.reviewStatus === 'rejected' ? 'rejected' : 'approved')
+      : previous.reviewStatus || 'draft';
+
   contents[index] = {
-    ...contents[index],
+    ...previous,
     ...payload,
-    planDays: Math.max(1, Number(payload.planDays || contents[index].planDays || 1)),
-    defaultMode: normalizeMode(payload.defaultMode !== undefined ? payload.defaultMode : contents[index].defaultMode),
-    supportedModes: normalizeSupportedModes(payload.supportedModes !== undefined ? payload.supportedModes : contents[index].supportedModes, payload.defaultMode !== undefined ? payload.defaultMode : contents[index].defaultMode),
-    supportsRecitation: payload.supportsRecitation !== undefined ? Boolean(payload.supportsRecitation) : contents[index].supportsRecitation,
-    recommendedRecitationTime: payload.recommendedRecitationTime !== undefined ? payload.recommendedRecitationTime : contents[index].recommendedRecitationTime,
-    recitationTheme: payload.recitationTheme !== undefined ? payload.recitationTheme : contents[index].recitationTheme,
-    segments: normalizeSegments(payload.segments, payload.body || contents[index].body)
+    planDays: Math.max(1, Number(payload.planDays || previous.planDays || 1)),
+    organizationId: payload.organizationId !== undefined ? payload.organizationId : previous.organizationId,
+    defaultMode: normalizeMode(payload.defaultMode !== undefined ? payload.defaultMode : previous.defaultMode),
+    supportedModes: normalizeSupportedModes(payload.supportedModes !== undefined ? payload.supportedModes : previous.supportedModes, payload.defaultMode !== undefined ? payload.defaultMode : previous.defaultMode),
+    supportsRecitation: payload.supportsRecitation !== undefined ? Boolean(payload.supportsRecitation) : previous.supportsRecitation,
+    recommendedRecitationTime: payload.recommendedRecitationTime !== undefined ? payload.recommendedRecitationTime : previous.recommendedRecitationTime,
+    recitationTheme: payload.recitationTheme !== undefined ? payload.recitationTheme : previous.recitationTheme,
+    sourceNote: payload.sourceNote !== undefined ? payload.sourceNote : previous.sourceNote,
+    versionNote: payload.versionNote !== undefined ? payload.versionNote : previous.versionNote,
+    sourceContentId: payload.sourceContentId !== undefined ? payload.sourceContentId : previous.sourceContentId,
+    sourceVersionNo: payload.sourceVersionNo !== undefined ? payload.sourceVersionNo : previous.sourceVersionNo,
+    publishStatus: nextPublishStatus,
+    reviewStatus: nextReviewStatus,
+    reviewedAt: nextReviewStatus !== previous.reviewStatus
+      ? new Date().toISOString()
+      : previous.reviewedAt,
+    updatedAt: new Date().toISOString(),
+    segments: normalizeSegments(payload.segments, payload.body || previous.body)
   };
 
-  return toContentDetail(contents[index]);
+  const current = contents[index];
+
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: current.organizationId,
+    action: 'content.updated',
+    targetType: 'content',
+    targetId: contentId,
+    detail: {
+      beforeTitle: previous.title,
+      afterTitle: current.title,
+      beforePublishStatus: previous.publishStatus,
+      afterPublishStatus: current.publishStatus,
+      beforeReviewStatus: previous.reviewStatus,
+      afterReviewStatus: current.reviewStatus
+    }
+  });
+
+  if (previous.publishStatus !== current.publishStatus) {
+    appendAuditLog({
+      actorType: 'admin_user',
+      actorId: 'system',
+      organizationId: current.organizationId,
+      action: 'content.publish_status_changed',
+      targetType: 'content',
+      targetId: contentId,
+      detail: {
+        beforePublishStatus: previous.publishStatus,
+        afterPublishStatus: current.publishStatus
+      }
+    });
+  }
+
+  if (previous.reviewStatus !== current.reviewStatus) {
+    appendAuditLog({
+      actorType: 'admin_user',
+      actorId: 'system',
+      organizationId: current.organizationId,
+      action: 'content.review_status_changed',
+      targetType: 'content',
+      targetId: contentId,
+      detail: {
+        beforeReviewStatus: previous.reviewStatus,
+        afterReviewStatus: current.reviewStatus
+      }
+    });
+  }
+
+  return toContentDetail(current);
 }
 
 function archiveContent(contentId) {
@@ -229,7 +422,23 @@ function archiveContent(contentId) {
     error.statusCode = 404;
     throw error;
   }
-  const [archived] = contents.splice(index, 1);
+  contents[index] = {
+    ...contents[index],
+    publishStatus: 'archived',
+    updatedAt: new Date().toISOString()
+  };
+  const archived = contents[index];
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: archived.organizationId,
+    action: 'content.archived',
+    targetType: 'content',
+    targetId: archived.id,
+    detail: {
+      title: archived.title
+    }
+  });
   return {
     id: archived.id,
     title: archived.title,
@@ -242,14 +451,167 @@ function getContent(contentId) {
   return content ? toContentDetail(content) : null;
 }
 
-function listFestivals() {
-  return festivals.map((festival) => ({
-    ...festival,
-    recommendedContents: festival.recommendedContentIds
+function normalizeFestivalContentIds(value) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',').map((item) => item.trim()).filter(Boolean)
+      : [];
+
+  return Array.from(new Set(
+    list
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .filter((contentId) => Boolean(getContent(contentId)))
+  ));
+}
+
+function toFestivalDetail(festival) {
+  const recommendedContentIds = normalizeFestivalContentIds(
+    festival.recommendedContentIds || festival.contentIds || []
+  );
+
+  return {
+    id: festival.id,
+    name: festival.name || '',
+    lunarDate: festival.lunarDate || festival.date || '',
+    solarDate: festival.solarDate || '',
+    relatedFigure: festival.relatedFigure || festival.deity || '',
+    description: festival.description || festival.reason || '',
+    publishStatus: festival.publishStatus || 'published',
+    recommendedContentIds,
+    recommendedContents: recommendedContentIds
       .map((contentId) => contents.find((content) => content.id === contentId))
       .filter(Boolean)
-      .map(toContentSummary)
-  }));
+      .map(toContentSummary),
+    createdAt: festival.createdAt || null,
+    updatedAt: festival.updatedAt || null
+  };
+}
+
+function listFestivals() {
+  return festivals
+    .map(toFestivalDetail)
+    .filter((festival) => festival.publishStatus === 'published');
+}
+
+function listAdminFestivals() {
+  return festivals.map(toFestivalDetail);
+}
+
+function createFestival(payload = {}) {
+  const name = String(payload.name || '').trim();
+  if (!name) {
+    const error = new Error('Festival name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const festival = {
+    id: createId('festival'),
+    name,
+    lunarDate: String(payload.lunarDate || '').trim(),
+    solarDate: String(payload.solarDate || '').trim(),
+    relatedFigure: String(payload.relatedFigure || '').trim(),
+    description: String(payload.description || '').trim(),
+    publishStatus: payload.publishStatus || 'draft',
+    recommendedContentIds: normalizeFestivalContentIds(payload.recommendedContentIds),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  festivals.unshift(festival);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: '',
+    action: 'festival.created',
+    targetType: 'festival',
+    targetId: festival.id,
+    detail: {
+      name: festival.name,
+      publishStatus: festival.publishStatus,
+      recommendedContentIds: festival.recommendedContentIds
+    }
+  });
+  return toFestivalDetail(festival);
+}
+
+function updateFestival(festivalId, payload = {}) {
+  const index = festivals.findIndex((item) => item.id === festivalId);
+  if (index < 0) {
+    const error = new Error('Festival not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const previous = toFestivalDetail(festivals[index]);
+  const name = String(payload.name !== undefined ? payload.name : previous.name).trim();
+  if (!name) {
+    const error = new Error('Festival name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  festivals[index] = {
+    ...festivals[index],
+    name,
+    lunarDate: payload.lunarDate !== undefined ? String(payload.lunarDate || '').trim() : previous.lunarDate,
+    solarDate: payload.solarDate !== undefined ? String(payload.solarDate || '').trim() : previous.solarDate,
+    relatedFigure: payload.relatedFigure !== undefined ? String(payload.relatedFigure || '').trim() : previous.relatedFigure,
+    description: payload.description !== undefined ? String(payload.description || '').trim() : previous.description,
+    publishStatus: payload.publishStatus || previous.publishStatus || 'draft',
+    recommendedContentIds: payload.recommendedContentIds !== undefined
+      ? normalizeFestivalContentIds(payload.recommendedContentIds)
+      : previous.recommendedContentIds,
+    updatedAt: new Date().toISOString()
+  };
+
+  const current = toFestivalDetail(festivals[index]);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: '',
+    action: 'festival.updated',
+    targetType: 'festival',
+    targetId: festivalId,
+    detail: {
+      beforeName: previous.name,
+      afterName: current.name,
+      beforePublishStatus: previous.publishStatus,
+      afterPublishStatus: current.publishStatus,
+      recommendedContentIds: current.recommendedContentIds
+    }
+  });
+  return current;
+}
+
+function archiveFestival(festivalId) {
+  const index = festivals.findIndex((item) => item.id === festivalId);
+  if (index < 0) {
+    const error = new Error('Festival not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  festivals[index] = {
+    ...festivals[index],
+    publishStatus: 'archived',
+    updatedAt: new Date().toISOString()
+  };
+  const archived = toFestivalDetail(festivals[index]);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: '',
+    action: 'festival.archived',
+    targetType: 'festival',
+    targetId: festivalId,
+    detail: {
+      name: archived.name
+    }
+  });
+  return archived;
 }
 
 function listPlans(userId = 'demo-user') {
@@ -439,6 +801,7 @@ function updateAssetAccess({ assetId, accessLevel }) {
 function listAuditLogs(filters = {}) {
   return state.auditLogs
     .filter((log) => !filters.organizationId || log.organizationId === filters.organizationId)
+    .filter((log) => matchesDateRange(log.createdAt, filters))
     .slice()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, Number(filters.limit || 50));
@@ -716,12 +1079,38 @@ function createNotificationJob({ userId = 'demo-user', taskId = null, channel, s
   return job;
 }
 
-function listNotificationJobs({ userId = 'demo-user', limit = 20 } = {}) {
+function listNotificationJobs({ userId = 'demo-user', limit = 20, status, startAt, endAt, organizationId, type, mode, includeAllUsers = false } = {}) {
   return state.notificationJobs
-    .filter((job) => job.userId === userId)
+    .filter((job) => includeAllUsers || job.userId === userId)
+    .filter((job) => !status || job.status === status)
+    .filter((job) => matchesDateRange(job.scheduledAt, { startAt, endAt }))
+    .filter((job) => {
+      if (!organizationId && !type && !mode) return true;
+      const task = state.tasks.find((item) => item.id === job.taskId);
+      const plan = task ? state.plans.find((item) => item.id === task.planId) : null;
+      const content = plan ? contents.find((item) => item.id === plan.contentId) : null;
+      const effectiveOrganizationId = content?.organizationId || organizations[0]?.id || '';
+      if (organizationId && effectiveOrganizationId !== organizationId) return false;
+      if (type && content?.type !== type) return false;
+      if (mode && plan?.mode !== normalizeMode(mode)) return false;
+      return true;
+    })
     .slice()
     .sort((left, right) => String(right.scheduledAt).localeCompare(String(left.scheduledAt)))
-    .slice(0, Number(limit || 20));
+    .slice(0, Number(limit || 20))
+    .map((job) => {
+      const task = state.tasks.find((item) => item.id === job.taskId);
+      const plan = task ? state.plans.find((item) => item.id === task.planId) : null;
+      const content = plan ? contents.find((item) => item.id === plan.contentId) : null;
+      const user = state.users.find((item) => item.id === job.userId);
+      return {
+        ...job,
+        userNickname: user?.nickname || '',
+        mode: plan?.mode || '',
+        contentId: content?.id || '',
+        title: content?.title || job.payload?.title || ''
+      };
+    });
 }
 
 function dispatchNotificationJobs({ dueBefore = new Date().toISOString(), limit = 20 } = {}) {
@@ -892,19 +1281,119 @@ function listTodayFocus(userId = 'demo-user') {
   };
 }
 
-function getDashboard() {
+function buildRecentDailyTrend(rows, dateField, { startAt, endAt, maxDays = 7 } = {}) {
+  const normalizedEndAt = String(endAt || '').trim() || new Date().toISOString();
+  const normalizedStartAt = String(startAt || '').trim() || normalizedEndAt;
+  const endDate = new Date(normalizedEndAt);
+  const startDate = new Date(normalizedStartAt);
+  endDate.setUTCHours(0, 0, 0, 0);
+  startDate.setUTCHours(0, 0, 0, 0);
+  if (startDate.getTime() > endDate.getTime()) startDate.setTime(endDate.getTime());
+
+  const days = [];
+  for (let cursor = new Date(endDate); cursor.getTime() >= startDate.getTime() && days.length < maxDays; cursor.setUTCDate(cursor.getUTCDate() - 1)) {
+    days.unshift(cursor.toISOString().slice(0, 10));
+  }
+  if (!days.length) days.push(endDate.toISOString().slice(0, 10));
+
+  const counter = new Map(days.map((day) => [day, 0]));
+  rows.forEach((item) => {
+    const day = String(item?.[dateField] || '').slice(0, 10);
+    if (counter.has(day)) {
+      counter.set(day, Number(counter.get(day) || 0) + 1);
+    }
+  });
+
+  return days.map((day) => ({
+    day,
+    label: day.slice(5),
+    count: Number(counter.get(day) || 0)
+  }));
+}
+
+function buildModeDistribution(planRows = []) {
+  return planRows.reduce((summary, item) => {
+    const key = item.mode === 'playful' ? 'playful' : 'scientific';
+    summary[key] += 1;
+    summary.total += 1;
+    return summary;
+  }, { scientific: 0, playful: 0, total: 0 });
+}
+
+function getDashboard(filters = {}) {
+  const filteredContents = listContents({
+    organizationId: filters.organizationId,
+    type: filters.type,
+    mode: filters.mode
+  });
+  const contentIds = new Set(filteredContents.map((item) => item.id));
+  const filteredPlans = state.plans.filter((item) => (
+    contentIds.has(item.contentId) &&
+    matchesDateRange(item.createdAt, filters) &&
+    (!filters.mode || item.mode === normalizeMode(filters.mode))
+  ));
+  const filteredTasks = state.tasks.filter((item) => {
+    if (item.status !== 'completed') return false;
+    const plan = state.plans.find((entry) => entry.id === item.planId);
+    if (!plan) return false;
+    return contentIds.has(plan.contentId) &&
+      (!filters.mode || plan.mode === normalizeMode(filters.mode)) &&
+      matchesDateRange(item.completedAt || item.updatedAt, filters);
+  });
+  const filteredPracticeSessions = state.practiceSessions.filter((item) => (
+    contentIds.has(item.contentId) &&
+    (!filters.mode || item.mode === normalizeMode(filters.mode)) &&
+    matchesDateRange(item.createdAt, filters)
+  ));
+  const filteredRecitationSessions = state.recitationSessions.filter((item) => (
+    contentIds.has(item.contentId) &&
+    item.completed &&
+    matchesDateRange(item.createdAt, filters)
+  ));
+  const filteredAssets = state.assets.filter((item) => !filters.organizationId || item.organizationId === filters.organizationId);
+  const filteredAuditLogs = listAuditLogs({
+    organizationId: filters.organizationId,
+    startAt: filters.startAt,
+    endAt: filters.endAt,
+    limit: 999
+  });
+  const filteredMembers = filters.organizationId
+    ? state.organizationMembers.filter((item) => item.organizationId === filters.organizationId && item.status === 'active')
+    : state.organizationMembers.filter((item) => item.status === 'active');
+  const recentDispatches = listNotificationJobs({
+    includeAllUsers: true,
+    organizationId: filters.organizationId,
+    type: filters.type,
+    mode: filters.mode,
+    status: 'sent',
+    startAt: filters.startAt,
+    endAt: filters.endAt,
+    limit: 6
+  });
+
   return {
-    userCount: state.users.length,
-    contentCount: contents.length,
-    planCount: state.plans.length,
-    completedTaskCount: state.tasks.filter((item) => item.status === 'completed').length,
-    practiceSessionCount: state.practiceSessions.length,
-    recitationSessionCount: state.recitationSessions.filter((item) => item.completed).length,
-    assetCount: state.assets.length,
-    organizationCount: state.organizations.length,
-    auditLogCount: state.auditLogs.length,
-    recentPlans: state.plans.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 6),
-    recentRecitations: state.recitationSessions.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 6).map((item) => {
+    userCount: filteredMembers.length || state.users.length,
+    contentCount: filteredContents.length,
+    planCount: filteredPlans.length,
+    completedTaskCount: filteredTasks.length,
+    practiceSessionCount: filteredPracticeSessions.length,
+    recitationSessionCount: filteredRecitationSessions.length,
+    assetCount: filteredAssets.length,
+    organizationCount: filters.organizationId ? 1 : state.organizations.length,
+    auditLogCount: filteredAuditLogs.length,
+    modeDistribution: buildModeDistribution(filteredPlans),
+    practiceTrend: buildRecentDailyTrend(filteredPracticeSessions, 'createdAt', filters),
+    recitationTrend: buildRecentDailyTrend(filteredRecitationSessions, 'createdAt', filters),
+    recentDispatches,
+    recentPlans: filteredPlans
+      .slice()
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 6),
+    recentRecitations: filteredRecitationSessions
+      .slice()
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 6)
+      .map((item) => {
       const content = contents.find((entry) => entry.id === item.contentId);
       return {
         id: item.id,
@@ -914,13 +1403,29 @@ function getDashboard() {
         createdAt: item.createdAt
       };
     }),
-    recentAuditLogs: listAuditLogs({ limit: 6 })
+    recentAuditLogs: listAuditLogs({
+      limit: 6,
+      organizationId: filters.organizationId,
+      startAt: filters.startAt,
+      endAt: filters.endAt
+    })
   };
+}
+
+function matchesDateRange(value, filters = {}) {
+  const current = Date.parse(String(value || ''));
+  if (Number.isNaN(current)) return true;
+  const startAt = Date.parse(String(filters.startAt || ''));
+  const endAt = Date.parse(String(filters.endAt || ''));
+  if (!Number.isNaN(startAt) && current < startAt) return false;
+  if (!Number.isNaN(endAt) && current > endAt) return false;
+  return true;
 }
 
 function toContentSummary(content) {
   return {
     id: content.id,
+    organizationId: content.organizationId || organizations[0]?.id || '',
     title: content.title,
     subtitle: content.subtitle,
     type: content.type,
@@ -930,13 +1435,28 @@ function toContentSummary(content) {
     lengthTier: content.lengthTier,
     planDays: content.planDays,
     scene: content.scene,
+    sourceNote: content.sourceNote || '',
+    versionNote: content.versionNote || '',
+    sourceContentId: content.sourceContentId || '',
+    sourceVersionNo: content.sourceVersionNo || null,
     accessLevel: content.accessLevel,
+    publishStatus: content.publishStatus || 'draft',
+    reviewStatus: content.reviewStatus || 'draft',
+    reviewedAt: content.reviewedAt || null,
+    createdAt: content.createdAt || null,
+    updatedAt: content.updatedAt || null,
     defaultMode: normalizeMode(content.defaultMode || 'scientific'),
     supportedModes: normalizeSupportedModes(content.supportedModes || ['scientific', 'playful'], content.defaultMode || 'scientific'),
     supportsRecitation: content.supportsRecitation !== false,
     recommendedRecitationTime: content.recommendedRecitationTime || '',
     recitationTheme: content.recitationTheme || ''
   };
+}
+
+function matchesContentMode(content, mode) {
+  const normalizedMode = normalizeMode(mode);
+  const supportedModes = normalizeSupportedModes(content.supportedModes || [], content.defaultMode || 'scientific');
+  return supportedModes.includes(normalizedMode) || normalizeMode(content.defaultMode) === normalizedMode;
 }
 
 function toContentDetail(content) {
@@ -983,6 +1503,11 @@ module.exports = {
   addOrganizationMember,
   archiveAsset,
   archiveContent,
+  archiveFestival,
+  copyContentAsNewVersion,
+  createFestival,
+  listAdminContents,
+  listAdminFestivals,
   createNotificationJob,
   dispatchNotificationJobs,
   createRecitationSession,
@@ -997,6 +1522,7 @@ module.exports = {
   createContent,
   completeTask,
   getContent,
+  listContentVersions,
   listAuditLogs,
   listContents,
   listFestivals,
@@ -1007,6 +1533,7 @@ module.exports = {
   listTodayFocus,
   updateAsset,
   updateContent,
+  updateFestival,
   updateAssetAccess,
   upsertRecitationGoal,
   upsertNotificationSetting,

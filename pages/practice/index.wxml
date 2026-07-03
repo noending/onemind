@@ -26,6 +26,17 @@
       </view>
     </view>
     <text class="helper-text">{{helperText}}</text>
+    <view wx:if="{{showFullTextStrip}}" class="fulltext-strip {{shortFullTextStrip ? 'short' : ''}}">
+      <text class="fulltext-label">全文</text>
+      <scroll-view class="fulltext-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+        <view class="fulltext-line">
+          <view wx:for="{{fullTextUnits}}" wx:for-item="unit" wx:key="key" class="fulltext-unit {{unit.punctuation ? 'punctuation' : ''}}">
+            <text class="fulltext-pinyin">{{unit.pinyin}}</text>
+            <text class="fulltext-char">{{unit.text}}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
     <text class="step-tip">步骤 {{stepIndex + 1}} / {{stepTotal}}</text>
   </view>
 
@@ -46,7 +57,7 @@
 
     <view wx:if="{{stepIndex < stepTotal - 1}}" class="segment-head">
       <text class="segment-label">{{mode === 'playful' ? '节奏卡片' : '拆段练习'}} · {{displaySegments.length}} 句</text>
-      <text class="segment-progress">已揭开 {{revealed.length}} / {{displaySegments.length}}</text>
+      <text class="segment-progress">{{method === '拆段跟读' ? '已跟读' : '已揭开'}} {{revealed.length}} / {{displaySegments.length}}</text>
     </view>
 
     <view wx:if="{{stepIndex < stepTotal - 1}}" wx:for="{{displaySegments}}" wx:key="i" class="segment-card {{item.revealed ? 'revealed' : ''}} {{mode === 'playful' ? 'playful' : ''}}" data-index="{{index}}" bindtap="reveal">
@@ -55,7 +66,12 @@
       </view>
       <view class="segment-copy">
         <text class="segment-index">{{index + 1}} / {{displaySegments.length}}</text>
-        <text class="segment-text">{{item.text}}</text>
+        <view class="segment-line {{item.compact ? 'compact' : ''}}">
+          <view wx:for="{{item.units}}" wx:for-item="unit" wx:key="key" class="segment-unit {{unit.hidden ? 'hidden' : ''}} {{unit.punctuation ? 'punctuation' : ''}}">
+            <text class="unit-pinyin">{{unit.pinyin}}</text>
+            <text class="unit-text">{{unit.text}}</text>
+          </view>
+        </view>
         <text wx:if="{{item.hint}}" class="segment-hint">◉ {{item.hint}}</text>
       </view>
     </view>

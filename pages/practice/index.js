@@ -36,26 +36,122 @@ function getStatusBarHeight() {
   }
 }
 
+function isPronouncedChar(char) {
+  return /[\u3400-\u9fff\uf900-\ufaff]/.test(char);
+}
+
+function splitPinyin(pinyin) {
+  return String(pinyin || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function displayCharForMethod(char, method, isRevealed, pronouncedIndex, halfPoint) {
+  if (!isPronouncedChar(char)) return char;
+  if (method === "拆段跟读" || isRevealed) return char;
+  if (method === "首字提示") return pronouncedIndex === 0 ? char : "＿";
+  if (method === "遮挡回忆") return "•";
+  return pronouncedIndex < halfPoint ? char : "＿";
+}
+
+function makeSegmentUnits(segment, pinyin, method, isRevealed) {
+  const chars = Array.from(String(segment || ""));
+  const tokens = splitPinyin(pinyin);
+  const pronouncedTotal = chars.filter(isPronouncedChar).length;
+  const halfPoint = Math.max(1, Math.floor(pronouncedTotal / 2));
+  let pronouncedIndex = 0;
+
+  return chars.map((char, charIndex) => {
+    const pronounced = isPronouncedChar(char);
+    const pinyinText = pronounced ? (tokens[pronouncedIndex] || "") : "";
+    const text = displayCharForMethod(char, method, isRevealed, pronouncedIndex, halfPoint);
+    const unit = {
+      key: `${charIndex}-${char}`,
+      text,
+      pinyin: pinyinText,
+      hidden: pronounced && text !== char,
+      punctuation: !pronounced
+    };
+
+    if (pronounced) pronouncedIndex += 1;
+    return unit;
+  });
+}
+
+function makeFullTextUnits(content) {
+  const text = String(content && (content.body || content.preview || "") || "").replace(/\s+/g, "");
+  const pinyin = Array.isArray(content && content.pinyinSegments)
+    ? content.pinyinSegments.join(" ")
+    : "";
+  return makeSegmentUnits(text, pinyin, "拆段跟读", true);
+}
+
+function shouldUseShortFullText(content) {
+  const text = String(content && (content.body || content.preview || "") || "").replace(/\s+/g, "");
+  return Array.from(text).filter(isPronouncedChar).length <= 10;
+}
+
+function resolvePracticeContent(contentId, plan) {
+  const snapshot = plan && plan.contentSnapshot;
+  return findContent(contentId)
+    || findContent(snapshot && snapshot.id)
+    || snapshot
+    || contents[0];
+}
+
 function makeDisplaySegments(content, method, revealed) {
-  return content.segments.map((segment, index) => {
+  const segments = Array.isArray(content.segments) ? content.segments : [];
+  const pinyinSegments = Array.isArray(content.pinyinSegments) ? content.pinyinSegments : [];
+  const compact = content.lengthTier === "short" || content.lengthLevel === "short";
+
+  return segments.map((segment, index) => {
     const isRevealed = revealed.includes(index) || method === "拆段跟读";
+    const pinyin = pinyinSegments[index] || "";
 
     if (method === "拆段跟读" || isRevealed) {
-      return { i: index, text: segment, hint: "", revealed: true };
+      return {
+        i: index,
+        text: segment,
+        pinyin,
+        units: makeSegmentUnits(segment, pinyin, method, isRevealed),
+        compact,
+        hint: "",
+        revealed: true
+      };
     }
 
     if (method === "首字提示") {
-      return { i: index, text: `${segment[0]}__`, hint: "点击显示全句", revealed: false };
+      return {
+        i: index,
+        text: `${segment[0]}__`,
+        pinyin,
+        units: makeSegmentUnits(segment, pinyin, method, isRevealed),
+        compact,
+        hint: "点击显示全句",
+        revealed: false
+      };
     }
 
     if (method === "遮挡回忆") {
-      return { i: index, text: "•".repeat(segment.length), hint: "在心中默诵后揭开", revealed: false };
+      return {
+        i: index,
+        text: "•".repeat(segment.length),
+        pinyin,
+        units: makeSegmentUnits(segment, pinyin, method, isRevealed),
+        compact,
+        hint: "在心中默诵后揭开",
+        revealed: false
+      };
     }
 
     const mid = Math.max(1, Math.floor(segment.length / 2));
     return {
       i: index,
       text: `${segment.slice(0, mid)}${"＿".repeat(segment.length - mid)}`,
+      pinyin,
+      units: makeSegmentUnits(segment, pinyin, method, isRevealed),
+      compact,
       hint: "先回忆，再揭开核对",
       revealed: false
     };
@@ -142,6 +238,9 @@ Page({
     headerTop: 54,
     revealed: [],
     displaySegments: [],
+    fullTextUnits: [],
+    showFullTextStrip: false,
+    shortFullTextStrip: false,
     finished: false,
     recommendation: null,
     growthStage: "初见",
@@ -165,12 +264,14 @@ Page({
   onLoad(options) {
     syncPlansFromBackend().finally(() => {
       const plan = options.planId ? getPlan(options.planId) : null;
-      const content = findContent(options.id) || (plan && plan.contentSnapshot) || contents[0];
+      const content = resolvePracticeContent(options.id, plan);
       const task = firstOpenTask(plan);
       const rawMethod = task ? task.method : this.data.method;
       const stepIndex = this.findStepIndex(rawMethod);
       const method = TRAINING_STEPS[stepIndex].method;
       const mode = plan ? (plan.mode || "scientific") : "scientific";
+      const showFullTextStrip = content.lengthTier === "short" || content.lengthLevel === "short";
+      const shortFullTextStrip = showFullTextStrip && shouldUseShortFullText(content);
       const headerTop = getStatusBarHeight() + 16;
       const copy = buildModeCopy(mode, plan, task);
       const riskTitle = mode === "scientific" && plan && plan.state === "at_risk" ? "遗忘风险偏高" : "";
@@ -192,6 +293,9 @@ Page({
         growthStage: growthStageFromScore(plan ? plan.masteryScore : 0),
         progressPct: calcProgress(content, []),
         displaySegments: makeDisplaySegments(content, method, []),
+        fullTextUnits: showFullTextStrip ? makeFullTextUnits(content) : [],
+        showFullTextStrip,
+        shortFullTextStrip,
         stepIndex,
         stepTotal: TRAINING_STEPS.length,
         stepTitle: TRAINING_STEPS[stepIndex].title,

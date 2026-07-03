@@ -94,11 +94,35 @@ function buildDueList(focus) {
     })));
 }
 
-function buildFocusGroups(dueList) {
+function buildFocusGroups(dueList, hasPlanState) {
   const groupMap = {
-    scientific: { key: "scientific", title: "科学背诵", desc: "按记忆曲线回稳今天的内容", tasks: [] },
-    playful: { key: "playful", title: "趣味背诵", desc: "先推进一点，再回看一点", tasks: [] },
-    recitation: { key: "recitation", title: "日常读诵", desc: "通过读诵维持节律", tasks: [] }
+    scientific: {
+      key: "scientific",
+      title: "科学背诵",
+      desc: "按记忆曲线回稳今天的内容",
+      emptyTitle: hasPlanState ? "今天没有待复习段落" : "先选一段内容开始科学背诵",
+      emptyDesc: hasPlanState ? "可以去选内容页再加一段新的长期计划。" : "从短咒、短偈或经文片段里先请一段，建立第一条记忆曲线。",
+      emptyAction: hasPlanState ? "去加新内容" : "开始建计划",
+      tasks: []
+    },
+    playful: {
+      key: "playful",
+      title: "成长背诵",
+      desc: "先推进一点，再回看一点",
+      emptyTitle: "还没有成长背诵任务",
+      emptyDesc: "去选一段适合趣味推进的内容，先推进一点，再慢慢稳住它。",
+      emptyAction: "去选趣味内容",
+      tasks: []
+    },
+    recitation: {
+      key: "recitation",
+      title: "今日读诵",
+      desc: "通过读诵维持节律",
+      emptyTitle: "还没有今日读诵",
+      emptyDesc: "先加入一段每日读诵内容，哪怕一天一轮，也能把节律先建起来。",
+      emptyAction: "去加入读诵",
+      tasks: []
+    }
   };
 
   (dueList || []).forEach((item) => {
@@ -109,7 +133,6 @@ function buildFocusGroups(dueList) {
 
   return ["scientific", "playful", "recitation"]
     .map((key) => groupMap[key])
-    .filter((group) => group.tasks.length > 0)
     .map((group) => ({
       ...group,
       count: group.tasks.length
@@ -180,7 +203,7 @@ Page({
       const playfulTasks = focus.playfulTasks || [];
       const recitationTasks = focus.recitationTasks || [];
       const dueList = buildDueList(focus);
-      const focusGroups = buildFocusGroups(dueList);
+      const focusGroups = buildFocusGroups(dueList, hasPlans());
       const nextDueCard = dueList[0] || null;
       const summaryCards = [
         { key: "scientific", label: "科学", count: scientificTasks.length, desc: "回稳" },
@@ -293,8 +316,44 @@ Page({
     wx.reLaunch({ url: "/pages/library/index" });
   },
 
-  openFestival() {
+  openGroupGuide() {
     wx.reLaunch({ url: "/pages/library/index" });
+  },
+
+  openFestival() {
+    const festival = this.data.featuredFestival || null;
+    const recommended = (festival && festival.recommendedContents) || [];
+    const first = recommended[0];
+    if (first && first.id) {
+      wx.navigateTo({
+        url: `/pages/practice/index?id=${first.id}&festivalId=${encodeURIComponent(festival.id || "")}&festivalName=${encodeURIComponent(festival.name || "")}&festivalSource=home-card`
+      });
+      return;
+    }
+    this.openFestivalShelf();
+  },
+
+  openFestivalContent(event) {
+    const festival = this.data.featuredFestival || null;
+    const contentId = event.currentTarget.dataset.id;
+    if (!contentId) {
+      this.openFestival();
+      return;
+    }
+    wx.navigateTo({
+      url: `/pages/practice/index?id=${contentId}&festivalId=${encodeURIComponent(festival && festival.id || "")}&festivalName=${encodeURIComponent(festival && festival.name || "")}&festivalSource=home-chip`
+    });
+  },
+
+  openFestivalShelf() {
+    const festival = this.data.featuredFestival || null;
+    if (!festival || !festival.id) {
+      this.goLibrary();
+      return;
+    }
+    wx.reLaunch({
+      url: `/pages/library/index?festivalId=${encodeURIComponent(festival.id)}&festivalName=${encodeURIComponent(festival.name || "")}&festivalSource=${encodeURIComponent(this.data.festivalSource || "local")}`
+    });
   },
 
   refreshToday() {

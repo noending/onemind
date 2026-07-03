@@ -331,6 +331,11 @@
   line-height: 50rpx;
 }
 
+.ghost-group-button {
+  background: rgba(255, 250, 242, 0.72);
+  border: 1rpx solid #dcc7ac;
+}
+
 .review-card {
   margin-bottom: 14rpx;
   padding: 24rpx;
@@ -429,6 +434,40 @@
   line-height: 50rpx;
 }
 
+.group-empty {
+  padding: 24rpx;
+  border-radius: 32rpx;
+  background: rgba(255, 250, 242, 0.78);
+  border: 1rpx dashed rgba(220, 199, 172, 0.95);
+}
+
+.group-empty-title {
+  display: block;
+  color: #5f4639;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.group-empty-desc {
+  display: block;
+  margin-top: 10rpx;
+  color: #8a7860;
+  font-size: 22rpx;
+  line-height: 1.55;
+}
+
+.group-empty-button {
+  margin-top: 18rpx;
+  width: 188rpx;
+  height: 50rpx;
+  border-radius: 999rpx;
+  background: #efe3cb;
+  color: #7e2a1c;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 50rpx;
+}
+
 .festival-card {
   margin-top: 20rpx;
   padding: 24rpx;
@@ -478,11 +517,54 @@
   line-height: 1.4;
 }
 
+.festival-source {
+  margin-top: 8rpx;
+  color: rgba(91, 55, 35, 0.72);
+  font-size: 20rpx;
+  line-height: 1.4;
+}
+
+.festival-chip-row {
+  margin-top: 12rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.festival-chip {
+  padding: 10rpx 16rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 250, 242, 0.68);
+  border: 1rpx solid rgba(139, 51, 34, 0.1);
+}
+
+.festival-chip-text {
+  color: #7e2a1c;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.festival-shelf-button {
+  margin-top: 14rpx;
+  width: fit-content;
+  min-width: 0;
+  height: 48rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 250, 242, 0.78);
+  color: #7e2a1c;
+  font-size: 21rpx;
+  font-weight: 700;
+  line-height: 48rpx;
+  border: 1rpx solid rgba(139, 51, 34, 0.12);
+}
+
 .home-note {
   display: block;
   margin: 24rpx 4rpx 0;
   color: #9a8579;
-  font-size: 20rpx;
+  text-align: center;
+  font-size: 21rpx;
   line-height: 1.5;
 }
 

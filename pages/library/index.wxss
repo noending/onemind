@@ -43,6 +43,96 @@
   color: #fff8ed;
 }
 
+.festival-filters {
+  margin: -8rpx 0 18rpx;
+  display: flex;
+  gap: 10rpx;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.festival-filter {
+  flex-shrink: 0;
+  height: 44rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: rgba(242, 172, 62, 0.12);
+  color: #8b5a1e;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 44rpx;
+  border: 1rpx solid rgba(241, 154, 54, 0.2);
+}
+
+.festival-filter.active {
+  background: #8b5a1e;
+  color: #fff7eb;
+  border-color: #8b5a1e;
+}
+
+.festival-spotlight {
+  margin-bottom: 16rpx;
+  padding: 24rpx;
+  border-radius: 34rpx;
+  background: linear-gradient(145deg, rgba(255, 243, 221, 0.96), rgba(248, 233, 205, 0.92));
+  border: 1rpx solid rgba(241, 154, 54, 0.18);
+}
+
+.festival-spotlight-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.festival-spotlight-kicker {
+  display: block;
+  color: #8b5a1e;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.festival-spotlight-title {
+  display: block;
+  margin-top: 6rpx;
+  color: #351b18;
+  font-size: 34rpx;
+  font-weight: 500;
+  line-height: 1.22;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+.festival-spotlight-desc {
+  display: block;
+  margin-top: 8rpx;
+  color: #80655c;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.festival-spotlight-meta {
+  display: block;
+  margin-top: 14rpx;
+  color: #8e7d71;
+  font-size: 20rpx;
+  line-height: 1.45;
+}
+
+.festival-clear-button {
+  flex-shrink: 0;
+  height: 48rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid rgba(166, 49, 39, 0.16);
+  background: rgba(255, 250, 242, 0.9);
+  color: #8d2f22;
+  font-size: 21rpx;
+  font-weight: 700;
+  line-height: 48rpx;
+}
+
 .content-card {
   margin-bottom: 14rpx;
   min-height: 194rpx;

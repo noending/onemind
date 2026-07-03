@@ -1,4 +1,4 @@
-const { listContents } = require("../../common/api");
+const { listContents, listFestivals } = require("../../common/api");
 const {
   createPlanWithFallback,
   getPlanRows,
@@ -49,7 +49,18 @@ Page({
     contentSource: "本地演示数据",
     loading: true,
     modeCards: [],
-    longSeries: null
+    longSeries: null,
+    festivalOptions: [],
+    festivalFilterId: "",
+    festivalSource: "",
+    activeFestival: null
+  },
+
+  onLoad(options = {}) {
+    this.setData({
+      festivalFilterId: options.festivalId || "",
+      festivalSource: options.festivalSource || ""
+    });
   },
 
   onShow() {
@@ -58,29 +69,48 @@ Page({
 
   loadContents() {
     this.setData({ loading: true });
-    listContents().then(({ contents, status }) => {
-      const enhanced = this.attachPlanState(contents);
-      const filteredContents = this.filterContents(enhanced, this.data.activeFilter);
+    Promise.all([listContents(), listFestivals()]).then(([contentResult, festivalResult]) => {
+      const enhanced = this.attachPlanState(contentResult.contents || []);
+      const festivalOptions = festivalResult.festivals || [];
+      const activeFestival = festivalOptions.find((item) => item.id === this.data.festivalFilterId) || null;
+      const filteredContents = this.filterContents(enhanced, this.data.activeFilter, activeFestival);
       this.setData({
         contents: enhanced,
         filteredContents,
-        longSeries: this.buildLongSeries(enhanced),
-        contentSource: status.statusText,
+        longSeries: this.buildLongSeries(this.getFestivalScopedContents(enhanced, activeFestival)),
+        contentSource: contentResult.status.statusText,
+        festivalOptions,
+        activeFestival,
+        festivalSource: this.data.festivalSource || festivalResult.source || "",
         loading: false
       });
     });
   },
 
-  filterContents(contents, activeFilter) {
+  getFestivalScopedContents(contents, activeFestival) {
+    if (!activeFestival || !Array.isArray(activeFestival.recommendedContents) || !activeFestival.recommendedContents.length) {
+      return contents;
+    }
+    const allowedIds = new Set(activeFestival.recommendedContents.map((item) => item.id));
+    return contents.filter((item) => allowedIds.has(item.id));
+  },
+
+  filterContents(contents, activeFilter, activeFestival = this.data.activeFestival) {
+    const scoped = this.getFestivalScopedContents(contents, activeFestival);
     return activeFilter === "全部"
-      ? contents
-      : contents.filter((item) => item.category === activeFilter);
+      ? scoped
+      : scoped.filter((item) => item.category === activeFilter);
   },
 
   changeFilter(event) {
     const activeFilter = event.currentTarget.dataset.filter;
-    const filteredContents = this.filterContents(this.data.contents, activeFilter);
-    this.setData({ activeFilter, filteredContents });
+    const scoped = this.getFestivalScopedContents(this.data.contents, this.data.activeFestival);
+    const filteredContents = this.filterContents(this.data.contents, activeFilter, this.data.activeFestival);
+    this.setData({
+      activeFilter,
+      filteredContents,
+      longSeries: this.buildLongSeries(scoped)
+    });
   },
 
   attachPlanState(contents) {
@@ -131,7 +161,8 @@ Page({
   },
 
   pickLongSeries() {
-    const firstLong = (this.data.contents || []).find((item) => item.lengthTier === "long");
+    const firstLong = this.getFestivalScopedContents(this.data.contents || [], this.data.activeFestival)
+      .find((item) => item.lengthTier === "long");
     if (!firstLong) {
       wx.showToast({ title: "暂无长咒内容", icon: "none" });
       return;
@@ -143,8 +174,30 @@ Page({
     });
   },
 
-  closeSheet() {
-    this.setData({ picked: null, showLongTip: false, modeCards: [] });
+  applyFestivalFilter(event) {
+    const festivalId = event.currentTarget.dataset.id || "";
+    const activeFestival = (this.data.festivalOptions || []).find((item) => item.id === festivalId) || null;
+    const filteredContents = this.filterContents(this.data.contents, this.data.activeFilter, activeFestival);
+    this.setData({
+      festivalFilterId: festivalId,
+      activeFestival,
+      filteredContents,
+      longSeries: this.buildLongSeries(this.getFestivalScopedContents(this.data.contents, activeFestival))
+    });
+  },
+
+  clearFestivalFilter() {
+    const filteredContents = this.filterContents(this.data.contents, this.data.activeFilter, null);
+    this.setData({
+      festivalFilterId: "",
+      activeFestival: null,
+      filteredContents,
+      longSeries: this.buildLongSeries(this.data.contents)
+    });
+  },
+
+  closeSheet(callback) {
+    this.setData({ picked: null, showLongTip: false, modeCards: [] }, callback);
   },
 
   acceptPlan(event) {
@@ -152,7 +205,10 @@ Page({
     const mode = event.currentTarget.dataset.mode || "scientific";
     createPlanWithFallback(this.data.picked, mode)
       .then((savedPlan) => {
-        wx.navigateTo({ url: `/pages/practice/index?id=${this.data.picked.id}&planId=${savedPlan.id}` });
+        const contentId = this.data.picked.id;
+        this.closeSheet(() => {
+          wx.navigateTo({ url: `/pages/practice/index?id=${contentId}&planId=${savedPlan.id}` });
+        });
       })
       .catch(() => {
         wx.showToast({ title: "创建计划失败", icon: "none" });
@@ -161,6 +217,7 @@ Page({
 
   startRecitation() {
     if (!this.data.picked) return;
+    const contentId = this.data.picked.id;
     const payload = {
       goalType: "daily",
       preferredPeriod: this.data.picked.recommendedRecitationTime || "morning",
@@ -168,8 +225,10 @@ Page({
     };
     saveRecitationGoalWithFallback(this.data.picked, payload)
       .then((goal) => {
-        wx.navigateTo({
-          url: `/pages/recitation/index?id=${this.data.picked.id}&goalId=${(goal && goal.id) || ""}&period=${payload.preferredPeriod}`
+        this.closeSheet(() => {
+          wx.navigateTo({
+            url: `/pages/recitation/index?id=${contentId}&goalId=${(goal && goal.id) || ""}&period=${payload.preferredPeriod}`
+          });
         });
       })
       .catch(() => {

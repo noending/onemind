@@ -7,6 +7,9 @@
     "check:home": "node check-home-parity.mjs",
     "check:library": "node check-library-parity.mjs",
     "check:ui": "node check-ui-parity.mjs",
+    "loop:next": "node dev-loop.mjs next",
+    "loop:next:json": "node dev-loop.mjs next --json",
+    "loop:list": "node dev-loop.mjs list",
     "compare:shop": "node compare-shop-screenshots.mjs",
     "compare:library": "node compare-library-screenshots.mjs",
     "compare:ui": "node compare-ui-screenshots.mjs"

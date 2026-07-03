@@ -30,6 +30,14 @@
       </view>
     </view>
 
+    <view class="shop-stats">
+      <view wx:for="{{shopStats}}" wx:key="key" class="shop-stat-card">
+        <text class="shop-stat-value">{{item.value}}</text>
+        <text class="shop-stat-label">{{item.label}}</text>
+        <text class="shop-stat-desc">{{item.desc}}</text>
+      </view>
+    </view>
+
     <view wx:if="{{visibleProducts.length}}">
       <view wx:for="{{visibleProducts}}" wx:key="id" class="product-card card" data-id="{{item.id}}" bindtap="openProduct">
         <view class="cover" style="background: {{item.color}};">
@@ -56,6 +64,46 @@
     <view wx:else class="empty-card card">
       <text class="empty-title">该分类暂无商品</text>
       <text class="empty-desc">可以切换到其他分类，或先收藏你喜欢的内容。</text>
+    </view>
+
+    <view wx:if="{{recentViewProducts.length}}" class="record-section">
+      <view class="record-head">
+        <view>
+          <text class="record-title">最近看过</text>
+          <text class="record-desc">这些记录会跟着本地缓存一起保留。</text>
+        </view>
+      </view>
+      <scroll-view class="recent-scroll" scroll-x="true" show-scrollbar="false">
+        <view class="recent-row">
+          <view wx:for="{{recentViewProducts}}" wx:key="id" class="recent-pill" data-id="{{item.id}}" bindtap="openProduct">
+            <text class="recent-pill-title">{{item.title}}</text>
+            <text class="recent-pill-meta">{{item.viewedAtText || item.tag}}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <view class="record-section">
+      <view class="record-head">
+        <view>
+          <text class="record-title">{{preferencePanel.title}}</text>
+          <text class="record-desc">{{preferencePanel.sourceText}}</text>
+        </view>
+      </view>
+      <view wx:if="{{preferencePanel.records.length}}">
+        <view wx:for="{{preferencePanel.records}}" wx:key="id" class="record-card card" data-id="{{item.id}}" bindtap="openProduct">
+          <view class="record-main">
+            <text class="record-kicker">{{item.kicker}}</text>
+            <text class="record-item-title">{{item.title}}</text>
+            <text class="record-item-meta">{{item.meta}}</text>
+          </view>
+          <text class="record-accent {{item.accentTone}}">{{item.accent}}</text>
+        </view>
+      </view>
+      <view wx:else class="record-empty card">
+        <text class="record-empty-title">还没有真实偏好记录</text>
+        <text class="record-empty-desc">先看看、收藏或加购一件内容，这里就不会再是静态展示。</text>
+      </view>
     </view>
 
     <text class="shop-note">所有内容承诺无水印 · 一次购买长期可用</text>

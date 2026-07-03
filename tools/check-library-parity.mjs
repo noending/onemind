@@ -54,11 +54,28 @@ function runChecks() {
       check: () => /buildLongSeries/.test(js) && /lengthTier === "long"/.test(js)
     },
     {
+      id: "logic.festival-filter",
+      check: () => includesEvery(js, [
+        "listFestivals",
+        "festivalFilterId",
+        "applyFestivalFilter",
+        "clearFestivalFilter"
+      ])
+    },
+    {
       id: "structure.title-filters",
       check: () => includesEvery(wxml, [
         "选一段内容",
         "class=\"filters\"",
         "wx:for=\"{{filters}}\""
+      ])
+    },
+    {
+      id: "structure.festival-spotlight",
+      check: () => includesEvery(wxml, [
+        "class=\"festival-filters\"",
+        "class=\"festival-spotlight card\"",
+        "festival-clear-button"
       ])
     },
     {

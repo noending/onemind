@@ -2,10 +2,13 @@ const {
   addOrganizationMember,
   archiveAsset,
   archiveContent,
+  archiveFestival,
   createNotificationJob,
   createRecitationSession,
   createAsset,
   createContent,
+  createFestival,
+  copyContentAsNewVersion,
   createPlan,
   dispatchNotificationJobs,
   completeTask,
@@ -17,7 +20,10 @@ const {
   getNotificationSettings,
   getStoreMode,
   getUserById,
+  listAdminContents,
+  listAdminFestivals,
   listAuditLogs,
+  listContentVersions,
   listContents,
   listFestivals,
   listNotificationJobs,
@@ -31,6 +37,7 @@ const {
   upsertRecitationGoal,
   updateAsset,
   updateContent,
+  updateFestival,
   updateAssetAccess
 } = require('./repositories/store');
 
@@ -218,6 +225,9 @@ async function handleRequest(req, res, body) {
     return sendJson(res, 200, {
       data: listNotificationJobs({
         userId: userSession.id,
+        startAt: requestUrl.searchParams.get('startAt'),
+        endAt: requestUrl.searchParams.get('endAt'),
+        status: requestUrl.searchParams.get('status'),
         limit: requestUrl.searchParams.get('limit')
       })
     });
@@ -234,9 +244,16 @@ async function handleRequest(req, res, body) {
   }
 
   if (req.method === 'GET' && pathname === '/api/admin/overview') {
+    const overviewFilters = {
+      startAt: requestUrl.searchParams.get('startAt'),
+      endAt: requestUrl.searchParams.get('endAt'),
+      organizationId: requestUrl.searchParams.get('organizationId'),
+      type: requestUrl.searchParams.get('type'),
+      mode: requestUrl.searchParams.get('mode')
+    };
     return sendJson(res, 200, {
       data: {
-        ...(getDashboard ? getDashboard() : {
+        ...(getDashboard ? getDashboard(overviewFilters) : {
           userCount: 0,
           contentCount: listContents({}).length,
           planCount: listPlans(DEMO_USER_ID).length,
@@ -258,6 +275,32 @@ async function handleRequest(req, res, body) {
     });
   }
 
+  if (req.method === 'GET' && pathname === '/api/admin/contents') {
+    return sendJson(res, 200, {
+      data: listAdminContents({
+        type: requestUrl.searchParams.get('type'),
+        organizationId: requestUrl.searchParams.get('organizationId'),
+        mode: requestUrl.searchParams.get('mode'),
+        publishStatus: requestUrl.searchParams.get('publishStatus'),
+        reviewStatus: requestUrl.searchParams.get('reviewStatus')
+      })
+    });
+  }
+
+  if (req.method === 'GET' && pathname.startsWith('/api/admin/contents/') && pathname.endsWith('/versions')) {
+    const contentId = decodeURIComponent(pathname.replace('/api/admin/contents/', '').replace('/versions', '').replace(/\/$/, ''));
+    return sendJson(res, 200, {
+      data: listContentVersions(contentId)
+    });
+  }
+
+  if (req.method === 'POST' && pathname.startsWith('/api/admin/contents/') && pathname.endsWith('/copy-version')) {
+    const contentId = decodeURIComponent(pathname.replace('/api/admin/contents/', '').replace('/copy-version', '').replace(/\/$/, ''));
+    return sendJson(res, 201, {
+      data: copyContentAsNewVersion(contentId, parseJsonBody(body))
+    });
+  }
+
   if (req.method === 'PUT' && pathname.startsWith('/api/admin/contents/')) {
     const contentId = decodeURIComponent(pathname.replace('/api/admin/contents/', ''));
     return sendJson(res, 200, {
@@ -269,6 +312,32 @@ async function handleRequest(req, res, body) {
     const contentId = decodeURIComponent(pathname.replace('/api/admin/contents/', ''));
     return sendJson(res, 200, {
       data: archiveContent(contentId)
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/festivals') {
+    return sendJson(res, 200, {
+      data: listAdminFestivals()
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/festivals') {
+    return sendJson(res, 201, {
+      data: createFestival(parseJsonBody(body))
+    });
+  }
+
+  if (req.method === 'PUT' && pathname.startsWith('/api/admin/festivals/')) {
+    const festivalId = decodeURIComponent(pathname.replace('/api/admin/festivals/', ''));
+    return sendJson(res, 200, {
+      data: updateFestival(festivalId, parseJsonBody(body))
+    });
+  }
+
+  if (req.method === 'DELETE' && pathname.startsWith('/api/admin/festivals/')) {
+    const festivalId = decodeURIComponent(pathname.replace('/api/admin/festivals/', ''));
+    return sendJson(res, 200, {
+      data: archiveFestival(festivalId)
     });
   }
 
@@ -295,7 +364,9 @@ async function handleRequest(req, res, body) {
   if (req.method === 'GET' && pathname === '/api/contents') {
     return sendJson(res, 200, {
       data: listContents({
-        type: requestUrl.searchParams.get('type')
+        type: requestUrl.searchParams.get('type'),
+        organizationId: requestUrl.searchParams.get('organizationId'),
+        mode: requestUrl.searchParams.get('mode')
       })
     });
   }
@@ -443,7 +514,25 @@ async function handleRequest(req, res, body) {
     return sendJson(res, 200, {
       data: listAuditLogs({
         organizationId: requestUrl.searchParams.get('organizationId'),
+        startAt: requestUrl.searchParams.get('startAt'),
+        endAt: requestUrl.searchParams.get('endAt'),
         limit: requestUrl.searchParams.get('limit')
+      })
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/notification-jobs') {
+    return sendJson(res, 200, {
+      data: listNotificationJobs({
+        userId: requestUrl.searchParams.get('userId'),
+        organizationId: requestUrl.searchParams.get('organizationId'),
+        type: requestUrl.searchParams.get('type'),
+        mode: requestUrl.searchParams.get('mode'),
+        status: requestUrl.searchParams.get('status'),
+        startAt: requestUrl.searchParams.get('startAt'),
+        endAt: requestUrl.searchParams.get('endAt'),
+        limit: requestUrl.searchParams.get('limit'),
+        includeAllUsers: true
       })
     });
   }
@@ -624,9 +713,16 @@ function getRequiredPermission(method, pathname) {
   if (pathname.startsWith('/api/admin/')) {
     if (pathname === '/api/admin/overview' || pathname === '/api/admin/session') return 'admin.read';
     if (pathname === '/api/admin/notification-jobs/dispatch' && method === 'POST') return 'admin.read';
+    if (pathname === '/api/admin/contents' && method === 'GET') return 'admin.read';
     if (pathname === '/api/admin/contents' && method === 'POST') return 'content.write';
+    if (pathname.startsWith('/api/admin/contents/') && pathname.endsWith('/versions') && method === 'GET') return 'admin.read';
+    if (pathname.startsWith('/api/admin/contents/') && pathname.endsWith('/copy-version') && method === 'POST') return 'content.write';
     if (pathname.startsWith('/api/admin/contents/') && method === 'PUT') return 'content.write';
     if (pathname.startsWith('/api/admin/contents/') && method === 'DELETE') return 'content.publish';
+    if (pathname === '/api/admin/festivals' && method === 'GET') return 'admin.read';
+    if (pathname === '/api/admin/festivals' && method === 'POST') return 'content.write';
+    if (pathname.startsWith('/api/admin/festivals/') && method === 'PUT') return 'content.write';
+    if (pathname.startsWith('/api/admin/festivals/') && method === 'DELETE') return 'content.publish';
     if (pathname === '/api/admin/assets' && method === 'POST') return 'asset.write';
     if (pathname.startsWith('/api/admin/assets/') && method === 'PUT') return 'asset.write';
     if (pathname.startsWith('/api/admin/assets/') && method === 'DELETE') return 'asset.publish';

@@ -38,8 +38,8 @@
     </view>
 
     <view class="list-head">
-      <text class="list-title">今日任务</text>
-      <text class="list-count">{{dueList.length}} 段</text>
+      <text class="list-title">今日三类任务</text>
+      <text class="list-count">{{totalFocusCount}} 项</text>
     </view>
 
     <view wx:if="{{loading}}" class="loading-list">
@@ -51,37 +51,46 @@
       </view>
     </view>
 
-    <view wx:elif="{{dueList.length === 0}}" class="empty-card card">
+    <view wx:elif="{{allDone}}" class="empty-card card">
       <text class="empty-title">今日圆满</text>
-      <text class="empty-desc">在「选内容」里再请一段，明日继续修持。</text>
+      <text class="empty-desc">今天的三类任务都已清空，你也可以顺手为明天再请一段新内容。</text>
       <button class="empty-button" bindtap="goLibrary">去选内容</button>
     </view>
 
-    <view wx:else>
+    <view wx:if="{{!loading}}">
       <view wx:for="{{focusGroups}}" wx:key="key" class="focus-group">
         <view class="group-head">
           <view>
             <text class="group-title">{{item.title}}</text>
             <text class="group-desc">{{item.desc}}</text>
           </view>
-          <button class="group-button" data-group-key="{{item.key}}" bindtap="openFirstInGroup">先做这组</button>
+          <button wx:if="{{item.count > 0}}" class="group-button" data-group-key="{{item.key}}" bindtap="openFirstInGroup">先做这组</button>
+          <button wx:else class="group-button ghost-group-button" data-group-key="{{item.key}}" bindtap="openGroupGuide">{{item.emptyAction}}</button>
         </view>
 
-        <view wx:for="{{item.tasks}}" wx:key="contentId" wx:for-item="task" class="review-card card" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}" bindtap="openDueItem" hover-class="review-card-hover">
-          <view class="review-head">
-            <view class="tag-row">
-              <text class="tag-primary">{{task.modeTag}}</text>
-              <text class="tag-secondary">{{task.metaTag}}</text>
-              <text class="tag-secondary">{{task.methodTag}}</text>
+        <view wx:if="{{item.tasks.length > 0}}">
+          <view wx:for="{{item.tasks}}" wx:key="contentId" wx:for-item="task" class="review-card card" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}" bindtap="openDueItem" hover-class="review-card-hover">
+            <view class="review-head">
+              <view class="tag-row">
+                <text class="tag-primary">{{task.modeTag}}</text>
+                <text class="tag-secondary">{{task.metaTag}}</text>
+                <text class="tag-secondary">{{task.methodTag}}</text>
+              </view>
+              <text class="arrow">›</text>
             </view>
-            <text class="arrow">›</text>
+            <text class="review-title">{{task.title}}</text>
+            <text class="review-body">{{task.body}}</text>
+            <view class="review-foot">
+              <text class="review-meta">◷ {{task.meta}}</text>
+              <button class="review-action" catchtap="openDueItem" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}">{{task.actionText}}</button>
+            </view>
           </view>
-          <text class="review-title">{{task.title}}</text>
-          <text class="review-body">{{task.body}}</text>
-          <view class="review-foot">
-            <text class="review-meta">◷ {{task.meta}}</text>
-            <button class="review-action" catchtap="openDueItem" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}">{{task.actionText}}</button>
-          </view>
+        </view>
+
+        <view wx:else class="group-empty card">
+          <text class="group-empty-title">{{item.emptyTitle}}</text>
+          <text class="group-empty-desc">{{item.emptyDesc}}</text>
+          <button class="group-empty-button" data-group-key="{{item.key}}" bindtap="openGroupGuide">{{item.emptyAction}}</button>
         </view>
       </view>
     </view>
@@ -92,6 +101,20 @@
         <text class="festival-date">{{featuredFestival.date}} · 节日精选</text>
         <text class="festival-title">{{featuredFestival.name}}</text>
         <text class="festival-desc">{{featuredFestival.reason || '推荐相关经咒内容'}}</text>
+        <text class="festival-source">来源：{{festivalSource === 'backend' ? '后台专题' : (festivalSource === 'fallback' ? '本地兜底专题' : '本地专题')}}</text>
+        <view wx:if="{{featuredFestival.recommendedContents.length > 0}}" class="festival-chip-row">
+          <view
+            wx:for="{{featuredFestival.recommendedContents}}"
+            wx:key="id"
+            wx:for-item="content"
+            class="festival-chip"
+            data-id="{{content.id}}"
+            catchtap="openFestivalContent"
+          >
+            <text class="festival-chip-text">{{content.title}}</text>
+          </view>
+        </view>
+        <button class="festival-shelf-button" catchtap="openFestivalShelf">查看专题内容</button>
       </view>
       <text class="arrow">›</text>
     </view>

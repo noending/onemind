@@ -7,6 +7,24 @@
       <text wx:for="{{filters}}" wx:key="*this" class="filter {{activeFilter === item ? 'active' : ''}}" data-filter="{{item}}" bindtap="changeFilter">{{item}}</text>
     </view>
 
+    <view wx:if="{{festivalOptions.length}}" class="festival-filters">
+      <text wx:for="{{festivalOptions}}" wx:key="id" class="festival-filter {{festivalFilterId === item.id ? 'active' : ''}}" data-id="{{item.id}}" bindtap="applyFestivalFilter">
+        {{item.name}}
+      </text>
+    </view>
+
+    <view wx:if="{{activeFestival}}" class="festival-spotlight card">
+      <view class="festival-spotlight-head">
+        <view>
+          <text class="festival-spotlight-kicker">节日专题</text>
+          <text class="festival-spotlight-title">{{activeFestival.name}}</text>
+          <text class="festival-spotlight-desc">{{activeFestival.reason || '顺着专题继续修持推荐内容。'}}</text>
+        </view>
+        <button class="festival-clear-button" bindtap="clearFestivalFilter">清除</button>
+      </view>
+      <text class="festival-spotlight-meta">当前筛出 {{filteredContents.length}} 条内容 · 来源 {{festivalSource || 'local'}}</text>
+    </view>
+
     <view wx:if="{{longSeries && (activeFilter === '全部' || activeFilter === '长咒')}}" class="series-card" bindtap="pickLongSeries">
       <view class="series-tags">
         <text class="series-tag">长咒 · 系列</text>

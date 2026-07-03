@@ -51,7 +51,18 @@ function runChecks() {
     },
     {
       id: "logic.home-dueList",
-      check: () => /const dueList = \[\]/.test(homeJs) && /scientificTasks/.test(homeJs) && /playfulTasks/.test(homeJs)
+      check: () => /function buildDueList/.test(homeJs)
+        && /scientificTasks/.test(homeJs)
+        && /playfulTasks/.test(homeJs)
+        && /recitationTasks/.test(homeJs)
+    },
+    {
+      id: "logic.festival-source-routing",
+      check: () => includesEvery(homeJs, [
+        "festivalId=",
+        "festivalSource=home-card",
+        "openFestivalShelf"
+      ])
     },
     {
       id: "structure.today-card",
@@ -64,8 +75,17 @@ function runChecks() {
     {
       id: "structure.review-loop",
       check: () => includesEvery(homeWxml, [
-        "wx:for=\"{{dueList}}\"",
+        "wx:for=\"{{focusGroups}}\"",
+        "wx:for=\"{{item.tasks}}\"",
         "class=\"review-card card\""
+      ])
+    },
+    {
+      id: "structure.festival-entry",
+      check: () => includesEvery(homeWxml, [
+        "class=\"festival-card\"",
+        "festival-shelf-button",
+        "festival-source"
       ])
     },
     {

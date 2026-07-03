@@ -107,6 +107,26 @@ function ensureAdminSchema() {
 
 function ensureFeatureSchema() {
   queryScalar(`
+    alter table contents
+      add column if not exists source_note text
+  `);
+  queryScalar(`
+    alter table contents
+      add column if not exists version_note text
+  `);
+  queryScalar(`
+    alter table contents
+      add column if not exists review_status varchar(32) not null default 'draft'
+  `);
+  queryScalar(`
+    alter table contents
+      add column if not exists source_content_id uuid references contents(id)
+  `);
+  queryScalar(`
+    alter table contents
+      add column if not exists source_version_no int
+  `);
+  queryScalar(`
     alter table memory_plans
       add column if not exists mode varchar(32) not null default 'scientific'
   `);
@@ -297,27 +317,73 @@ function calculateDailyStreak(days) {
 
 function listContents(filters = {}) {
   const where = [
-    "publish_status = 'published'",
-    'deleted_at is null'
+    "c.publish_status = 'published'",
+    'c.deleted_at is null'
   ];
-  if (filters.type) where.push(`type = ${sqlValue(filters.type)}`);
+  if (filters.type) where.push(`c.type = ${sqlValue(filters.type)}`);
+  if (filters.organizationId) where.push(`c.organization_id = ${sqlValue(normalizeId(filters.organizationId))}`);
 
   return queryRows(`
     select
-      id::text as "id",
-      title,
-      subtitle,
-      type,
-      body,
-      preview,
-      length_tier as "lengthTier",
-      plan_days as "planDays",
-      scene,
-      access_level as "accessLevel"
-    from contents
+      c.id::text as "id",
+      c.organization_id::text as "organizationId",
+      c.title,
+      c.subtitle,
+      c.type,
+      c.body,
+      c.preview,
+      c.length_tier as "lengthTier",
+      c.plan_days as "planDays",
+      c.scene,
+      c.source_note as "sourceNote",
+      c.version_note as "versionNote",
+      c.source_content_id::text as "sourceContentId",
+      c.source_version_no as "sourceVersionNo",
+      c.access_level as "accessLevel",
+      c.publish_status as "publishStatus",
+      c.review_status as "reviewStatus",
+      c.reviewed_at as "reviewedAt",
+      c.created_at as "createdAt",
+      c.updated_at as "updatedAt"
+    from contents c
     where ${where.join(' and ')}
-    order by created_at asc
-  `).map(enrichContentSummary);
+    order by c.created_at asc
+  `).map(enrichContentSummary).filter((content) => !filters.mode || matchesContentMode(content, filters.mode));
+}
+
+function listAdminContents(filters = {}) {
+  const where = ['c.deleted_at is null'];
+  if (filters.type) where.push(`c.type = ${sqlValue(filters.type)}`);
+  if (filters.organizationId) where.push(`c.organization_id = ${sqlValue(normalizeId(filters.organizationId))}`);
+  if (filters.publishStatus) where.push(`c.publish_status = ${sqlValue(filters.publishStatus)}`);
+  if (filters.reviewStatus) where.push(`c.review_status = ${sqlValue(filters.reviewStatus)}`);
+
+  return queryRows(`
+    select
+      c.id::text as "id",
+      c.organization_id::text as "organizationId",
+      c.title,
+      c.subtitle,
+      c.type,
+      c.body,
+      c.preview,
+      c.length_tier as "lengthTier",
+      c.plan_days as "planDays",
+      c.scene,
+      c.source_note as "sourceNote",
+      c.version_note as "versionNote",
+      c.source_content_id::text as "sourceContentId",
+      c.source_version_no as "sourceVersionNo",
+      c.access_level as "accessLevel",
+      c.publish_status as "publishStatus",
+      c.review_status as "reviewStatus",
+      c.reviewed_at as "reviewedAt",
+      c.created_at as "createdAt",
+      c.updated_at as "updatedAt"
+    from contents c
+    where ${where.join(' and ')}
+    order by c.updated_at desc, c.created_at desc
+  `).map(enrichContentSummary).filter((content) => !filters.mode || matchesContentMode(content, filters.mode));
 }
 
 function getContentModeConfig(contentId) {
@@ -406,6 +472,67 @@ function enrichContentSummary(content) {
   };
 }
 
+function matchesContentMode(content, mode) {
+  const normalizedMode = normalizeMode(mode);
+  const supportedModes = normalizeSupportedModes(content.supportedModes, content.defaultMode || 'scientific');
+  return supportedModes.includes(normalizedMode) || normalizeMode(content.defaultMode) === normalizedMode;
+}
+
+function nextContentVersionNo(contentId) {
+  return Number(queryScalar(`
+    select coalesce(max(version_no), 0) + 1
+    from content_versions
+    where content_id = ${sqlValue(contentId)}
+  `) || 1);
+}
+
+function createContentVersionSnapshot(content, { changeNote = '' } = {}) {
+  const contentId = normalizeId(content?.id);
+  if (!contentId) return null;
+  const versionNo = nextContentVersionNo(contentId);
+  return queryReturningOne(`
+    insert into content_versions (
+      content_id,
+      version_no,
+      snapshot_json,
+      change_note,
+      created_by
+    ) values (
+      ${sqlValue(contentId)},
+      ${versionNo},
+      ${sqlJson(content)}::jsonb,
+      ${sqlValue(String(changeNote || '').trim() || content.versionNote || '自动保存版本快照')},
+      ${sqlValue(IDS.adminUser)}
+    )
+    returning
+      id::text as "id",
+      content_id::text as "contentId",
+      version_no as "versionNo",
+      snapshot_json as "snapshotJson",
+      change_note as "changeNote",
+      created_by::text as "createdBy",
+      created_at as "createdAt"
+  `);
+}
+
+function listContentVersions(contentId) {
+  const normalizedContentId = normalizeId(contentId);
+  if (!normalizedContentId) return [];
+  return queryRows(`
+    select
+      id::text as "id",
+      content_id::text as "contentId",
+      version_no as "versionNo",
+      snapshot_json as "snapshotJson",
+      change_note as "changeNote",
+      created_by::text as "createdBy",
+      created_at as "createdAt"
+    from content_versions
+    where content_id = ${sqlValue(normalizedContentId)}
+    order by version_no desc, created_at desc
+  `);
+}
+
 function createContent(payload = {}) {
   const title = String(payload.title || '').trim();
   const body = String(payload.body || payload.preview || '').trim();
@@ -419,8 +546,12 @@ function createContent(payload = {}) {
   const lengthTier = payload.lengthTier || 'short';
   const planDays = Math.max(1, Number(payload.planDays || 1));
   const accessLevel = payload.accessLevel || 'public';
-  const publishStatus = payload.publishStatus || 'published';
+  const publishStatus = payload.publishStatus || 'draft';
+  const reviewStatus = payload.reviewStatus || (publishStatus === 'published' ? 'approved' : 'draft');
   const segments = normalizeSegments(payload.segments, body);
+  const organizationId = normalizeId(payload.organizationId) || IDS.organization;
+  const sourceContentId = normalizeId(payload.sourceContentId);
+  const sourceVersionNo = payload.sourceVersionNo ? Number(payload.sourceVersionNo) : null;
 
   const content = queryReturningOne(`
     insert into contents (
@@ -432,8 +563,13 @@ function createContent(payload = {}) {
       length_tier,
       plan_days,
       scene,
+      source_note,
+      version_note,
       access_level,
       publish_status,
+      review_status,
+      source_content_id,
+      source_version_no,
       organization_id,
       created_by,
       reviewed_by,
@@ -448,16 +584,22 @@ function createContent(payload = {}) {
       ${sqlValue(lengthTier)},
       ${planDays},
       ${sqlValue(payload.scene || '后台新增内容')},
+      ${sqlValue(payload.sourceNote || '')},
+      ${sqlValue(payload.versionNote || '')},
       ${sqlValue(accessLevel)},
       ${sqlValue(publishStatus)},
-      ${sqlValue(IDS.organization)},
+      ${sqlValue(reviewStatus)},
+      ${sqlValue(sourceContentId)},
+      ${sqlValue(sourceVersionNo)},
+      ${sqlValue(organizationId)},
       ${sqlValue(IDS.adminUser)},
-      ${sqlValue(IDS.adminUser)},
-      now(),
+      ${reviewStatus === 'draft' ? 'null' : sqlValue(IDS.adminUser)},
+      ${reviewStatus === 'draft' ? 'null' : 'now()'},
       case when ${sqlValue(publishStatus)} = 'published' then now() else null end
     )
     returning
       id::text as "id",
+      organization_id::text as "organizationId",
       title,
       subtitle,
       type,
@@ -466,7 +608,16 @@ function createContent(payload = {}) {
       length_tier as "lengthTier",
       plan_days as "planDays",
       scene,
-      access_level as "accessLevel"
+      source_note as "sourceNote",
+      version_note as "versionNote",
+      source_content_id::text as "sourceContentId",
+      source_version_no as "sourceVersionNo",
+      access_level as "accessLevel",
+      publish_status as "publishStatus",
+      review_status as "reviewStatus",
+      reviewed_at as "reviewedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
   `);
 
   segments.forEach((segment, index) => {
@@ -481,18 +632,72 @@ function createContent(payload = {}) {
 
   appendAuditLog({
     action: 'content.created',
-    organizationId: IDS.organization,
+    organizationId,
     targetType: 'content',
     targetId: content.id,
     detail: {
       title,
       type,
       accessLevel,
-      publishStatus
+      publishStatus,
+      reviewStatus
     }
   });
 
   return getContent(content.id);
+}
+
+function copyContentAsNewVersion(contentId, payload = {}) {
+  const source = getContent(contentId);
+  if (!source) {
+    const error = new Error('Content not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const snapshot = createContentVersionSnapshot(source, {
+    changeNote: payload.changeNote || `复制新版本前保存 ${source.title} 的当前快照`
+  });
+  const versionNote = String(payload.versionNote || '').trim() || `基于版本 v${snapshot.versionNo} 复制`;
+  const cloned = createContent({
+    title: source.title,
+    subtitle: source.subtitle,
+    type: source.type,
+    body: source.body,
+    preview: source.preview,
+    planDays: source.planDays,
+    lengthTier: source.lengthTier,
+    scene: source.scene,
+    sourceNote: source.sourceNote,
+    versionNote,
+    accessLevel: source.accessLevel,
+    organizationId: source.organizationId,
+    publishStatus: 'draft',
+    reviewStatus: 'reviewing',
+    defaultMode: source.defaultMode,
+    supportedModes: source.supportedModes,
+    supportsRecitation: source.supportsRecitation,
+    recommendedRecitationTime: source.recommendedRecitationTime,
+    recitationTheme: source.recitationTheme,
+    sourceContentId: source.id,
+    sourceVersionNo: snapshot.versionNo,
+    segments: source.segments
+  });
+
+  appendAuditLog({
+    action: 'content.version_copied',
+    organizationId: source.organizationId || IDS.organization,
+    targetType: 'content',
+    targetId: cloned.id,
+    detail: {
+      sourceContentId: source.id,
+      sourceTitle: source.title,
+      sourceVersionNo: snapshot.versionNo,
+      versionNote
+    }
+  });
+
+  return cloned;
 }
 
 function updateContent(contentId, payload = {}) {
@@ -512,7 +717,21 @@ function updateContent(contentId, payload = {}) {
     throw error;
   }
 
+  if (existing.publishStatus === 'published') {
+    createContentVersionSnapshot(existing, {
+      changeNote: payload.versionNote || '更新已发布内容前自动保存版本快照'
+    });
+  }
+
   const segments = normalizeSegments(payload.segments, body);
+  const publishStatus = payload.publishStatus || existing.publishStatus || 'draft';
+  const reviewStatus = payload.reviewStatus
+    || (publishStatus === 'published'
+      ? (existing.reviewStatus === 'rejected' ? 'rejected' : 'approved')
+      : existing.reviewStatus || 'draft');
+  const organizationId = normalizeId(payload.organizationId) || existing.organizationId || IDS.organization;
+  const sourceContentId = payload.sourceContentId !== undefined ? normalizeId(payload.sourceContentId) : (existing.sourceContentId || null);
+  const sourceVersionNo = payload.sourceVersionNo !== undefined ? Number(payload.sourceVersionNo || 0) || null : (existing.sourceVersionNo || null);
   const updated = queryReturningOne(`
     update contents
     set
@@ -524,12 +743,23 @@ function updateContent(contentId, payload = {}) {
       length_tier = ${sqlValue(payload.lengthTier || existing.lengthTier)},
       plan_days = ${Math.max(1, Number(payload.planDays || existing.planDays || 1))},
       scene = ${sqlValue(payload.scene || existing.scene || '')},
+      source_note = ${sqlValue(payload.sourceNote !== undefined ? payload.sourceNote : existing.sourceNote || '')},
+      version_note = ${sqlValue(payload.versionNote !== undefined ? payload.versionNote : existing.versionNote || '')},
       access_level = ${sqlValue(payload.accessLevel || existing.accessLevel || 'public')},
+      publish_status = ${sqlValue(publishStatus)},
+      review_status = ${sqlValue(reviewStatus)},
+      source_content_id = ${sqlValue(sourceContentId)},
+      source_version_no = ${sqlValue(sourceVersionNo)},
+      organization_id = ${sqlValue(organizationId)},
+      reviewed_by = ${reviewStatus === 'draft' ? 'null' : sqlValue(IDS.adminUser)},
+      reviewed_at = ${reviewStatus === 'draft' ? 'null' : 'now()'},
+      published_at = case when ${sqlValue(publishStatus)} = 'published' then coalesce(published_at, now()) else null end,
       updated_at = now()
     where id = ${sqlValue(id)}
       and deleted_at is null
     returning
       id::text as "id",
+      organization_id::text as "organizationId",
       title,
       subtitle,
       type,
@@ -538,7 +768,16 @@ function updateContent(contentId, payload = {}) {
       length_tier as "lengthTier",
       plan_days as "planDays",
       scene,
-      access_level as "accessLevel"
+      source_note as "sourceNote",
+      version_note as "versionNote",
+      source_content_id::text as "sourceContentId",
+      source_version_no as "sourceVersionNo",
+      access_level as "accessLevel",
+      publish_status as "publishStatus",
+      review_status as "reviewStatus",
+      reviewed_at as "reviewedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
   `);
 
   queryScalar(`delete from content_segments where content_id = ${sqlValue(id)}`);
@@ -560,15 +799,45 @@ function updateContent(contentId, payload = {}) {
 
   appendAuditLog({
     action: 'content.updated',
-    organizationId: IDS.organization,
+    organizationId,
     targetType: 'content',
     targetId: id,
     detail: {
       beforeTitle: existing.title,
       afterTitle: updated.title,
-      type: updated.type
+      type: updated.type,
+      beforePublishStatus: existing.publishStatus || 'draft',
+      afterPublishStatus: updated.publishStatus || 'draft',
+      beforeReviewStatus: existing.reviewStatus || 'draft',
+      afterReviewStatus: updated.reviewStatus || 'draft'
     }
   });
+
+  if ((existing.publishStatus || 'draft') !== (updated.publishStatus || 'draft')) {
+    appendAuditLog({
+      action: 'content.publish_status_changed',
+      organizationId,
+      targetType: 'content',
+      targetId: id,
+      detail: {
+        beforePublishStatus: existing.publishStatus || 'draft',
+        afterPublishStatus: updated.publishStatus || 'draft'
+      }
+    });
+  }
+
+  if ((existing.reviewStatus || 'draft') !== (updated.reviewStatus || 'draft')) {
+    appendAuditLog({
+      action: 'content.review_status_changed',
+      organizationId,
+      targetType: 'content',
+      targetId: id,
+      detail: {
+        beforeReviewStatus: existing.reviewStatus || 'draft',
+        afterReviewStatus: updated.reviewStatus || 'draft'
+      }
+    });
+  }
 
   return getContent(id);
 }
@@ -586,7 +855,6 @@ function archiveContent(contentId) {
     update contents
     set
       publish_status = 'archived',
-      deleted_at = now(),
       updated_at = now()
     where id = ${sqlValue(id)}
       and deleted_at is null
@@ -617,6 +885,7 @@ function getContent(contentId) {
   const content = queryOne(`
     select
       id::text as "id",
+      organization_id::text as "organizationId",
       title,
       subtitle,
       type,
@@ -625,7 +894,16 @@ function getContent(contentId) {
       length_tier as "lengthTier",
       plan_days as "planDays",
       scene,
-      access_level as "accessLevel"
+      source_note as "sourceNote",
+      version_note as "versionNote",
+      source_content_id::text as "sourceContentId",
+      source_version_no as "sourceVersionNo",
+      access_level as "accessLevel",
+      publish_status as "publishStatus",
+      review_status as "reviewStatus",
+      reviewed_at as "reviewedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
     from contents
     where id = ${sqlValue(id)}
       and deleted_at is null
@@ -647,24 +925,24 @@ function getContent(contentId) {
   });
 }
 
-function listFestivals() {
-  const rows = queryRows(`
-    select
-      id::text as "id",
-      name,
-      lunar_date as "lunarDate",
-      solar_date as "solarDate",
-      related_figure as "relatedFigure",
-      description
-    from festivals
-    where publish_status = 'published'
-      and deleted_at is null
-    order by created_at asc
-  `);
+function normalizeFestivalContentIds(value) {
+  const ids = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',').map((item) => item.trim()).filter(Boolean)
+      : [];
 
-  return rows.map((festival) => ({
-    ...festival,
-    recommendedContents: queryRows(`
+  return Array.from(new Set(
+    ids
+      .map((item) => normalizeId(item))
+      .filter(Boolean)
+      .filter((contentId) => Boolean(getContent(contentId)))
+  ));
+}
+
+function hydrateFestivalRows(rows) {
+  return rows.map((festival) => {
+    const relations = queryRows(`
       select
         c.id::text as "id",
         c.title,
@@ -679,8 +957,195 @@ function listFestivals() {
       join contents c on c.id = fc.content_id
       where fc.festival_id = ${sqlValue(festival.id)}
       order by fc.sort_order asc
-    `).map(enrichContentSummary)
-  }));
+    `).map(enrichContentSummary);
+
+    return {
+      ...festival,
+      recommendedContentIds: relations.map((item) => item.id),
+      recommendedContents: relations
+    };
+  });
+}
+
+function syncFestivalContents(festivalId, recommendedContentIds) {
+  queryScalar(`delete from festival_contents where festival_id = ${sqlValue(festivalId)}`);
+  normalizeFestivalContentIds(recommendedContentIds).forEach((contentId, index) => {
+    queryScalar(`
+      insert into festival_contents (festival_id, content_id, relation_type, sort_order)
+      values (
+        ${sqlValue(festivalId)},
+        ${sqlValue(contentId)},
+        'recommended_content',
+        ${index + 1}
+      )
+      returning id::text
+    `);
+  });
+}
+
+function queryFestivalRows({ includeUnpublished = false } = {}) {
+  return queryRows(`
+    select
+      id::text as "id",
+      name,
+      lunar_date as "lunarDate",
+      solar_date as "solarDate",
+      related_figure as "relatedFigure",
+      description,
+      publish_status as "publishStatus",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from festivals
+    where deleted_at is null
+      ${includeUnpublished ? '' : "and publish_status = 'published'"}
+    order by updated_at desc, created_at asc
+  `);
+}
+
+function listFestivals() {
+  return hydrateFestivalRows(queryFestivalRows({ includeUnpublished: false }));
+}
+
+function listAdminFestivals() {
+  return hydrateFestivalRows(queryFestivalRows({ includeUnpublished: true }));
+}
+
+function createFestival(payload = {}) {
+  const name = String(payload.name || '').trim();
+  if (!name) {
+    const error = new Error('Festival name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const publishStatus = payload.publishStatus || 'draft';
+  const festival = queryReturningOne(`
+    insert into festivals (
+      name,
+      lunar_date,
+      solar_date,
+      related_figure,
+      description,
+      publish_status
+    ) values (
+      ${sqlValue(name)},
+      ${sqlValue(String(payload.lunarDate || '').trim())},
+      ${sqlValue(String(payload.solarDate || '').trim() || null)},
+      ${sqlValue(String(payload.relatedFigure || '').trim())},
+      ${sqlValue(String(payload.description || '').trim())},
+      ${sqlValue(publishStatus)}
+    )
+    returning
+      id::text as "id",
+      name,
+      lunar_date as "lunarDate",
+      solar_date as "solarDate",
+      related_figure as "relatedFigure",
+      description,
+      publish_status as "publishStatus",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `);
+
+  syncFestivalContents(festival.id, payload.recommendedContentIds);
+  appendAuditLog({
+    action: 'festival.created',
+    organizationId: IDS.organization,
+    targetType: 'festival',
+    targetId: festival.id,
+    detail: {
+      name: festival.name,
+      publishStatus: festival.publishStatus,
+      recommendedContentIds: normalizeFestivalContentIds(payload.recommendedContentIds)
+    }
+  });
+  return listAdminFestivals().find((item) => item.id === festival.id) || festival;
+}
+
+function updateFestival(festivalId, payload = {}) {
+  const id = normalizeId(festivalId);
+  const existing = listAdminFestivals().find((item) => item.id === id);
+  if (!existing) {
+    const error = new Error('Festival not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const name = String(payload.name !== undefined ? payload.name : existing.name).trim();
+  if (!name) {
+    const error = new Error('Festival name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  queryReturningOne(`
+    update festivals
+    set
+      name = ${sqlValue(name)},
+      lunar_date = ${sqlValue(payload.lunarDate !== undefined ? String(payload.lunarDate || '').trim() : existing.lunarDate || '')},
+      solar_date = ${sqlValue(payload.solarDate !== undefined ? String(payload.solarDate || '').trim() || null : existing.solarDate || null)},
+      related_figure = ${sqlValue(payload.relatedFigure !== undefined ? String(payload.relatedFigure || '').trim() : existing.relatedFigure || '')},
+      description = ${sqlValue(payload.description !== undefined ? String(payload.description || '').trim() : existing.description || '')},
+      publish_status = ${sqlValue(payload.publishStatus || existing.publishStatus || 'draft')},
+      updated_at = now()
+    where id = ${sqlValue(id)}
+      and deleted_at is null
+    returning id::text as "id"
+  `);
+
+  if (payload.recommendedContentIds !== undefined) {
+    syncFestivalContents(id, payload.recommendedContentIds);
+  }
+
+  const current = listAdminFestivals().find((item) => item.id === id);
+  appendAuditLog({
+    action: 'festival.updated',
+    organizationId: IDS.organization,
+    targetType: 'festival',
+    targetId: id,
+    detail: {
+      beforeName: existing.name,
+      afterName: current?.name || name,
+      beforePublishStatus: existing.publishStatus,
+      afterPublishStatus: current?.publishStatus || payload.publishStatus || existing.publishStatus,
+      recommendedContentIds: current?.recommendedContentIds || existing.recommendedContentIds
+    }
+  });
+  return current || existing;
+}
+
+function archiveFestival(festivalId) {
+  const id = normalizeId(festivalId);
+  const existing = listAdminFestivals().find((item) => item.id === id);
+  if (!existing) {
+    const error = new Error('Festival not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  queryReturningOne(`
+    update festivals
+    set
+      publish_status = 'archived',
+      updated_at = now()
+    where id = ${sqlValue(id)}
+      and deleted_at is null
+    returning id::text as "id"
+  `);
+
+  appendAuditLog({
+    action: 'festival.archived',
+    organizationId: IDS.organization,
+    targetType: 'festival',
+    targetId: id,
+    detail: {
+      name: existing.name
+    }
+  });
+  return listAdminFestivals().find((item) => item.id === id) || {
+    ...existing,
+    publishStatus: 'archived'
+  };
 }
 
 function listPlans(userId = IDS.demoUser) {
@@ -1288,6 +1753,10 @@ function listAuditLogs(filters = {}) {
   const where = ['true'];
   const organizationId = normalizeId(filters.organizationId);
   if (organizationId) where.push(`organization_id = ${sqlValue(organizationId)}`);
+  const startAt = normalizeDateTimeFilter(filters.startAt);
+  const endAt = normalizeDateTimeFilter(filters.endAt);
+  if (startAt) where.push(`created_at >= ${sqlValue(startAt)}`);
+  if (endAt) where.push(`created_at <= ${sqlValue(endAt)}`);
 
   return queryRows(`
     select
@@ -1307,49 +1776,207 @@ function listAuditLogs(filters = {}) {
   `);
 }
 
-function getDashboard() {
-  const overview = queryOne(`
+function buildRecentDailyTrend(rows, dateField, { startAt, endAt, maxDays = 7 } = {}) {
+  const normalizedEndAt = normalizeDateTimeFilter(endAt) || new Date().toISOString();
+  const normalizedStartAt = normalizeDateTimeFilter(startAt) || normalizedEndAt;
+  const endDate = new Date(normalizedEndAt);
+  const startDate = new Date(normalizedStartAt);
+  endDate.setUTCHours(0, 0, 0, 0);
+  startDate.setUTCHours(0, 0, 0, 0);
+  if (startDate.getTime() > endDate.getTime()) startDate.setTime(endDate.getTime());
+
+  const days = [];
+  for (let cursor = new Date(endDate); cursor.getTime() >= startDate.getTime() && days.length < maxDays; cursor.setUTCDate(cursor.getUTCDate() - 1)) {
+    days.unshift(cursor.toISOString().slice(0, 10));
+  }
+  if (!days.length) days.push(endDate.toISOString().slice(0, 10));
+
+  const counter = new Map(days.map((day) => [day, 0]));
+  rows.forEach((item) => {
+    const day = String(item?.[dateField] || '').slice(0, 10);
+    if (counter.has(day)) {
+      counter.set(day, Number(counter.get(day) || 0) + 1);
+    }
+  });
+
+  return days.map((day) => ({
+    day,
+    label: day.slice(5),
+    count: Number(counter.get(day) || 0)
+  }));
+}
+
+function buildModeDistribution(planRows = []) {
+  return planRows.reduce((summary, item) => {
+    const key = item.mode === 'playful' ? 'playful' : 'scientific';
+    summary[key] += 1;
+    summary.total += 1;
+    return summary;
+  }, { scientific: 0, playful: 0, total: 0 });
+}
+
+function getDashboard(filters = {}) {
+  const startAt = normalizeDateTimeFilter(filters.startAt);
+  const endAt = normalizeDateTimeFilter(filters.endAt);
+  const selectedOrganizationId = normalizeId(filters.organizationId);
+  const selectedMode = filters.mode ? normalizeMode(filters.mode) : '';
+  const filteredContents = listContents({
+    organizationId: selectedOrganizationId,
+    type: filters.type,
+    mode: selectedMode
+  });
+  const contentIds = new Set(filteredContents.map((item) => item.id));
+  const inDateRange = (value) => matchesDateRange(value, { startAt, endAt });
+
+  const planRows = queryRows(`
     select
-      (select count(*)::int from users where deleted_at is null) as "userCount",
-      (select count(*)::int from contents where deleted_at is null) as "contentCount",
-      (select count(*)::int from memory_plans where deleted_at is null) as "planCount",
-      (select count(*)::int from review_tasks where status = 'completed') as "completedTaskCount",
-      (select count(*)::int from practice_sessions) as "practiceSessionCount",
-      (select count(*)::int from recitation_sessions where completed = true) as "recitationSessionCount",
-      (select count(*)::int from assets where deleted_at is null) as "assetCount",
-      (select count(*)::int from organizations where deleted_at is null) as "organizationCount",
-      (select count(*)::int from audit_logs) as "auditLogCount"
-  `);
+      mp.id::text as "id",
+      mp.content_id::text as "contentId",
+      mp.title,
+      mp.mode,
+      mp.state,
+      mp.mastery_score as "masteryScore",
+      mp.created_at as "createdAt"
+    from memory_plans mp
+    where mp.deleted_at is null
+    order by mp.created_at desc
+  `).filter((item) => (
+    contentIds.has(item.contentId) &&
+    (!selectedMode || item.mode === selectedMode) &&
+    inDateRange(item.createdAt)
+  ));
+
+  const completedTaskRows = queryRows(`
+    select
+      rt.id::text as "id",
+      rt.plan_id::text as "planId",
+      rt.completed_at as "completedAt",
+      mp.content_id::text as "contentId",
+      mp.mode
+    from review_tasks rt
+    join memory_plans mp on mp.id = rt.plan_id
+    where rt.status = 'completed'
+      and mp.deleted_at is null
+  `).filter((item) => (
+    contentIds.has(item.contentId) &&
+    (!selectedMode || item.mode === selectedMode) &&
+    inDateRange(item.completedAt)
+  ));
+
+  const practiceRows = queryRows(`
+    select
+      ps.id::text as "id",
+      ps.content_id::text as "contentId",
+      ps.mode,
+      ps.created_at as "createdAt"
+    from practice_sessions ps
+  `).filter((item) => (
+    contentIds.has(item.contentId) &&
+    (!selectedMode || item.mode === selectedMode) &&
+    inDateRange(item.createdAt)
+  ));
+
+  const recitationRows = queryRows(`
+    select
+      rs.id::text as "id",
+      rs.content_id::text as "contentId",
+      rs.period,
+      rs.round_count as "roundCount",
+      rs.created_at as "createdAt",
+      rs.completed,
+      c.title
+    from recitation_sessions rs
+    join contents c on c.id = rs.content_id
+  `).filter((item) => (
+    item.completed &&
+    contentIds.has(item.contentId) &&
+    inDateRange(item.createdAt)
+  ));
+
+  const assetRows = queryRows(`
+    select
+      id::text as "id",
+      organization_id::text as "organizationId"
+    from assets
+    where deleted_at is null
+  `).filter((item) => !selectedOrganizationId || item.organizationId === selectedOrganizationId);
+
+  const auditRows = listAuditLogs({
+    organizationId: selectedOrganizationId,
+    startAt,
+    endAt,
+    limit: 999
+  });
+
+  const organizationMembers = selectedOrganizationId
+    ? queryRows(`
+      select distinct user_id::text as "userId"
+      from organization_members
+      where organization_id = ${sqlValue(selectedOrganizationId)}
+        and status = 'active'
+    `)
+    : [];
+
+  const totalUsers = selectedOrganizationId
+    ? organizationMembers.length
+    : Number(queryScalar(`select count(*)::int from users where deleted_at is null`) || 0);
+
+  const totalOrganizations = selectedOrganizationId
+    ? 1
+    : Number(queryScalar(`select count(*)::int from organizations where deleted_at is null`) || 0);
+  const recentDispatches = listNotificationJobs({
+    includeAllUsers: true,
+    organizationId: selectedOrganizationId,
+    type: filters.type,
+    mode: selectedMode,
+    status: 'sent',
+    startAt,
+    endAt,
+    limit: 6
+  });
 
   return {
-    ...overview,
-    recentPlans: queryRows(`
-      select
-        id::text as "id",
-        title,
-        mode,
-        state,
-        mastery_score as "masteryScore",
-        created_at as "createdAt"
-      from memory_plans
-      where deleted_at is null
-      order by created_at desc
-      limit 6
-    `),
-    recentRecitations: queryRows(`
-      select
-        rs.id::text as "id",
-        c.title,
-        rs.period,
-        rs.round_count as "roundCount",
-        rs.created_at as "createdAt"
-      from recitation_sessions rs
-      join contents c on c.id = rs.content_id
-      order by rs.created_at desc
-      limit 6
-    `),
-    recentAuditLogs: listAuditLogs({ limit: 6 })
+    userCount: totalUsers,
+    contentCount: filteredContents.length,
+    planCount: planRows.length,
+    completedTaskCount: completedTaskRows.length,
+    practiceSessionCount: practiceRows.length,
+    recitationSessionCount: recitationRows.length,
+    assetCount: assetRows.length,
+    organizationCount: totalOrganizations,
+    auditLogCount: auditRows.length,
+    modeDistribution: buildModeDistribution(planRows),
+    practiceTrend: buildRecentDailyTrend(practiceRows, 'createdAt', { startAt, endAt }),
+    recitationTrend: buildRecentDailyTrend(recitationRows, 'createdAt', { startAt, endAt }),
+    recentDispatches,
+    recentPlans: planRows.slice(0, 6),
+    recentRecitations: recitationRows.slice(0, 6).map((item) => ({
+      id: item.id,
+      title: item.title,
+      period: item.period,
+      roundCount: item.roundCount,
+      createdAt: item.createdAt
+    })),
+    recentAuditLogs: auditRows.slice(0, 6)
   };
+}
+
+function normalizeDateTimeFilter(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString();
+}
+
+function matchesDateRange(value, filters = {}) {
+  const current = Date.parse(String(value || ''));
+  if (Number.isNaN(current)) return true;
+  const startAt = Date.parse(String(filters.startAt || ''));
+  const endAt = Date.parse(String(filters.endAt || ''));
+  if (!Number.isNaN(startAt) && current < startAt) return false;
+  if (!Number.isNaN(endAt) && current > endAt) return false;
+  return true;
 }
 
 function findAdminByCredentials({ username, password }) {
@@ -1602,23 +2229,48 @@ function createNotificationJob({ userId = IDS.demoUser, taskId = null, channel, 
   `);
 }
 
-function listNotificationJobs({ userId = IDS.demoUser, limit = 20 } = {}) {
-  const normalizedUserId = ensureUser(userId);
+function listNotificationJobs({ userId, limit = 20, status, startAt, endAt, organizationId, type, mode, includeAllUsers = false } = {}) {
+  const normalizedUserId = normalizeId(userId);
+  const effectiveUserId = normalizedUserId || IDS.demoUser;
+  const normalizedOrganizationId = normalizeId(organizationId);
+  const normalizedMode = mode ? normalizeMode(mode) : '';
+  const normalizedStartAt = normalizeDateTimeFilter(startAt);
+  const normalizedEndAt = normalizeDateTimeFilter(endAt);
+  const where = ['true'];
+  if (!includeAllUsers) {
+    where.push(`nj.user_id = ${sqlValue(ensureUser(effectiveUserId))}`);
+  } else if (normalizedUserId) {
+    where.push(`nj.user_id = ${sqlValue(normalizedUserId)}`);
+  }
+  if (status) where.push(`nj.status = ${sqlValue(status)}`);
+  if (normalizedStartAt) where.push(`nj.scheduled_at >= ${sqlValue(normalizedStartAt)}`);
+  if (normalizedEndAt) where.push(`nj.scheduled_at <= ${sqlValue(normalizedEndAt)}`);
+  if (normalizedOrganizationId) where.push(`c.organization_id = ${sqlValue(normalizedOrganizationId)}`);
+  if (type) where.push(`c.type = ${sqlValue(type)}`);
+  if (normalizedMode) where.push(`mp.mode = ${sqlValue(normalizedMode)}`);
   return queryRows(`
     select
-      id::text as "id",
-      user_id::text as "userId",
-      task_id::text as "taskId",
-      channel,
-      scheduled_at as "scheduledAt",
-      status,
-      payload,
-      sent_at as "sentAt",
-      created_at as "createdAt",
-      updated_at as "updatedAt"
-    from notification_jobs
-    where user_id = ${sqlValue(normalizedUserId)}
-    order by scheduled_at desc
+      nj.id::text as "id",
+      nj.user_id::text as "userId",
+      u.nickname as "userNickname",
+      nj.task_id::text as "taskId",
+      nj.channel,
+      nj.scheduled_at as "scheduledAt",
+      nj.status,
+      nj.payload,
+      nj.sent_at as "sentAt",
+      nj.created_at as "createdAt",
+      nj.updated_at as "updatedAt",
+      mp.mode,
+      c.id::text as "contentId",
+      c.title
+    from notification_jobs nj
+    left join users u on u.id = nj.user_id
+    left join review_tasks rt on rt.id = nj.task_id
+    left join memory_plans mp on mp.id = rt.plan_id
+    left join contents c on c.id = mp.content_id
+    where ${where.join(' and ')}
+    order by nj.scheduled_at desc
     limit ${Number(limit || 20)}
   `);
 }
@@ -2227,8 +2879,11 @@ function seedContent(content) {
       length_tier,
       plan_days,
       scene,
+      source_note,
+      version_note,
       access_level,
       publish_status,
+      review_status,
       organization_id,
       created_by,
       reviewed_by,
@@ -2244,8 +2899,11 @@ function seedContent(content) {
       ${sqlValue(content.lengthTier)},
       ${Number(content.planDays)},
       ${sqlValue(content.scene)},
+      '',
+      '',
       'public',
       'published',
+      'approved',
       ${sqlValue(IDS.organization)},
       ${sqlValue(IDS.adminUser)},
       ${sqlValue(IDS.adminUser)},
@@ -2436,9 +3094,12 @@ module.exports = {
   addOrganizationMember,
   archiveAsset,
   archiveContent,
+  archiveFestival,
   completeTask,
+  copyContentAsNewVersion,
   createAsset,
   createContent,
+  createFestival,
   createNotificationJob,
   createRecitationSession,
   dispatchNotificationJobs,
@@ -2452,7 +3113,10 @@ module.exports = {
   initializeDatabase,
   loginByWechatCode,
   findAdminByCredentials,
+  listAdminContents,
+  listAdminFestivals,
   listAuditLogs,
+  listContentVersions,
   listContents,
   listFestivals,
   listNotificationJobs,
@@ -2464,6 +3128,7 @@ module.exports = {
   updateAsset,
   todayDate,
   updateContent,
+  updateFestival,
   updateAssetAccess,
   upsertRecitationGoal,
   upsertNotificationSetting

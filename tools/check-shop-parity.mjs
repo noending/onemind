@@ -54,6 +54,15 @@ function runChecks() {
       check: () => /featuredProduct\s*=\s*all\.find\(\(item\) => item\.isFeatured\)/.test(shopJs)
     },
     {
+      id: "logic.shop-persistence",
+      check: () => includesEvery(shopJs, [
+        "getShopState",
+        "toggleFavoriteProduct",
+        "recordRecentViewProduct",
+        "addProductToCart"
+      ])
+    },
+    {
       id: "structure.featured-card",
       check: () => includesEvery(shopWxml, [
         "wx:if=\"{{featuredProduct}}\"",
@@ -66,6 +75,14 @@ function runChecks() {
       check: () => includesEvery(shopWxml, [
         "wx:for=\"{{visibleProducts}}\"",
         "class=\"product-card card\""
+      ])
+    },
+    {
+      id: "structure.preference-records",
+      check: () => includesEvery(shopWxml, [
+        "recentViewProducts.length",
+        "preferencePanel.records.length",
+        "class=\"record-card card\""
       ])
     },
     {
