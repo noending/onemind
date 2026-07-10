@@ -102,6 +102,53 @@ function removeCompletionDelayTrigger() {
   `);
 }
 
+function installCrossTaskReconciliationDelayTriggers() {
+  runPostgresSql(`
+    create or replace function onemind_test_delay_cross_task_mutation()
+    returns trigger language plpgsql as $$
+    begin
+      if current_setting('onemind.test_delay_cross_task_mutation', true) = 'on' then
+        perform pg_sleep(0.75);
+      end if;
+      return new;
+    end
+    $$;
+    drop trigger if exists onemind_test_delay_cross_task_mutation
+      on daily_study_task_items;
+    create trigger onemind_test_delay_cross_task_mutation
+      before update of status on daily_study_task_items
+      for each row
+      when (old.status = 'pending' and new.status = 'completed')
+      execute function onemind_test_delay_cross_task_mutation();
+
+    create or replace function onemind_test_delay_cross_task_reconciliation()
+    returns trigger language plpgsql as $$
+    begin
+      if current_setting('onemind.test_delay_cross_task_reconciliation', true) = 'on' then
+        perform pg_sleep(1.5);
+      end if;
+      return new;
+    end
+    $$;
+    drop trigger if exists onemind_test_delay_cross_task_reconciliation
+      on daily_study_tasks;
+    create trigger onemind_test_delay_cross_task_reconciliation
+      before update of status on daily_study_tasks
+      for each row execute function onemind_test_delay_cross_task_reconciliation();
+  `);
+}
+
+function removeCrossTaskReconciliationDelayTriggers() {
+  runPostgresSql(`
+    drop trigger if exists onemind_test_delay_cross_task_mutation
+      on daily_study_task_items;
+    drop function if exists onemind_test_delay_cross_task_mutation();
+    drop trigger if exists onemind_test_delay_cross_task_reconciliation
+      on daily_study_tasks;
+    drop function if exists onemind_test_delay_cross_task_reconciliation();
+  `);
+}
+
 function installTaskInsertDelayTrigger() {
   runPostgresSql(`
     create or replace function onemind_test_delay_adaptive_task_insert()
@@ -719,6 +766,114 @@ test('postgres concurrent final-item completion reconciles and persists database
     )), true);
   } finally {
     removeCompletionDelayTrigger();
+    cleanupPostgresAdaptiveUser(userId);
+  }
+});
+
+test('postgres cross-task final-item completion converges plan status after stale reconciliation', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, async () => {
+  const postgresStore = getGatedPostgresStore();
+  const userId = createPostgresTestUser();
+  const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+  const secondTask = postgresStore.getTodayStudyTask(userId, plan.id, '2026-07-11');
+  const finalItems = [plan.task.items.at(-1), secondTask.items.at(-1)];
+  const completionKeys = [
+    uniqueKey('postgres-cross-task-complete-a'),
+    uniqueKey('postgres-cross-task-complete-b')
+  ];
+
+  runPostgresSql(`
+    update memory_item_states
+    set phase = 'stable', last_grade = 'good',
+      last_reviewed_at = '2026-07-09T08:00:00.000Z'::timestamptz,
+      due_at = '2026-07-20'::date, successful_recall_count = 2,
+      cross_day_success_count = 1, updated_at = now()
+    where plan_id = ${sqlValue(plan.id)};
+    update memory_item_states
+    set phase = 'learning', cross_day_success_count = 0,
+      successful_recall_count = 1
+    where plan_id = ${sqlValue(plan.id)}
+      and memory_unit_id in (${finalItems.map((item) => sqlValue(item.memoryUnitId)).join(',')});
+    update daily_study_task_items
+    set status = 'completed',
+      result = '{"grade":"good","completedAt":"2026-07-09T07:00:00.000Z"}'::jsonb,
+      updated_at = now()
+    where plan_id = ${sqlValue(plan.id)}
+      and id not in (${finalItems.map((item) => sqlValue(item.id)).join(',')});
+    update daily_study_tasks set status = 'pending', updated_at = now()
+      where id in (${[plan.task.id, secondTask.id].map(sqlValue).join(',')});
+    update memory_plans set adaptive_status = 'active', updated_at = now()
+      where id = ${sqlValue(plan.id)};
+  `);
+  installCrossTaskReconciliationDelayTriggers();
+
+  try {
+    const firstCompletion = runPostgresStoreChild(
+      'completeStudyTaskItem',
+      [{
+        userId,
+        itemId: finalItems[0].id,
+        grade: 'good',
+        idempotencyKey: completionKeys[0],
+        reviewedAt: '2026-07-10T08:00:00.000Z'
+      }],
+      'onemind.test_delay_cross_task_reconciliation'
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const secondCompletion = runPostgresStoreChild(
+      'completeStudyTaskItem',
+      [{
+        userId,
+        itemId: finalItems[1].id,
+        grade: 'good',
+        idempotencyKey: completionKeys[1],
+        reviewedAt: '2026-07-11T08:00:00.000Z'
+      }],
+      'onemind.test_delay_cross_task_mutation'
+    );
+    const results = await Promise.all([firstCompletion, secondCompletion]);
+    const [terminal] = queryPostgresRows(`
+      select
+        plan.adaptive_status as "adaptiveStatus",
+        (select count(*)::int from daily_study_tasks
+          where id in (${[plan.task.id, secondTask.id].map(sqlValue).join(',')})
+            and status = 'completed') as "completedTaskCount",
+        (select count(*)::int from memory_item_states
+          where plan_id = plan.id and phase <> 'stable') as "nonStableStateCount",
+        (select count(*)::int
+          from daily_study_task_items retry_item
+          join daily_study_tasks retry_task on retry_task.id = retry_item.task_id
+          where retry_task.plan_id = plan.id
+            and retry_item.task_type = 'weak_review'
+            and retry_item.status = 'pending') as "pendingRetryCount"
+      from memory_plans plan
+      where plan.id = ${sqlValue(plan.id)}
+    `);
+    const records = queryPostgresRows(`
+      select response_payload as response
+      from idempotency_records
+      where user_id = ${sqlValue(userId)}
+        and idempotency_key in (${completionKeys.map(sqlValue).join(',')})
+    `);
+
+    assert.deepEqual(terminal, {
+      adaptiveStatus: 'initial_complete',
+      completedTaskCount: 2,
+      nonStableStateCount: 0,
+      pendingRetryCount: 0
+    });
+    assert.equal(results.every((result) => (
+      result.task.status === 'completed'
+      && result.plan.adaptiveStatus === 'initial_complete'
+    )), true);
+    assert.equal(records.length, 2);
+    assert.equal(records.every((record) => (
+      record.response.task.status === 'completed'
+      && record.response.plan.adaptiveStatus === 'initial_complete'
+    )), true);
+  } finally {
+    removeCrossTaskReconciliationDelayTriggers();
     cleanupPostgresAdaptiveUser(userId);
   }
 });

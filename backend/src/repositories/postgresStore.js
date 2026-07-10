@@ -14,6 +14,7 @@ const REVIEW_TAIL_INTERVAL = 15;
 const GROWTH_STAGES = ['初见', '熟悉', '稳定', '通顺', '已持诵'];
 const MAX_IDEMPOTENCY_KEY_LENGTH = 180;
 const MAX_ADAPTIVE_TASK_ALLOCATION_ATTEMPTS = 3;
+const MAX_ADAPTIVE_RECONCILIATION_ATTEMPTS = 5;
 const ADAPTIVE_PLAN_CREATE_OPERATION = 'adaptive_plan_create';
 const STUDY_TASK_ITEM_COMPLETE_OPERATION = 'study_task_item_complete';
 const PENDING_NEW_INDEX = 'daily_study_task_items_pending_new_uidx';
@@ -1893,9 +1894,13 @@ function completeStudyTaskItem(payload = {}) {
     });
   }
 
-  const now = new Date().toISOString();
-  reconcileAdaptiveCompletion(plan.id, task.id, now);
-  const response = readAdaptiveCompletion(plan.id, normalizedUserId, task.taskDate, itemId);
+  const response = reconcileAndReadAdaptiveCompletion({
+    planId: plan.id,
+    userId: normalizedUserId,
+    taskId: task.id,
+    taskDate: task.taskDate,
+    itemId
+  });
   const recorded = recordAdaptiveCompletion(
     normalizedUserId,
     idempotencyKey,
@@ -2008,26 +2013,7 @@ function reconcileAdaptiveCompletion(planId, taskId, now) {
     ), updated_plan as (
       update memory_plans plan
       set
-        adaptive_status = case
-          when exists (
-            select 1 from memory_item_states state_row
-            where state_row.plan_id = plan.id
-          )
-          and not exists (
-            select 1 from memory_item_states state_row
-            where state_row.plan_id = plan.id
-              and state_row.phase <> 'stable'
-          )
-          and not exists (
-            select 1
-            from daily_study_task_items retry_item
-            join daily_study_tasks retry_task on retry_task.id = retry_item.task_id
-            where retry_task.plan_id = plan.id
-              and retry_item.task_type = 'weak_review'
-              and retry_item.status = 'pending'
-          ) then 'initial_complete'
-          else 'active'
-        end,
+        adaptive_status = ${adaptivePlanStatusExpression('plan.id')},
         updated_at = ${sqlValue(now)}::timestamptz
       where plan.id = ${sqlValue(planId)}
         and exists (select 1 from updated_task)
@@ -2035,6 +2021,68 @@ function reconcileAdaptiveCompletion(planId, taskId, now) {
     )
     select id::text from updated_plan
   `);
+}
+
+function reconcileAndReadAdaptiveCompletion(context) {
+  const { planId, userId, taskId, taskDate, itemId } = context;
+
+  for (let attempt = 0; attempt < MAX_ADAPTIVE_RECONCILIATION_ATTEMPTS; attempt += 1) {
+    reconcileAdaptiveCompletion(planId, taskId, new Date().toISOString());
+    const verification = readAdaptiveReconciliationStatus(planId);
+    if (!isAdaptiveReconciliationConverged(verification)) continue;
+
+    const response = readAdaptiveCompletion(planId, userId, taskDate, itemId);
+    if (response.plan.adaptiveStatus !== verification.expectedStatus) continue;
+
+    const confirmation = readAdaptiveReconciliationStatus(planId);
+    if (
+      isAdaptiveReconciliationConverged(confirmation)
+      && response.plan.adaptiveStatus === confirmation.expectedStatus
+    ) {
+      return response;
+    }
+  }
+
+  throw adaptivePlanError('ADAPTIVE_RECONCILIATION_CONFLICT', 409);
+}
+
+function readAdaptiveReconciliationStatus(planId) {
+  return queryOne(`
+    select
+      plan.adaptive_status as "storedStatus",
+      ${adaptivePlanStatusExpression('plan.id')} as "expectedStatus"
+    from memory_plans plan
+    where plan.id = ${sqlValue(planId)}
+      and plan.deleted_at is null
+    limit 1
+  `);
+}
+
+function isAdaptiveReconciliationConverged(status) {
+  return Boolean(status && status.storedStatus === status.expectedStatus);
+}
+
+function adaptivePlanStatusExpression(planIdExpression) {
+  return `case
+    when exists (
+      select 1 from memory_item_states state_row
+      where state_row.plan_id = ${planIdExpression}
+    )
+    and not exists (
+      select 1 from memory_item_states state_row
+      where state_row.plan_id = ${planIdExpression}
+        and state_row.phase <> 'stable'
+    )
+    and not exists (
+      select 1
+      from daily_study_task_items retry_item
+      join daily_study_tasks retry_task on retry_task.id = retry_item.task_id
+      where retry_task.plan_id = ${planIdExpression}
+        and retry_item.task_type = 'weak_review'
+        and retry_item.status = 'pending'
+    ) then 'initial_complete'
+    else 'active'
+  end`;
 }
 
 function readAdaptiveCompletion(planId, userId, taskDate, itemId) {

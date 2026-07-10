@@ -61,3 +61,32 @@
 - 修改仅覆盖 brief ownership：三个 repository/schema 文件、声明式 schema、两个测试文件及本报告；未修改 routes、common/api、common/memory、商城、播放或诵读。
 - 并发创建的幂等 claim、领域写和响应处于同一数据库事务；跨日期分配的 task 与 items 也处于同一语句事务。
 - 若历史数据库已经存在重复 pending `new` 行，首次创建唯一索引会显式失败；本修复不在迁移中静默删除或改写既有学习任务，部署前应先审计并人工决定保留哪一天的分配。
+
+## 复审 Important：跨 task reconciliation 收敛
+
+### 真实 PostgreSQL RED
+
+命令：
+
+`RUN_POSTGRES_ADAPTIVE_PLAN_TEST=1 node --test --test-name-pattern="cross-task final-item" test/adaptive-plan.test.js`
+
+- 在同一 plan 下构造两个不同日期的 daily task，各保留一个最后 pending item，其余 states 均预置为满足首轮完成的状态。
+- A 子进程延迟 task reconciliation，B 子进程延迟 item mutation，使 A 使用旧 states 快照并在 B 写入后最后更新 plan。
+- RED 结果：两个 task 均为 `completed`、非 stable states 为 0、pending weak retries 为 0，但数据库最终 `adaptive_status = active`；定向测试 0/1 通过。
+
+### 修复
+
+- 每次集合式 reconciliation 提交后，使用独立 `queryScalar/psql` 事务的新快照重新推导 expected plan status，并与数据库 stored status 比较。
+- stored/expected 首次匹配后才回读 completion response，并再用一个新快照二次确认；任一阶段发生漂移即进入下一轮 reconciliation。
+- 最多执行 5 轮。仍不收敛时抛出 `409 ADAPTIVE_RECONCILIATION_CONFLICT`，不会构建或写入 idempotency response。
+- task 级锁保持不变，但跨 task 正确性不依赖该锁；最终 completion response 和幂等缓存均位于收敛验证之后。
+
+### GREEN 与复审验证
+
+- 定向真实 PG：1/1 通过。
+- `RUN_POSTGRES_ADAPTIVE_PLAN_TEST=1 node --test test/adaptive-plan.test.js`：19/19 通过、0 失败。
+- 默认 `node --test test/adaptive-plan.test.js`：10 通过、9 个 PG 门控跳过、0 失败。
+- `npm test`：56 通过、17 个 PG 门控跳过、0 失败。
+- `npm run check`：通过。
+- `git diff --check`：通过。
+- 本轮仅修改 `backend/src/repositories/postgresStore.js`、`backend/test/adaptive-plan.test.js` 和本报告；未修改 schema、memory、routes、common、商城、播放或诵读。
