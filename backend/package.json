@@ -6,6 +6,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
     "check": "node --check src/server.js && node --check src/routes.js && node --check src/repositories/memoryStore.js && node --check src/repositories/postgresStore.js && node --check src/repositories/store.js && node --check src/data/seed.js",
     "admin:install": "npm --prefix admin-app install",
     "admin:dev": "npm --prefix admin-app run dev",
