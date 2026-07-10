@@ -250,6 +250,119 @@
   padding: 20rpx 30rpx 12rpx;
 }
 
+.adaptive-status-card,
+.adaptive-unit-card,
+.adaptive-submit-error {
+  padding: 24rpx;
+  border: 1rpx solid rgba(232, 215, 180, 0.72);
+  border-radius: 24rpx;
+  background: rgba(255, 250, 242, 0.82);
+}
+
+.adaptive-status-card.error,
+.adaptive-submit-error {
+  border-color: rgba(166, 49, 39, 0.3);
+  background: #fff4ed;
+}
+
+.adaptive-status-card.complete {
+  background: #f7e8d2;
+}
+
+.adaptive-status-title,
+.adaptive-step-label {
+  display: block;
+  color: #351b18;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.adaptive-status-body,
+.adaptive-due,
+.adaptive-metrics {
+  display: block;
+  margin-top: 10rpx;
+  color: #80655c;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.adaptive-queue-head {
+  margin-bottom: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.adaptive-unit-text,
+.adaptive-answer {
+  display: block;
+  margin-top: 18rpx;
+  color: #2d2018;
+  font-size: 42rpx;
+  line-height: 1.45;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+.adaptive-answer {
+  padding-top: 16rpx;
+  border-top: 1rpx solid rgba(232, 215, 180, 0.8);
+  color: #7e2a1c;
+}
+
+.adaptive-submit-error {
+  margin-top: 14rpx;
+  color: #a63127;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.adaptive-retry-button {
+  width: auto;
+  margin: 16rpx 0 0;
+  padding: 0 22rpx;
+  height: 56rpx;
+  border-radius: 18rpx;
+  background: #7e2a1c;
+  color: #fff8ed;
+  font-size: 22rpx;
+  line-height: 56rpx;
+}
+
+.adaptive-actions {
+  position: fixed;
+  left: 30rpx;
+  right: 30rpx;
+  bottom: calc(18rpx + env(safe-area-inset-bottom));
+  z-index: 30;
+  padding: 14rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  border: 1rpx solid rgba(232, 215, 180, 0.68);
+  border-radius: 28rpx;
+  background: rgba(255, 250, 242, 0.96);
+  box-shadow: 0 16rpx 36rpx rgba(83, 56, 36, 0.12);
+}
+
+.adaptive-actions .step-btn {
+  min-width: calc(50% - 6rpx);
+}
+
+.adaptive-grade-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10rpx;
+}
+
+.adaptive-grade-grid .feedback-button {
+  min-height: 84rpx;
+  padding: 12rpx 8rpx;
+  font-size: 22rpx;
+}
+
 .risk-card {
   margin-bottom: 18rpx;
   padding: 22rpx 24rpx;

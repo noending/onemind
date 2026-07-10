@@ -1,5 +1,12 @@
 const { contents, findContent } = require("../../common/content");
-const { getCachedContents, getLocalContents } = require("../../common/api");
+const {
+  completeStudyTaskItemApi,
+  ensureLogin,
+  getCachedContents,
+  getLocalContents,
+  getTodayStudyTaskApi
+} = require("../../common/api");
+const { createPracticeSession, advancePracticeStep } = require("../../common/practice-session");
 const {
   createPlanWithFallback,
   getPlan,
@@ -16,6 +23,47 @@ const TRAINING_STEPS = [
   { key: "blank", title: "填空回填", method: "填空复现" },
   { key: "feedback", title: "本次反馈", method: "本次反馈" }
 ];
+
+const ADAPTIVE_STEP_TITLES = {
+  study: "完整学习",
+  first_character: "首字提示",
+  free_recall: "自由回忆",
+  check: "核对",
+  grade: "本次评分"
+};
+
+function todayDate() {
+  const date = new Date();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function isLegacyDailyTaskError(error) {
+  return Boolean(error && (error.statusCode === 404 || error.code === "STUDY_TASK_NOT_FOUND"));
+}
+
+function pendingTask(task) {
+  return {
+    ...task,
+    items: Array.isArray(task && task.items)
+      ? task.items.filter((item) => item && item.status === "pending")
+      : []
+  };
+}
+
+function adaptiveAttemptKey(task, item) {
+  return `adaptive-practice-${task && task.id}-${item && item.id}`.slice(0, 180);
+}
+
+function adaptivePrompt(session) {
+  const unit = session && session.activeUnit;
+  const text = String(unit && unit.text || "");
+  if (!unit) return "";
+  if (session.step === "study" || session.step === "check") return text;
+  if (session.step === "first_character") return `${unit.firstCharacterCue || Array.from(text)[0] || ""}…`;
+  return "请在心中完整复现这一单元";
+}
 
 function getStatusBarHeight() {
   try {
@@ -273,11 +321,38 @@ Page({
     primarySub: "提前巩固",
     stepIndex: 0,
     stepTotal: TRAINING_STEPS.length,
-    stepTitle: TRAINING_STEPS[0].title
+    stepTitle: TRAINING_STEPS[0].title,
+    adaptiveMode: false,
+    adaptiveLoading: false,
+    adaptiveError: "",
+    adaptiveSession: null,
+    adaptiveTask: null,
+    adaptiveStepTitle: "",
+    adaptivePrompt: "",
+    adaptiveAnswerVisible: false,
+    adaptiveRemainingCount: 0,
+    adaptiveProgressPct: 0,
+    adaptiveNextDueAt: "",
+    adaptiveStable: false,
+    adaptiveCompleted: false,
+    adaptiveSubmitting: false,
+    adaptiveSubmitError: "",
+    adaptivePendingGrade: "",
+    adaptiveAttemptKey: ""
   },
 
-  onLoad(options) {
+  onLoad(options = {}) {
+    this.loadPractice(options);
+  },
+
+  loadPractice(options) {
     syncPlansFromBackend().finally(() => {
+      this.setupLegacyPractice(options);
+      if (options.planId) this.loadAdaptivePractice(options.planId);
+    });
+  },
+
+  setupLegacyPractice(options = {}) {
       const plan = options.planId ? getPlan(options.planId) : null;
       const content = resolvePracticeContent(options.id, plan);
       const task = firstOpenTask(plan);
@@ -322,7 +397,146 @@ Page({
         riskBody,
         ...copy
       });
+  },
+
+  loadAdaptivePractice(planId) {
+    this.setData({
+      adaptiveMode: true,
+      adaptiveLoading: true,
+      adaptiveError: "",
+      adaptiveSubmitError: "",
+      adaptiveCompleted: false
     });
+    ensureLogin({ message: "请先在我的页面完成微信授权，再开始今日训练" })
+      .then(() => getTodayStudyTaskApi(planId, todayDate()))
+      .then((task) => {
+        if (!task || !Array.isArray(task.items)) throw new Error("今日任务数据无效，请重试");
+        this.startAdaptiveSession(task);
+      })
+      .catch((error) => {
+        if (isLegacyDailyTaskError(error)) {
+          this.setData({ adaptiveMode: false, adaptiveLoading: false, adaptiveError: "" });
+          return;
+        }
+        this.setData({
+          adaptiveLoading: false,
+          adaptiveError: error.message || "今日任务加载失败，请重试"
+        });
+      });
+  },
+
+  retryAdaptiveLoad() {
+    if (!this.data.planId || this.data.adaptiveLoading) return;
+    this.loadAdaptivePractice(this.data.planId);
+  },
+
+  startAdaptiveSession(task, completionState = null) {
+    const taskWithPendingItems = pendingTask(task);
+    const session = createPracticeSession(taskWithPendingItems, { startAt: Date.now() });
+    const activeUnit = session.activeUnit;
+    if (activeUnit && !activeUnit.text) {
+      this.setData({
+        adaptiveMode: true,
+        adaptiveLoading: false,
+        adaptiveError: "今日任务缺少单元正文，请稍后重试",
+        adaptiveTask: task,
+        adaptiveSession: null
+      });
+      return;
+    }
+    this.updateAdaptiveSession(session, task, completionState, {
+      adaptiveLoading: false,
+      adaptiveError: "",
+      adaptiveSubmitError: "",
+      adaptiveSubmitting: false,
+      adaptivePendingGrade: ""
+    });
+  },
+
+  updateAdaptiveSession(session, task, completionState = null, extras = {}) {
+    const activeUnit = session.activeUnit;
+    const state = completionState || {
+      dueAt: this.data.adaptiveNextDueAt,
+      phase: this.data.adaptiveStable ? "stable" : ""
+    };
+    this.setData({
+      adaptiveMode: true,
+      adaptiveSession: session,
+      adaptiveTask: task,
+      adaptiveStepTitle: ADAPTIVE_STEP_TITLES[session.step] || "",
+      adaptivePrompt: adaptivePrompt(session),
+      adaptiveAnswerVisible: Boolean(session.activeMetrics && (session.step === "study" || session.step === "check" || session.activeMetrics.usedReveal)),
+      adaptiveRemainingCount: session.queue.length,
+      adaptiveProgressPct: session.isComplete ? 100 : Math.round(((session.stepIndex + 1) / session.steps.length) * 100),
+      adaptiveNextDueAt: state.dueAt || "",
+      adaptiveStable: state.phase === "stable",
+      adaptiveCompleted: session.isComplete,
+      adaptiveAttemptKey: activeUnit ? adaptiveAttemptKey(task, activeUnit) : "",
+      ...extras
+    });
+  },
+
+  advanceAdaptiveStep() {
+    const session = this.data.adaptiveSession;
+    if (!session || this.data.adaptiveSubmitting || session.step === "grade") return;
+    const next = advancePracticeStep(session, { type: "advance", at: Date.now() });
+    this.updateAdaptiveSession(next, this.data.adaptiveTask);
+  },
+
+  revealAdaptiveAnswer() {
+    const session = this.data.adaptiveSession;
+    if (!session || this.data.adaptiveSubmitting) return;
+    const next = advancePracticeStep(session, { type: "reveal", at: Date.now() });
+    this.updateAdaptiveSession(next, this.data.adaptiveTask);
+  },
+
+  markAdaptiveMistake() {
+    const session = this.data.adaptiveSession;
+    if (!session || this.data.adaptiveSubmitting || session.step !== "check") return;
+    const next = advancePracticeStep(session, { type: "mark_mistake", at: Date.now() });
+    this.updateAdaptiveSession(next, this.data.adaptiveTask);
+  },
+
+  selectAdaptiveGrade(event) {
+    this.submitAdaptiveGrade(event.currentTarget.dataset.grade);
+  },
+
+  retryAdaptiveGrade() {
+    this.submitAdaptiveGrade(this.data.adaptivePendingGrade);
+  },
+
+  submitAdaptiveGrade(grade) {
+    const session = this.data.adaptiveSession;
+    if (!session || session.step !== "grade" || this.data.adaptiveSubmitting) return;
+    if (!session.allowedGrades.includes(grade)) return;
+    const item = session.activeUnit;
+    const metrics = session.activeMetrics;
+    const idempotencyKey = this.data.adaptiveAttemptKey || adaptiveAttemptKey(this.data.adaptiveTask, item);
+    const reviewedAt = new Date().toISOString();
+    this.setData({
+      adaptiveSubmitting: true,
+      adaptiveSubmitError: "",
+      adaptivePendingGrade: grade,
+      adaptiveAttemptKey: idempotencyKey
+    });
+    completeStudyTaskItemApi(item.id, {
+      grade,
+      latencyMs: Math.max(0, Date.now() - Number(metrics.startedAt || Date.now())),
+      mistakeCount: Number(metrics.mistakeCount || 0),
+      hintCount: Number(metrics.hintCount || 0),
+      reviewedAt,
+      idempotencyKey
+    })
+      .then((response) => {
+        if (!response || !response.task) throw new Error("训练提交结果无效，请重试");
+        this.startAdaptiveSession(response.task, response.state || null);
+      })
+      .catch((error) => {
+        this.setData({
+          adaptiveSubmitting: false,
+          adaptiveSubmitError: error.message || "提交失败，请使用原评分重试"
+        });
+      });
   },
 
   reveal(event) {

@@ -2,30 +2,30 @@
   <view class="train-header" style="padding-top: {{headerTop}}px;">
     <view class="topbar">
       <text class="back" bindtap="goBack">‹ 返回</text>
-      <text class="topbar-meta">{{stepIndex + 1}} / {{stepTotal}} · {{stepTitle}}</text>
+      <text class="topbar-meta">{{adaptiveMode ? adaptiveStepTitle : (stepIndex + 1) + ' / ' + stepTotal + ' · ' + stepTitle}}</text>
       <button class="fulltext-button" bindtap="openFullText">查看全文</button>
     </view>
     <view class="train-progress">
-      <view class="train-progress-bar" style="width: {{((stepIndex + 1) / stepTotal) * 100}}%;"></view>
+      <view class="train-progress-bar" style="width: {{adaptiveMode ? adaptiveProgressPct : ((stepIndex + 1) / stepTotal) * 100}}%;"></view>
     </view>
 
     <view class="train-chip-row">
       <text class="train-info-chip strong">{{content.category || '经文片段'}}</text>
-      <text class="train-info-chip">第 {{currentDay}}/{{totalDays}} 天</text>
+      <text class="train-info-chip">{{adaptiveMode ? '剩余 ' + adaptiveRemainingCount + ' 个单元' : '第 ' + currentDay + '/' + totalDays + ' 天'}}</text>
     </view>
 
     <view class="train-title-row">
       <view class="title-copy">
-        <text class="train-mode-chip {{mode === 'playful' ? 'playful' : ''}}">{{heroLabel}}</text>
-        <text class="train-title">{{content.title}}</text>
-        <text wx:if="{{scene}}" class="train-scene">{{scene}}</text>
+        <text class="train-mode-chip {{mode === 'playful' && !adaptiveMode ? 'playful' : ''}}">{{adaptiveMode ? '每日记忆训练' : heroLabel}}</text>
+        <text class="train-title">{{adaptiveMode ? '今日记忆单元' : content.title}}</text>
+        <text wx:if="{{scene && !adaptiveMode}}" class="train-scene">{{scene}}</text>
       </view>
       <view class="stage-badge">
-        <text class="stage-label">阶段</text>
-        <text class="stage-text">{{growthStage}}</text>
+        <text class="stage-label">{{adaptiveMode ? '状态' : '阶段'}}</text>
+        <text class="stage-text">{{adaptiveMode ? (adaptiveStable ? '稳定' : '学习中') : growthStage}}</text>
       </view>
     </view>
-    <text class="helper-text">{{helperText}}</text>
+    <text class="helper-text">{{adaptiveMode ? '一次只练一个单元，完成后由今日任务决定下一步。' : helperText}}</text>
     <view wx:if="{{showFullTextStrip}}" class="fulltext-strip {{shortFullTextStrip ? 'short' : ''}}">
       <text class="fulltext-label">全文</text>
       <scroll-view class="fulltext-scroll" scroll-x enhanced show-scrollbar="{{false}}">
@@ -37,9 +37,66 @@
         </view>
       </scroll-view>
     </view>
-    <text class="step-tip">步骤 {{stepIndex + 1}} / {{stepTotal}}</text>
+    <text class="step-tip">{{adaptiveMode ? '当前步骤：' + adaptiveStepTitle : '步骤 ' + (stepIndex + 1) + ' / ' + stepTotal}}</text>
   </view>
 
+  <block wx:if="{{adaptiveMode}}">
+    <view class="train-body">
+      <view wx:if="{{adaptiveLoading}}" class="adaptive-status-card">
+        <text class="adaptive-status-title">正在加载今日任务</text>
+        <text class="adaptive-status-body">正在同步待练单元。</text>
+      </view>
+
+      <view wx:elif="{{adaptiveError}}" class="adaptive-status-card error">
+        <text class="adaptive-status-title">今日任务暂不可用</text>
+        <text class="adaptive-status-body">{{adaptiveError}}</text>
+        <button class="adaptive-retry-button" bindtap="retryAdaptiveLoad">重试</button>
+      </view>
+
+      <view wx:elif="{{adaptiveCompleted}}" class="adaptive-status-card complete">
+        <text class="adaptive-status-title">今日任务完成</text>
+        <text class="adaptive-status-body">今天的待练单元已完成，后续复习会按记忆状态安排。</text>
+        <text wx:if="{{adaptiveNextDueAt}}" class="adaptive-due">下次复习：{{adaptiveNextDueAt}}</text>
+      </view>
+
+      <view wx:elif="{{adaptiveSession}}">
+        <view class="adaptive-queue-head">
+          <text class="segment-label">今日队列</text>
+          <text class="segment-progress">剩余 {{adaptiveRemainingCount}} 个单元</text>
+        </view>
+        <text wx:if="{{adaptiveNextDueAt}}" class="adaptive-due">下次复习：{{adaptiveNextDueAt}}</text>
+        <view class="adaptive-unit-card">
+          <text class="adaptive-step-label">{{adaptiveStepTitle}}</text>
+          <text class="adaptive-unit-text">{{adaptivePrompt}}</text>
+          <text wx:if="{{adaptiveAnswerVisible && adaptiveSession.activeUnit.text !== adaptivePrompt}}" class="adaptive-answer">{{adaptiveSession.activeUnit.text}}</text>
+          <text wx:if="{{adaptiveSession.activeMetrics.hintCount}}" class="adaptive-metrics">已使用 {{adaptiveSession.activeMetrics.hintCount}} 次提示</text>
+          <text wx:if="{{adaptiveSession.activeMetrics.mistakeCount}}" class="adaptive-metrics">已标记 {{adaptiveSession.activeMetrics.mistakeCount}} 处错误</text>
+        </view>
+        <view wx:if="{{adaptiveSubmitError}}" class="adaptive-submit-error">
+          <text>{{adaptiveSubmitError}}</text>
+          <button class="adaptive-retry-button" disabled="{{adaptiveSubmitting}}" bindtap="retryAdaptiveGrade">重试提交</button>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{adaptiveSession && !adaptiveCompleted && !adaptiveLoading && !adaptiveError}}" class="adaptive-actions">
+      <block wx:if="{{adaptiveSession.step === 'grade'}}">
+        <text class="feedback-label">这次复现如何？</text>
+        <view class="adaptive-grade-grid">
+          <button class="feedback-button" disabled="{{adaptiveSubmitting}}" data-grade="again" bindtap="selectAdaptiveGrade">需加强</button>
+          <button class="feedback-button" disabled="{{adaptiveSubmitting}}" data-grade="good" bindtap="selectAdaptiveGrade">基本记得</button>
+          <button class="feedback-button primary" disabled="{{adaptiveSubmitting}}" data-grade="easy" bindtap="selectAdaptiveGrade">流畅复现</button>
+        </view>
+      </block>
+      <block wx:else>
+        <button wx:if="{{!adaptiveSession.activeMetrics.usedReveal && adaptiveSession.step !== 'study'}}" class="step-btn ghost" disabled="{{adaptiveSubmitting}}" bindtap="revealAdaptiveAnswer">显示答案</button>
+        <button wx:if="{{adaptiveSession.step === 'check'}}" class="step-btn ghost" disabled="{{adaptiveSubmitting}}" bindtap="markAdaptiveMistake">标记一处错误</button>
+        <button class="step-btn primary" disabled="{{adaptiveSubmitting}}" bindtap="advanceAdaptiveStep">{{adaptiveSession.step === 'study' ? '完成学习' : (adaptiveSession.step === 'first_character' ? '进入自由回忆' : (adaptiveSession.step === 'free_recall' ? '开始核对' : '给本次评分'))}}</button>
+      </block>
+    </view>
+  </block>
+
+  <block wx:else>
   <view class="train-body">
     <view wx:if="{{riskTitle}}" class="risk-card">
       <view class="risk-top">
@@ -106,4 +163,5 @@
       <button class="next-button" bindtap="startRecommendation">开始下一段</button>
     </view>
   </view>
+  </block>
 </view>
