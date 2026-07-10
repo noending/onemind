@@ -15,6 +15,7 @@ const {
   findAdminByCredentials,
   getAdminById,
   getContent,
+  getContentStructure,
   getDashboard,
   getGrowthOverview,
   getNotificationSettings,
@@ -403,6 +404,23 @@ async function handleRequest(req, res, body) {
         mode: requestUrl.searchParams.get('mode')
       })
     });
+  }
+
+  const contentStructureMatch = pathname.match(/^\/api\/contents\/([^/]+)\/versions\/([^/]+)\/structure$/);
+  if (req.method === 'GET' && contentStructureMatch) {
+    try {
+      return sendJson(res, 200, {
+        data: getContentStructure(
+          decodeURIComponent(contentStructureMatch[1]),
+          decodeURIComponent(contentStructureMatch[2])
+        )
+      });
+    } catch (error) {
+      if (error.code === 'CONTENT_VERSION_NOT_FOUND' || error.code === 'CONTENT_VERSION_NOT_APPROVED') {
+        return sendJson(res, error.statusCode, { error: error.code });
+      }
+      throw error;
+    }
   }
 
   if (req.method === 'GET' && pathname.startsWith('/api/contents/')) {

@@ -87,6 +87,31 @@ const GREAT_COMPASSION_SEGMENTS = [
 
 const GREAT_COMPASSION_BODY = GREAT_COMPASSION_SEGMENTS.join("，");
 
+function buildGreatCompassionSection(sectionIndex, startIndex, endIndex) {
+  return {
+    id: `great-compassion-section-${sectionIndex}`,
+    title: `第${sectionIndex}学习段`,
+    sortOrder: sectionIndex,
+    units: GREAT_COMPASSION_SEGMENTS.slice(startIndex, endIndex).map((text, offset) => ({
+      id: `great-compassion-unit-${startIndex + offset + 1}`,
+      text,
+      pinyin: "",
+      firstCharacterCue: Array.from(text)[0] || "",
+      estimatedSeconds: 30,
+      sortOrder: startIndex + offset + 1
+    }))
+  };
+}
+
+const GREAT_COMPASSION_SECTIONS = [
+  buildGreatCompassionSection(1, 0, 14),
+  buildGreatCompassionSection(2, 14, 28),
+  buildGreatCompassionSection(3, 28, 42),
+  buildGreatCompassionSection(4, 42, 56),
+  buildGreatCompassionSection(5, 56, 70),
+  buildGreatCompassionSection(6, 70, 84)
+];
+
 const contents = [
   {
     id: "om-mani",
@@ -210,6 +235,11 @@ const contents = [
     preview: "南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶，菩提萨埵婆耶。",
     segments: GREAT_COMPASSION_SEGMENTS,
     pinyinSegments: [],
+    publishedVersionId: "great-compassion-v1",
+    sourceNote: "经人工校对的首发版本",
+    versionNote: "首版 84 句学习结构",
+    reviewStatus: "approved",
+    sections: GREAT_COMPASSION_SECTIONS,
     lengthTier: "long",
     lengthLevel: "long",
     planDays: 28,

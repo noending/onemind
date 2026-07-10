@@ -1016,6 +1016,66 @@ function getContent(contentId) {
   });
 }
 
+function getContentStructure(contentId, versionId) {
+  const normalizedContentId = normalizeId(contentId);
+  const normalizedVersionId = String(versionId || '').trim();
+  if (!normalizedContentId || !isUuid(normalizedVersionId)) {
+    throw contentStructureError('CONTENT_VERSION_NOT_FOUND', 404);
+  }
+
+  const version = queryOne(`
+    select
+      id::text as "contentVersionId",
+      review_status as "reviewStatus",
+      source_note as "sourceNote",
+      version_note as "versionNote"
+    from content_versions
+    where id = ${sqlValue(normalizedVersionId)}
+      and content_id = ${sqlValue(normalizedContentId)}
+    limit 1
+  `);
+
+  if (!version) {
+    throw contentStructureError('CONTENT_VERSION_NOT_FOUND', 404);
+  }
+  if (version.reviewStatus !== 'approved') {
+    throw contentStructureError('CONTENT_VERSION_NOT_APPROVED', 409);
+  }
+
+  const sections = queryRows(`
+    select
+      id::text as "id",
+      title,
+      sort_order as "sortOrder"
+    from content_sections
+    where content_version_id = ${sqlValue(version.contentVersionId)}
+    order by sort_order asc
+  `).map((section) => ({
+    ...section,
+    units: queryRows(`
+      select
+        id::text as "id",
+        text,
+        coalesce(phonetic_text, '') as "pinyin",
+        coalesce(first_character_cue, '') as "firstCharacterCue",
+        estimated_seconds as "estimatedSeconds",
+        sort_order as "sortOrder"
+      from memory_units
+      where section_id = ${sqlValue(section.id)}
+      order by sort_order asc
+    `)
+  }));
+
+  return {
+    contentId: String(contentId),
+    contentVersionId: version.contentVersionId,
+    reviewStatus: version.reviewStatus,
+    sourceNote: version.sourceNote || '',
+    versionNote: version.versionNote || '',
+    sections
+  };
+}
+
 function normalizeFestivalContentIds(value) {
   const ids = Array.isArray(value)
     ? value
@@ -3390,6 +3450,13 @@ function sqlJson(value) {
   return sqlValue(JSON.stringify(value));
 }
 
+function contentStructureError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
 function hashAdminPassword(password) {
   return crypto.createHash('sha256').update(String(password || '')).digest('hex');
 }
@@ -3432,6 +3499,7 @@ module.exports = {
   dispatchNotificationJobs,
   createPlan,
   getContent,
+  getContentStructure,
   getGrowthOverview,
   getDashboard,
   getNotificationSettings,

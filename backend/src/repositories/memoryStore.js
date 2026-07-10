@@ -451,6 +451,38 @@ function getContent(contentId) {
   return content ? toContentDetail(content) : null;
 }
 
+function getContentStructure(contentId, versionId) {
+  const content = contents.find((item) => item.id === contentId);
+  const publishedVersion = content?.publishedVersion;
+
+  if (!content || !publishedVersion || publishedVersion.id !== versionId) {
+    throw contentStructureError('CONTENT_VERSION_NOT_FOUND', 404);
+  }
+  if (publishedVersion.reviewStatus !== 'approved') {
+    throw contentStructureError('CONTENT_VERSION_NOT_APPROVED', 409);
+  }
+
+  const sections = (Array.isArray(content.sections) ? content.sections : [])
+    .slice()
+    .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
+    .map((section) => ({
+      ...section,
+      units: (Array.isArray(section.units) ? section.units : [])
+        .slice()
+        .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
+        .map((unit) => ({ ...unit }))
+    }));
+
+  return {
+    contentId: content.id,
+    contentVersionId: publishedVersion.id,
+    reviewStatus: publishedVersion.reviewStatus,
+    sourceNote: publishedVersion.sourceNote || '',
+    versionNote: publishedVersion.versionNote || '',
+    sections
+  };
+}
+
 function normalizeFestivalContentIds(value) {
   const list = Array.isArray(value)
     ? value
@@ -1588,6 +1620,7 @@ function matchesDateRange(value, filters = {}) {
 }
 
 function toContentSummary(content) {
+  const publishedVersion = content.publishedVersion || {};
   return {
     id: content.id,
     organizationId: content.organizationId || organizations[0]?.id || '',
@@ -1600,13 +1633,14 @@ function toContentSummary(content) {
     lengthTier: content.lengthTier,
     planDays: content.planDays,
     scene: content.scene,
-    sourceNote: content.sourceNote || '',
-    versionNote: content.versionNote || '',
+    publishedVersionId: content.publishedVersionId || publishedVersion.id || '',
+    sourceNote: content.sourceNote || publishedVersion.sourceNote || '',
+    versionNote: content.versionNote || publishedVersion.versionNote || '',
     sourceContentId: content.sourceContentId || '',
     sourceVersionNo: content.sourceVersionNo || null,
     accessLevel: content.accessLevel,
     publishStatus: content.publishStatus || 'draft',
-    reviewStatus: content.reviewStatus || 'draft',
+    reviewStatus: content.reviewStatus || publishedVersion.reviewStatus || 'draft',
     reviewedAt: content.reviewedAt || null,
     createdAt: content.createdAt || null,
     updatedAt: content.updatedAt || null,
@@ -1614,7 +1648,8 @@ function toContentSummary(content) {
     supportedModes: normalizeSupportedModes(content.supportedModes || ['scientific', 'playful'], content.defaultMode || 'scientific'),
     supportsRecitation: content.supportsRecitation !== false,
     recommendedRecitationTime: content.recommendedRecitationTime || '',
-    recitationTheme: content.recitationTheme || ''
+    recitationTheme: content.recitationTheme || '',
+    ...(Array.isArray(content.sections) ? { sections: content.sections } : {})
   };
 }
 
@@ -1664,6 +1699,13 @@ function hashValue(value) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
 
+function contentStructureError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
 module.exports = {
   addOrganizationMember,
   archiveAsset,
@@ -1688,6 +1730,7 @@ module.exports = {
   createContent,
   completeTask,
   getContent,
+  getContentStructure,
   listContentVersions,
   listAuditLogs,
   listContents,

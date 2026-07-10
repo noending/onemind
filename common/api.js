@@ -418,11 +418,16 @@ function normalizeContent(item) {
   const category = item.category || item.subtitle || TYPE_CATEGORY[item.type] || "经文片段";
   const lengthTier = item.lengthTier || item.length_tier || "short";
   const planDays = Number(item.planDays || item.plan_days || builtinContent && builtinContent.planDays || 1);
-  const segments = Array.isArray(builtinContent && builtinContent.segments) && builtinContent.segments.length
-    ? builtinContent.segments
-    : Array.isArray(item.segments) && item.segments.length
-    ? item.segments
-    : splitBodyToSegments(item.body || item.preview || "");
+  const hasServerSegments = Object.prototype.hasOwnProperty.call(item, "segments");
+  const hasServerSections = Object.prototype.hasOwnProperty.call(item, "sections");
+  const segments = hasServerSegments
+    ? (Array.isArray(item.segments) ? item.segments : splitBodyToSegments(item.segments || item.body || item.preview || ""))
+    : Array.isArray(builtinContent && builtinContent.segments)
+      ? builtinContent.segments
+      : splitBodyToSegments(item.body || item.preview || "");
+  const sections = hasServerSections
+    ? item.sections
+    : builtinContent && builtinContent.sections;
   const pinyinSegments = Array.isArray(item.pinyinSegments) && item.pinyinSegments.length
     ? item.pinyinSegments
     : Array.isArray(builtinContent && builtinContent.pinyinSegments) && builtinContent.pinyinSegments.length
@@ -436,6 +441,7 @@ function normalizeContent(item) {
     body: item.body || item.preview || "",
     preview: item.preview || item.body || "",
     segments,
+    sections,
     pinyinSegments,
     lengthTier,
     lengthLevel: lengthTier,
@@ -445,6 +451,12 @@ function normalizeContent(item) {
     festival: item.festival,
     festivalTag: item.festivalTag,
     scene: item.scene || "按计划修持",
+    publishedVersionId: item.publishedVersionId !== undefined
+      ? item.publishedVersionId
+      : builtinContent && builtinContent.publishedVersionId,
+    sourceNote: item.sourceNote !== undefined ? item.sourceNote : builtinContent && builtinContent.sourceNote,
+    versionNote: item.versionNote !== undefined ? item.versionNote : builtinContent && builtinContent.versionNote,
+    reviewStatus: item.reviewStatus !== undefined ? item.reviewStatus : builtinContent && builtinContent.reviewStatus,
     hasAudio: Boolean(item.hasAudio),
     accessLevel: item.accessLevel || item.access_level || "public",
     defaultMode: item.defaultMode || "scientific",
