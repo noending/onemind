@@ -201,3 +201,76 @@ test('assessment completion persists answers and is idempotent per user and comp
   assert.deepEqual(first.assessment.answers, answers);
   assert.equal(first.assessment.familiarityLevel, 'familiar');
 });
+
+test('postgres persists assessment start and completion idempotently', {
+  skip: process.env.RUN_POSTGRES_ASSESSMENT_TEST !== '1'
+}, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+  const startKey = uniqueKey('postgres-assessment-start');
+  const completionKey = uniqueKey('postgres-assessment-complete');
+
+  postgresStore.initializeDatabase();
+  const first = postgresStore.createMemoryAssessment({
+    userId: 'demo-user',
+    contentId: 'great-compassion-opening',
+    contentVersionId: 'great-compassion-v1',
+    scopeType: 'full',
+    scopeId: null,
+    idempotencyKey: startKey
+  });
+  const repeatedStart = postgresStore.createMemoryAssessment({
+    userId: 'demo-user',
+    contentId: 'great-compassion-opening',
+    contentVersionId: 'great-compassion-v1',
+    scopeType: 'section',
+    scopeId: 'ignored-by-idempotency',
+    idempotencyKey: startKey
+  });
+
+  assert.equal(first.items.length, 8);
+  assert.deepEqual(repeatedStart, first);
+  assert.equal(first.items[0].positionBand, 'start');
+  assert.ok(first.items.some((item) => item.positionBand === 'middle'));
+  assert.equal(first.items.at(-1).positionBand, 'end');
+  assert.ok(first.items.every((item) => (
+    !Object.hasOwn(item, 'text')
+    && !Object.hasOwn(item, 'answerText')
+    && !Object.hasOwn(item, 'unitText')
+  )));
+
+  const answers = first.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result: 'complete',
+    revealed: false,
+    latencyMs: 2500
+  }));
+  const completed = postgresStore.recommendMemoryPlan({
+    assessmentId: first.id,
+    userId: first.userId,
+    idempotencyKey: completionKey,
+    answers,
+    dailyMinutes: 15
+  });
+  const repeatedCompletion = postgresStore.recommendMemoryPlan({
+    assessmentId: first.id,
+    userId: first.userId,
+    idempotencyKey: completionKey,
+    answers: answers.map((answer) => ({ ...answer, result: 'cannot' })),
+    dailyMinutes: 60
+  });
+  const persisted = postgresStore.createMemoryAssessment({
+    userId: 'demo-user',
+    contentId: 'great-compassion-opening',
+    contentVersionId: 'great-compassion-v1',
+    scopeType: 'full',
+    idempotencyKey: startKey
+  });
+
+  assert.deepEqual(repeatedCompletion, completed);
+  assert.equal(completed.familiarityLevel, 'familiar');
+  assert.equal(completed.assessment.status, 'completed');
+  assert.deepEqual(persisted.answers, answers);
+  assert.equal(persisted.familiarityLevel, 'familiar');
+  assert.equal(persisted.status, 'completed');
+  assert.ok(persisted.completedAt);
+});

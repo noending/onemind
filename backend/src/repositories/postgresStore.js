@@ -1,6 +1,7 @@
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
+const { recommendPlan } = require('../../../common/adaptive-memory');
 const { ensureAdaptiveSchema } = require('./adaptiveSchema');
 
 const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空复现', '整段复诵', '抽查巩固'];
@@ -1137,6 +1138,318 @@ function getContentStructure(contentId, versionId) {
     versionNote: version.versionNote || '',
     sections
   };
+}
+
+function createMemoryAssessment(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const contentId = String(payload.contentId || '').trim();
+  const contentVersionId = String(payload.contentVersionId || '').trim();
+  const scopeType = String(payload.scopeType || 'full').trim() || 'full';
+  const scopeId = payload.scopeId ? String(payload.scopeId).trim() : null;
+  const idempotencyKey = String(payload.idempotencyKey || '').trim()
+    || `direct-assessment-${crypto.randomUUID()}`;
+
+  if (!userId) throw assessmentError('ASSESSMENT_USER_REQUIRED', 400);
+  if (!contentId) throw assessmentError('ASSESSMENT_CONTENT_REQUIRED', 400);
+  if (!contentVersionId) throw assessmentError('ASSESSMENT_CONTENT_VERSION_REQUIRED', 400);
+
+  const normalizedUserId = ensureUser(userId);
+  const existing = getMemoryAssessmentByStartKey(normalizedUserId, idempotencyKey);
+  if (existing) return toMemoryAssessment(existing);
+
+  const structure = getContentStructure(contentId, contentVersionId);
+  const units = getAssessmentScopeUnits(structure, scopeType, scopeId);
+  const version = resolveAssessmentContentVersion(contentId, contentVersionId);
+  const inserted = queryReturningOne(`
+    insert into memory_assessments (
+      user_id,
+      content_id,
+      content_version_id,
+      scope_type,
+      scope_id,
+      sampled_items,
+      start_idempotency_key
+    ) values (
+      ${sqlValue(normalizedUserId)},
+      ${sqlValue(version.contentId)},
+      ${sqlValue(version.id)},
+      ${sqlValue(scopeType)},
+      ${sqlValue(scopeId)},
+      ${sqlJson(sampleAssessmentItems(units))}::jsonb,
+      ${sqlValue(idempotencyKey)}
+    )
+    on conflict (user_id, start_idempotency_key) do nothing
+    returning id::text as "id"
+  `);
+  const assessment = inserted
+    ? getMemoryAssessmentById(inserted.id, normalizedUserId)
+    : getMemoryAssessmentByStartKey(normalizedUserId, idempotencyKey);
+  return toMemoryAssessment(assessment);
+}
+
+function recommendMemoryPlan(payload = {}) {
+  const answers = Array.isArray(payload.answers) ? payload.answers.map((answer) => ({ ...answer })) : [];
+  const averageScore = calculateAssessmentAverage(answers);
+  const familiarityLevel = averageScore < 0.75 ? 'new' : averageScore < 1.5 ? 'partial' : 'familiar';
+  const recommendation = {
+    familiarityLevel,
+    averageScore,
+    ...recommendPlan({
+      unitCount: payload.unitCount,
+      familiarityLevel,
+      dailyMinutes: payload.dailyMinutes,
+      targetDays: payload.targetDays
+    })
+  };
+
+  const assessmentId = String(payload.assessmentId || '').trim();
+  const userId = String(payload.userId || '').trim();
+  const idempotencyKey = String(payload.idempotencyKey || '').trim();
+  if (!assessmentId || !userId || !idempotencyKey) return recommendation;
+
+  const normalizedUserId = normalizeUserId(userId);
+  const assessment = getMemoryAssessmentById(assessmentId, normalizedUserId);
+  if (!assessment) throw assessmentError('ASSESSMENT_NOT_FOUND', 404);
+
+  const existingResponse = getAssessmentCompletionResponse(normalizedUserId, idempotencyKey);
+  if (existingResponse) {
+    if (existingResponse.operationType !== 'memory_assessment_completion') {
+      throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return existingResponse.responsePayload;
+  }
+  if (assessment.completionIdempotencyKey) {
+    const completedResponse = getAssessmentCompletionResponse(
+      normalizedUserId,
+      assessment.completionIdempotencyKey
+    );
+    if (completedResponse) return completedResponse.responsePayload;
+  }
+
+  const publicAssessment = toMemoryAssessment(assessment);
+  const structure = getContentStructure(publicAssessment.contentId, publicAssessment.contentVersionId);
+  const unitCount = getAssessmentScopeUnits(
+    structure,
+    publicAssessment.scopeType,
+    publicAssessment.scopeId
+  ).length;
+  const completedAt = new Date().toISOString();
+  const completedAssessment = {
+    ...publicAssessment,
+    answers,
+    familiarityLevel,
+    status: 'completed',
+    completedAt
+  };
+  const response = {
+    familiarityLevel,
+    averageScore,
+    ...recommendPlan({
+      unitCount,
+      familiarityLevel,
+      dailyMinutes: payload.dailyMinutes,
+      targetDays: payload.targetDays
+    }),
+    assessment: completedAssessment
+  };
+  const persistedJson = queryScalar(`
+    with completed as (
+      update memory_assessments
+      set
+        answers = ${sqlJson(answers)}::jsonb,
+        familiarity_level = ${sqlValue(familiarityLevel)},
+        status = 'completed',
+        completion_idempotency_key = ${sqlValue(idempotencyKey)},
+        completed_at = ${sqlValue(completedAt)}::timestamptz
+      where id = ${sqlValue(assessmentId)}
+        and user_id = ${sqlValue(normalizedUserId)}
+        and completion_idempotency_key is null
+      returning id::text as "id"
+    ), recorded as (
+      insert into idempotency_records (
+        user_id,
+        idempotency_key,
+        operation_type,
+        entity_id,
+        request_payload,
+        response_payload
+      )
+      select
+        ${sqlValue(normalizedUserId)},
+        ${sqlValue(idempotencyKey)},
+        'memory_assessment_completion',
+        completed.id,
+        ${sqlJson(payload)}::jsonb,
+        ${sqlJson(response)}::jsonb
+      from completed
+      on conflict (user_id, idempotency_key) do nothing
+      returning response_payload
+    )
+    select response_payload from recorded
+    union all
+    select response_payload
+    from idempotency_records
+    where user_id = ${sqlValue(normalizedUserId)}
+      and idempotency_key = ${sqlValue(idempotencyKey)}
+    limit 1
+  `);
+  if (persistedJson) return JSON.parse(persistedJson);
+
+  const concurrentAssessment = getMemoryAssessmentById(assessmentId, normalizedUserId);
+  const concurrentResponse = concurrentAssessment?.completionIdempotencyKey
+    ? getAssessmentCompletionResponse(normalizedUserId, concurrentAssessment.completionIdempotencyKey)
+    : null;
+  if (concurrentResponse) return concurrentResponse.responsePayload;
+  throw assessmentError('ASSESSMENT_COMPLETION_FAILED', 409);
+}
+
+function resolveAssessmentContentVersion(contentId, versionId) {
+  const normalizedContentId = normalizeId(contentId);
+  const normalizedVersionId = String(versionId || '').trim();
+  const versionAlias = CONTENT_VERSION_ALIASES[normalizedVersionId];
+  const versionFilter = isUuid(normalizedVersionId)
+    ? `id = ${sqlValue(normalizedVersionId)}`
+    : `version_no = ${Number(versionAlias?.versionNo || 0)}`;
+  const version = queryOne(`
+    select id::text as "id", content_id::text as "contentId", version_no as "versionNo"
+    from content_versions
+    where content_id = ${sqlValue(normalizedContentId)}
+      and ${versionFilter}
+    limit 1
+  `);
+  if (!version) throw contentStructureError('CONTENT_VERSION_NOT_FOUND', 404);
+  return version;
+}
+
+function getAssessmentScopeUnits(structure, scopeType, scopeId) {
+  if (scopeType === 'full') return structure.sections.flatMap((section) => section.units || []);
+  if (scopeType === 'section') {
+    const publicSectionMatch = String(scopeId || '').match(/^great-compassion-section-(\d+)$/);
+    const section = structure.sections.find((item) => item.id === scopeId)
+      || (publicSectionMatch
+        ? structure.sections.find((item) => Number(item.sortOrder) === Number(publicSectionMatch[1]))
+        : null);
+    if (section) return section.units || [];
+  }
+  throw assessmentError('ASSESSMENT_SCOPE_NOT_FOUND', 404);
+}
+
+function sampleAssessmentItems(units) {
+  const count = units.length;
+  const indexes = count <= 8
+    ? Array.from({ length: count }, (_, index) => index)
+    : Array.from({ length: 8 }, (_, index) => Math.round(index * (count - 1) / 7));
+
+  return indexes.map((unitIndex) => {
+    const unit = units[unitIndex];
+    return {
+      memoryUnitId: unit.id,
+      firstCharacterCue: unit.firstCharacterCue || Array.from(String(unit.text || ''))[0] || '',
+      sortOrder: Number(unit.sortOrder),
+      positionBand: assessmentPositionBand(unitIndex, count)
+    };
+  });
+}
+
+function assessmentPositionBand(index, count) {
+  if (count <= 1 || index === 0) return 'start';
+  if (index === count - 1) return 'end';
+  const ratio = index / (count - 1);
+  if (ratio < 1 / 3) return 'start';
+  if (ratio < 2 / 3) return 'middle';
+  return 'end';
+}
+
+function calculateAssessmentAverage(answers) {
+  if (!answers.length) return 0;
+  const scores = { cannot: 0, partial: 1, complete: 2 };
+  const total = answers.reduce((sum, answer) => {
+    const base = scores[answer.result] ?? 0;
+    return sum + Math.max(0, base - (answer.revealed ? 1 : 0));
+  }, 0);
+  return total / answers.length;
+}
+
+function getMemoryAssessmentByStartKey(userId, idempotencyKey) {
+  return queryOne(memoryAssessmentSelect(`
+    ma.user_id = ${sqlValue(userId)}
+    and ma.start_idempotency_key = ${sqlValue(idempotencyKey)}
+  `));
+}
+
+function getMemoryAssessmentById(assessmentId, userId) {
+  if (!isUuid(assessmentId)) return null;
+  return queryOne(memoryAssessmentSelect(`
+    ma.id = ${sqlValue(assessmentId)}
+    and ma.user_id = ${sqlValue(userId)}
+  `));
+}
+
+function memoryAssessmentSelect(whereClause) {
+  return `
+    select
+      ma.id::text as "id",
+      ma.user_id::text as "userId",
+      ma.content_id::text as "contentId",
+      ma.content_version_id::text as "contentVersionId",
+      cv.version_no as "contentVersionNo",
+      ma.scope_type as "scopeType",
+      ma.scope_id as "scopeId",
+      ma.sampled_items as "items",
+      ma.answers,
+      ma.familiarity_level as "familiarityLevel",
+      ma.status,
+      ma.start_idempotency_key as "startIdempotencyKey",
+      ma.completion_idempotency_key as "completionIdempotencyKey",
+      ma.created_at as "createdAt",
+      ma.completed_at as "completedAt"
+    from memory_assessments ma
+    join content_versions cv on cv.id = ma.content_version_id
+    where ${whereClause}
+    limit 1
+  `;
+}
+
+function getAssessmentCompletionResponse(userId, idempotencyKey) {
+  return queryOne(`
+    select
+      operation_type as "operationType",
+      response_payload as "responsePayload"
+    from idempotency_records
+    where user_id = ${sqlValue(userId)}
+      and idempotency_key = ${sqlValue(idempotencyKey)}
+    limit 1
+  `);
+}
+
+function toMemoryAssessment(assessment) {
+  return {
+    id: assessment.id,
+    userId: assessment.userId === IDS.demoUser ? 'demo-user' : assessment.userId,
+    contentId: publicContentId(assessment.contentId),
+    contentVersionId: publicContentVersionId(assessment),
+    scopeType: assessment.scopeType,
+    scopeId: assessment.scopeId,
+    items: assessment.items || [],
+    answers: assessment.answers || null,
+    familiarityLevel: assessment.familiarityLevel || null,
+    status: assessment.status,
+    createdAt: new Date(assessment.createdAt).toISOString(),
+    completedAt: assessment.completedAt ? new Date(assessment.completedAt).toISOString() : null
+  };
+}
+
+function publicContentId(contentId) {
+  const match = Object.entries(IDS.contents).find(([, internalId]) => internalId === contentId);
+  return match?.[0] || contentId;
+}
+
+function publicContentVersionId(assessment) {
+  const match = Object.entries(CONTENT_VERSION_ALIASES).find(([, alias]) => (
+    alias.contentId === assessment.contentId
+    && Number(alias.versionNo) === Number(assessment.contentVersionNo)
+  ));
+  return match?.[0] || assessment.contentVersionId;
 }
 
 function normalizeFestivalContentIds(value) {
@@ -3610,6 +3923,13 @@ function contentStructureError(code, statusCode) {
   return error;
 }
 
+function assessmentError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
 function hashAdminPassword(password) {
   return crypto.createHash('sha256').update(String(password || '')).digest('hex');
 }
@@ -3647,6 +3967,7 @@ module.exports = {
   createAsset,
   createContent,
   createFestival,
+  createMemoryAssessment,
   createNotificationJob,
   createRecitationSession,
   dispatchNotificationJobs,
@@ -3674,6 +3995,7 @@ module.exports = {
   listPlans,
   listRecitationGoals,
   listTodayFocus,
+  recommendMemoryPlan,
   updateAsset,
   todayDate,
   updateContent,
