@@ -592,6 +592,30 @@ function createMemoryPlanApi(payload = {}) {
   }).then((response) => response.data || null);
 }
 
+function createMemoryAssessmentApi(payload = {}) {
+  const { idempotencyKey, ...data } = payload;
+  return request("/api/memory-assessments", {
+    method: "POST",
+    header: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+    data
+  }).then((response) => response.data || null);
+}
+
+function recommendMemoryPlanApi(payload = {}) {
+  const { idempotencyKey, ...data } = payload;
+  return request("/api/memory-plans/recommendation", {
+    method: "POST",
+    header: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+    data
+  }).then((response) => response.data || null);
+}
+
+function getContentStructureApi(contentId, versionId) {
+  return request(
+    `/api/contents/${encodeURIComponent(contentId)}/versions/${encodeURIComponent(versionId)}/structure`
+  ).then((response) => response.data || null);
+}
+
 function completeReviewTaskApi(taskId, result, extra = {}) {
   return request(`/api/review-tasks/${encodeURIComponent(taskId)}/complete`, {
     method: "POST",
@@ -678,11 +702,13 @@ module.exports = {
   logout,
   refreshToken,
   listMemoryPlansApi,
+  createMemoryAssessmentApi,
   createMemoryPlanApi,
   createNotificationJobApi,
   createRecitationSessionApi,
   completeReviewTaskApi,
   getGrowthOverviewApi,
+  getContentStructureApi,
   getNotificationSettingsApi,
   listNotificationJobsApi,
   listRecitationGoalsApi,
@@ -691,6 +717,7 @@ module.exports = {
   listTodayFocusApi,
   normalizeContent,
   normalizeFestival,
+  recommendMemoryPlanApi,
   getAuthUser,
   setBackendEnabled,
   setBaseUrl,

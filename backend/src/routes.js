@@ -4,6 +4,7 @@ const {
   archiveContent,
   archiveFestival,
   createNotificationJob,
+  createMemoryAssessment,
   createRecitationSession,
   createAsset,
   createContent,
@@ -34,6 +35,7 @@ const {
   listRecitationGoals,
   listTodayFocus,
   loginByWechatCode,
+  recommendMemoryPlan,
   updateUserProfile,
   upsertNotificationSetting,
   upsertRecitationGoal,
@@ -113,6 +115,10 @@ async function handleRequest(req, res, body) {
   if (req.method === 'GET' && pathname === '/favicon.ico') {
     res.writeHead(204);
     return res.end();
+  }
+
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 200, { data: {} });
   }
 
   if (req.method === 'GET' && (pathname === '/' || pathname === '/admin' || pathname === '/admin/')) {
@@ -438,6 +444,41 @@ async function handleRequest(req, res, body) {
     });
   }
 
+  if (req.method === 'POST' && pathname === '/api/memory-assessments') {
+    if (!userSession) return sendJson(res, 401, { error: 'AUTH_REQUIRED' });
+    const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
+    if (!idempotencyKey) return sendJson(res, 400, { error: 'IDEMPOTENCY_KEY_REQUIRED' });
+    const payload = parseJsonBody(body);
+    return sendJson(res, 201, {
+      data: createMemoryAssessment({
+        contentId: payload.contentId,
+        contentVersionId: payload.contentVersionId,
+        scopeType: payload.scopeType || 'full',
+        scopeId: payload.scopeId || null,
+        userId: userSession.id,
+        idempotencyKey
+      })
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/memory-plans/recommendation') {
+    if (!userSession) return sendJson(res, 401, { error: 'AUTH_REQUIRED' });
+    const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
+    if (!idempotencyKey) return sendJson(res, 400, { error: 'IDEMPOTENCY_KEY_REQUIRED' });
+    const payload = parseJsonBody(body);
+    if (!payload.assessmentId) return sendJson(res, 400, { error: 'ASSESSMENT_ID_REQUIRED' });
+    return sendJson(res, 200, {
+      data: recommendMemoryPlan({
+        assessmentId: payload.assessmentId,
+        answers: payload.answers,
+        dailyMinutes: payload.dailyMinutes,
+        targetDays: payload.targetDays,
+        userId: userSession.id,
+        idempotencyKey
+      })
+    });
+  }
+
   if (req.method === 'GET' && pathname === '/api/memory-plans') {
     if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     return sendJson(res, 200, {
@@ -627,7 +668,7 @@ function sendJson(res, statusCode, payload) {
   const responseBody = JSON.stringify(payload, null, 2);
   res.writeHead(statusCode, {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Idempotency-Key',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(responseBody)
