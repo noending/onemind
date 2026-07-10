@@ -299,6 +299,7 @@ create table if not exists daily_study_tasks (
 create table if not exists daily_study_task_items (
   id uuid primary key default gen_random_uuid(),
   task_id uuid not null references daily_study_tasks(id) on delete cascade,
+  plan_id uuid references memory_plans(id),
   memory_unit_id uuid not null references memory_units(id),
   task_type varchar(24) not null,
   sort_order int not null,
@@ -308,6 +309,15 @@ create table if not exists daily_study_task_items (
   updated_at timestamptz not null default now(),
   unique (task_id, sort_order)
 );
+
+alter table daily_study_task_items
+  add column if not exists plan_id uuid references memory_plans(id);
+
+update daily_study_task_items item
+set plan_id = task.plan_id
+from daily_study_tasks task
+where item.task_id = task.id
+  and item.plan_id is null;
 
 create table if not exists idempotency_records (
   id uuid primary key default gen_random_uuid(),
@@ -320,6 +330,14 @@ create table if not exists idempotency_records (
   created_at timestamptz not null default now(),
   unique (user_id, idempotency_key)
 );
+
+update idempotency_records
+set operation_type = 'adaptive_plan_create'
+where operation_type = 'adaptive_plan_creation';
+
+update idempotency_records
+set operation_type = 'study_task_item_complete'
+where operation_type = 'adaptive_task_item_completion';
 
 create table if not exists memory_assessments (
   id uuid primary key default gen_random_uuid(),
@@ -346,6 +364,9 @@ create unique index if not exists memory_assessments_completion_key_uidx
 create index if not exists idx_memory_item_states_plan_due on memory_item_states(plan_id, due_at);
 create index if not exists idx_daily_study_tasks_plan_date on daily_study_tasks(plan_id, task_date);
 create index if not exists idx_daily_study_task_items_task_sort on daily_study_task_items(task_id, sort_order);
+create unique index if not exists daily_study_task_items_pending_new_uidx
+  on daily_study_task_items(plan_id, memory_unit_id)
+  where plan_id is not null and task_type = 'new' and status = 'pending';
 
 create table if not exists review_tasks (
   id uuid primary key default gen_random_uuid(),

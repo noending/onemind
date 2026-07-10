@@ -56,6 +56,7 @@ test('adaptive schema includes the controller-supplemented state, task, and idem
     'retrievability numeric(10,4) not null default 0',
     'cross_day_success_count int not null default 0',
     'sequence_range_label varchar(180)',
+    'plan_id uuid references memory_plans(id)',
     'result jsonb',
     'idempotency_key varchar(180) not null',
     'response_payload jsonb not null'
@@ -71,6 +72,8 @@ test('adaptive schema includes the controller-supplemented state, task, and idem
     'on memory_item_states(plan_id, due_at)',
     'on daily_study_tasks(plan_id, task_date)',
     'on daily_study_task_items(task_id, sort_order)',
+    'on daily_study_task_items(plan_id, memory_unit_id)',
+    "where plan_id is not null and task_type = 'new' and status = 'pending'",
     'unique (user_id, start_idempotency_key)',
     'on memory_assessments(user_id, completion_idempotency_key)',
     'where completion_idempotency_key is not null'
@@ -110,14 +113,14 @@ test('postgres store imports and runs the adaptive schema during feature initial
   );
 });
 
-test('adaptive migrations are repeatable idempotent DDL statements', () => {
+test('adaptive migrations are repeatable idempotent statements', () => {
   const firstRun = collectStatements();
   const secondRun = collectStatements();
 
   assert.deepEqual(secondRun, firstRun);
   for (const statement of firstRun) {
     const normalized = normalizeSql(statement);
-    assert.match(normalized, /^(?:alter table|create table|create(?: unique)? index)\b/);
-    assert.match(normalized, /\bif not exists\b/);
+    assert.match(normalized, /^(?:alter table|create table|create(?: unique)? index|update)\b/);
+    if (!normalized.startsWith('update ')) assert.match(normalized, /\bif not exists\b/);
   }
 });

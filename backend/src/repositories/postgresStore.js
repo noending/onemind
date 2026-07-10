@@ -4,7 +4,6 @@ const fs = require('fs');
 const {
   allocateDailyUnits,
   applyReviewGrade,
-  isInitialComplete,
   recommendPlan
 } = require('../../../common/adaptive-memory');
 const { ensureAdaptiveSchema } = require('./adaptiveSchema');
@@ -14,6 +13,10 @@ const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
 const REVIEW_TAIL_INTERVAL = 15;
 const GROWTH_STAGES = ['初见', '熟悉', '稳定', '通顺', '已持诵'];
 const MAX_IDEMPOTENCY_KEY_LENGTH = 180;
+const MAX_ADAPTIVE_TASK_ALLOCATION_ATTEMPTS = 3;
+const ADAPTIVE_PLAN_CREATE_OPERATION = 'adaptive_plan_create';
+const STUDY_TASK_ITEM_COMPLETE_OPERATION = 'study_task_item_complete';
+const PENDING_NEW_INDEX = 'daily_study_task_items_pending_new_uidx';
 
 const DB_CONFIG = {
   host: process.env.PGHOST || '127.0.0.1',
@@ -1543,7 +1546,11 @@ function createAdaptivePlan(payload = {}) {
   const normalizedUserId = ensureUser(userId);
   const existing = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
   if (existing) {
-    if (existing.operationType !== 'adaptive_plan_creation') {
+    if (
+      existing.operationType !== ADAPTIVE_PLAN_CREATE_OPERATION
+      || !existing.entityId
+      || existing.responsePayload?.id !== existing.entityId
+    ) {
       throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
     }
     return existing.responsePayload;
@@ -1626,8 +1633,6 @@ function createAdaptivePlan(payload = {}) {
   };
   const response = { ...plan, task };
   const stateValues = itemStates.map((state) => `(
-    ${sqlValue(normalizedUserId)},
-    ${sqlValue(planId)},
     ${sqlValue(state.memoryUnitId)},
     'new',
     ${sqlValue(now)}::timestamptz,
@@ -1635,7 +1640,6 @@ function createAdaptivePlan(payload = {}) {
   )`).join(',');
   const itemValues = taskItems.map((item) => `(
     ${sqlValue(item.id)},
-    ${sqlValue(taskId)},
     ${sqlValue(item.memoryUnitId)},
     ${sqlValue(item.taskType)},
     ${item.sortOrder},
@@ -1643,15 +1647,28 @@ function createAdaptivePlan(payload = {}) {
     ${sqlValue(now)}::timestamptz,
     ${sqlValue(now)}::timestamptz
   )`).join(',');
-  const title = String(getContent(contentId)?.title || '自适应记忆计划');
+  const title = String(getContent(contentId)?.title || 'Adaptive memory plan');
   const persistedJson = queryScalar(`
-    with inserted_plan as (
+    with reservation as (
+      insert into idempotency_records (
+        user_id, idempotency_key, operation_type, entity_id,
+        request_payload, response_payload
+      ) values (
+        ${sqlValue(normalizedUserId)}, ${sqlValue(idempotencyKey)},
+        ${sqlValue(ADAPTIVE_PLAN_CREATE_OPERATION)}, ${sqlValue(planId)},
+        ${sqlJson(payload)}::jsonb, ${sqlJson(response)}::jsonb
+      )
+      on conflict (user_id, idempotency_key) do nothing
+      returning operation_type as "operationType", entity_id as "entityId",
+        response_payload as "responsePayload"
+    ), inserted_plan as (
       insert into memory_plans (
         id, user_id, content_id, content_version_id, mode, title, start_date,
         total_days, current_day, state, scope_type, scope_id, target_days,
         daily_minutes, familiarity_level, strategy, expected_finish_date,
         adaptive_status, created_at, updated_at
-      ) values (
+      )
+      select
         ${sqlValue(planId)}, ${sqlValue(normalizedUserId)}, ${sqlValue(version.contentId)},
         ${sqlValue(version.id)}, 'scientific', ${sqlValue(title)}, ${sqlValue(startDate)}::date,
         ${recommendation.targetDays}, 1, 'reviewing', ${sqlValue(scopeType)},
@@ -1659,12 +1676,20 @@ function createAdaptivePlan(payload = {}) {
         ${sqlValue(plan.familiarityLevel)}, ${sqlValue(strategy)},
         ${sqlValue(plan.expectedFinishDate)}::date, 'active',
         ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz
-      )
+      from reservation
       returning id
     ), inserted_states as (
       insert into memory_item_states (
         user_id, plan_id, memory_unit_id, phase, created_at, updated_at
-      ) values ${stateValues}
+      )
+      select
+        ${sqlValue(normalizedUserId)}, inserted_plan.id,
+        values_row.memory_unit_id::uuid, values_row.phase,
+        values_row.created_at, values_row.updated_at
+      from inserted_plan
+      cross join (values ${stateValues}) values_row(
+        memory_unit_id, phase, created_at, updated_at
+      )
       returning plan_id
     ), inserted_task as (
       insert into daily_study_tasks (
@@ -1679,47 +1704,73 @@ function createAdaptivePlan(payload = {}) {
         ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz,
         ${sqlValue(now)}::timestamptz
       from inserted_plan
-      where exists (select 1 from inserted_states)
+      where (select count(*) from inserted_states) = ${itemStates.length}
       returning id
     ), inserted_items as (
       insert into daily_study_task_items (
-        id, task_id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
-      ) values ${itemValues}
-      returning task_id
-    ), recorded as (
-      insert into idempotency_records (
-        user_id, idempotency_key, operation_type, entity_id, request_payload, response_payload
+        id, task_id, plan_id, memory_unit_id, task_type, sort_order,
+        status, created_at, updated_at
       )
       select
-        ${sqlValue(normalizedUserId)}, ${sqlValue(idempotencyKey)},
-        'adaptive_plan_creation', inserted_plan.id::text,
-        ${sqlJson(payload)}::jsonb, ${sqlJson(response)}::jsonb
-      from inserted_plan
-      where exists (select 1 from inserted_task)
-        and exists (select 1 from inserted_items)
-      on conflict (user_id, idempotency_key) do nothing
-      returning operation_type as "operationType", entity_id as "entityId",
-        response_payload as "responsePayload"
+        values_row.id::uuid, inserted_task.id, inserted_plan.id,
+        values_row.memory_unit_id::uuid, values_row.task_type,
+        values_row.sort_order, values_row.status,
+        values_row.created_at, values_row.updated_at
+      from inserted_task
+      join inserted_plan on true
+      cross join (values ${itemValues}) values_row(
+        id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
+      )
+      returning task_id
     )
-    select row_to_json(recorded) from recorded
+    select row_to_json(reservation)
+    from reservation
+    where exists (select 1 from inserted_task)
+      and (select count(*) from inserted_items) = ${taskItems.length}
   `);
   const persisted = persistedJson ? JSON.parse(persistedJson) : null;
 
   if (persisted) return persisted.responsePayload;
   const concurrent = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
-  if (concurrent?.operationType === 'adaptive_plan_creation') return concurrent.responsePayload;
+  if (
+    concurrent?.operationType === ADAPTIVE_PLAN_CREATE_OPERATION
+    && concurrent.entityId
+    && concurrent.responsePayload?.id === concurrent.entityId
+  ) {
+    return concurrent.responsePayload;
+  }
   throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
 }
 
 function getTodayStudyTask(userId, planId, date = todayDate()) {
   const normalizedUserId = normalizeUserId(userId);
-  const plan = getAdaptivePlanById(planId, normalizedUserId);
-  if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
-
   const taskDate = String(date || todayDate()).slice(0, 10);
-  const existing = getAdaptiveDailyTask(plan.id, taskDate);
-  if (existing) return existing;
+  for (let attempt = 0; attempt < MAX_ADAPTIVE_TASK_ALLOCATION_ATTEMPTS; attempt += 1) {
+    const plan = getAdaptivePlanById(planId, normalizedUserId);
+    if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
 
+    const existing = getAdaptiveDailyTask(plan.id, taskDate);
+    if (existing) return existing;
+
+    try {
+      const inserted = insertAdaptiveDailyTask(plan, taskDate, attempt === 0);
+      if (!inserted) throw adaptivePlanError('STUDY_TASK_ALLOCATION_CONFLICT', 409);
+    } catch (error) {
+      if (!isPendingNewAllocationConflict(error)) throw error;
+      if (attempt + 1 >= MAX_ADAPTIVE_TASK_ALLOCATION_ATTEMPTS) {
+        throw adaptivePlanError('STUDY_TASK_ALLOCATION_CONFLICT', 409);
+      }
+      continue;
+    }
+
+    const task = getAdaptiveDailyTask(plan.id, taskDate);
+    if (task) return task;
+  }
+
+  throw adaptivePlanError('STUDY_TASK_ALLOCATION_CONFLICT', 409);
+}
+
+function insertAdaptiveDailyTask(plan, taskDate, allowEmptyTask) {
   const pendingUnitIds = new Set(queryRows(`
     select distinct item.memory_unit_id::text as "memoryUnitId"
     from daily_study_task_items item
@@ -1745,8 +1796,10 @@ function getTodayStudyTask(userId, planId, date = todayDate()) {
     result: null,
     completedAt: null
   }));
+  if (!items.length && !allowEmptyTask) return false;
   const itemValues = items.map((item) => `(
-    ${sqlValue(item.id)}, ${sqlValue(taskId)}, ${sqlValue(item.memoryUnitId)},
+    ${sqlValue(item.id)}, ${sqlValue(taskId)}, ${sqlValue(plan.id)},
+    ${sqlValue(item.memoryUnitId)},
     ${sqlValue(item.taskType)}, ${item.sortOrder}, 'pending',
     ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz
   )`).join(',');
@@ -1769,11 +1822,13 @@ function getTodayStudyTask(userId, planId, date = todayDate()) {
       returning id
     )${items.length ? `, inserted_items as (
       insert into daily_study_task_items (
-        id, task_id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
+        id, task_id, plan_id, memory_unit_id, task_type, sort_order,
+        status, created_at, updated_at
       )
       select
         values_row.id::uuid,
         values_row.task_id::uuid,
+        values_row.plan_id::uuid,
         values_row.memory_unit_id::uuid,
         values_row.task_type,
         values_row.sort_order,
@@ -1781,14 +1836,15 @@ function getTodayStudyTask(userId, planId, date = todayDate()) {
         values_row.created_at,
         values_row.updated_at
       from (values ${itemValues}) values_row(
-        id, task_id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
+        id, task_id, plan_id, memory_unit_id, task_type, sort_order,
+        status, created_at, updated_at
       )
       where exists (select 1 from inserted_task)
       returning task_id
     )` : ''}
     select id::text from inserted_task
   `);
-  return getAdaptiveDailyTask(plan.id, taskDate);
+  return true;
 }
 
 function completeStudyTaskItem(payload = {}) {
@@ -1798,7 +1854,11 @@ function completeStudyTaskItem(payload = {}) {
   const normalizedUserId = normalizeUserId(userId);
   const existing = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
   if (existing) {
-    if (existing.operationType !== 'adaptive_task_item_completion' || existing.entityId !== itemId) {
+    if (
+      existing.operationType !== STUDY_TASK_ITEM_COMPLETE_OPERATION
+      || existing.entityId !== itemId
+      || existing.responsePayload?.item?.id !== itemId
+    ) {
       throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
     }
     return existing.responsePayload;
@@ -1822,75 +1882,62 @@ function completeStudyTaskItem(payload = {}) {
     const reviewState = item.taskType === 'new' && state.phase === 'new'
       ? { ...state, phase: 'learning' }
       : state;
-    Object.assign(state, applyReviewGrade(reviewState, { grade, reviewedAt }));
-    item.status = 'completed';
-    item.result = grade;
-    item.completedAt = reviewedAt;
-
-    let retry = null;
-    if (grade === 'again') {
-      retry = task.items.find((candidate) => (
-        candidate.memoryUnitId === item.memoryUnitId
-        && candidate.taskType === 'weak_review'
-        && candidate.status === 'pending'
-      ));
-      if (!retry) {
-        retry = {
-          id: crypto.randomUUID(),
-          taskId: task.id,
-          memoryUnitId: item.memoryUnitId,
-          taskType: 'weak_review',
-          sortOrder: task.items.length + 1,
-          status: 'pending',
-          result: null,
-          completedAt: null
-        };
-        task.items.push(retry);
-        task.weakUnitCount += 1;
-        task.estimatedMinutes = Math.ceil(task.estimatedMinutes + 0.5);
-      }
-    }
-    const now = new Date().toISOString();
-    task.status = task.items.some((candidate) => candidate.status === 'pending') ? 'pending' : 'completed';
-    task.updatedAt = now;
-    plan.adaptiveStatus = isInitialComplete(plan.itemStates) ? 'initial_complete' : 'active';
-    plan.updatedAt = now;
-    const response = { plan, task, item, state };
-    const persisted = persistAdaptiveCompletion({
-      normalizedUserId,
-      idempotencyKey,
-      payload,
-      response,
+    const nextState = applyReviewGrade(reviewState, { grade, reviewedAt });
+    mutateAdaptiveCompletion({
       item,
-      state,
-      task,
       plan,
-      retry,
+      state: nextState,
+      grade,
       reviewedAt,
-      now
+      addWeakRetry: grade === 'again'
     });
-    if (persisted) return persisted;
-  } else {
-    const response = { plan, task, item, state };
-    const recorded = recordAdaptiveCompletion(normalizedUserId, idempotencyKey, itemId, payload, response);
-    if (recorded) return recorded;
   }
 
+  const now = new Date().toISOString();
+  reconcileAdaptiveCompletion(plan.id, task.id, now);
+  const response = readAdaptiveCompletion(plan.id, normalizedUserId, task.taskDate, itemId);
+  const recorded = recordAdaptiveCompletion(
+    normalizedUserId,
+    idempotencyKey,
+    itemId,
+    payload,
+    response
+  );
+  if (recorded) return recorded;
+
   const concurrent = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
-  if (concurrent?.operationType === 'adaptive_task_item_completion' && concurrent.entityId === itemId) {
+  if (
+    concurrent?.operationType === STUDY_TASK_ITEM_COMPLETE_OPERATION
+    && concurrent.entityId === itemId
+    && concurrent.responsePayload?.item?.id === itemId
+  ) {
     return concurrent.responsePayload;
   }
   throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
 }
 
-function persistAdaptiveCompletion(context) {
-  const {
-    normalizedUserId, idempotencyKey, payload, response, item, state,
-    task, plan, retry, reviewedAt, now
-  } = context;
-  const persistedJson = queryScalar(`
-    with updated_state as (
-      update memory_item_states
+function mutateAdaptiveCompletion(context) {
+  const { item, plan, state, grade, reviewedAt, addWeakRetry } = context;
+  const now = new Date().toISOString();
+  const retryId = addWeakRetry ? crypto.randomUUID() : null;
+  queryScalar(`
+    with locked_task as (
+      select id
+      from daily_study_tasks
+      where id = ${sqlValue(item.taskId)}
+      for update
+    ), claimed_item as (
+      update daily_study_task_items source_item
+      set
+        status = 'completed',
+        result = ${sqlJson({ grade, completedAt: reviewedAt })}::jsonb,
+        updated_at = ${sqlValue(now)}::timestamptz
+      where source_item.id = ${sqlValue(item.id)}
+        and source_item.status = 'pending'
+        and exists (select 1 from locked_task)
+      returning source_item.task_id, source_item.memory_unit_id
+    ), updated_state as (
+      update memory_item_states state_row
       set
         phase = ${sqlValue(state.phase)},
         last_grade = ${sqlValue(state.lastGrade)},
@@ -1900,74 +1947,106 @@ function persistAdaptiveCompletion(context) {
         cross_day_success_count = ${Number(state.crossDaySuccessCount)},
         lapse_count = ${Number(state.lapseCount)},
         updated_at = ${sqlValue(now)}::timestamptz
-      where plan_id = ${sqlValue(plan.id)}
-        and memory_unit_id = ${sqlValue(state.memoryUnitId)}
-        and exists (
-          select 1
-          from daily_study_task_items source_item
-          where source_item.id = ${sqlValue(item.id)}
-            and source_item.status = 'pending'
-        )
-      returning plan_id
-    ), updated_item as (
-      update daily_study_task_items
-      set
-        status = 'completed',
-        result = ${sqlJson({ grade: item.result, completedAt: reviewedAt })}::jsonb,
-        updated_at = ${sqlValue(now)}::timestamptz
-      where id = ${sqlValue(item.id)}
-        and status = 'pending'
-        and exists (select 1 from updated_state)
-      returning task_id
-    )${retry ? `, inserted_retry as (
+      from claimed_item
+      where state_row.plan_id = ${sqlValue(plan.id)}
+        and state_row.memory_unit_id = claimed_item.memory_unit_id
+      returning state_row.plan_id
+    )${addWeakRetry ? `, inserted_retry as (
       insert into daily_study_task_items (
-        id, task_id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
+        id, task_id, plan_id, memory_unit_id, task_type, sort_order,
+        status, created_at, updated_at
       )
       select
-        ${sqlValue(retry.id)}, ${sqlValue(task.id)}, ${sqlValue(retry.memoryUnitId)},
-        'weak_review', ${retry.sortOrder}, 'pending',
+        ${sqlValue(retryId)}, ${sqlValue(item.taskId)}, ${sqlValue(plan.id)},
+        ${sqlValue(item.memoryUnitId)}, 'weak_review',
+        coalesce((
+          select max(existing_item.sort_order) + 1
+          from daily_study_task_items existing_item
+          where existing_item.task_id = ${sqlValue(item.taskId)}
+        ), 1),
+        'pending',
         ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz
-      where exists (select 1 from updated_item)
+      where exists (select 1 from updated_state)
         and not exists (
           select 1 from daily_study_task_items
-          where task_id = ${sqlValue(task.id)}
-            and memory_unit_id = ${sqlValue(retry.memoryUnitId)}
+          where task_id = ${sqlValue(item.taskId)}
+            and memory_unit_id = ${sqlValue(item.memoryUnitId)}
             and task_type = 'weak_review'
             and status = 'pending'
         )
       returning task_id
-    )` : ''}, updated_task as (
-      update daily_study_tasks
-      set
-        status = ${sqlValue(task.status)},
-        estimated_minutes = ${task.estimatedMinutes},
-        weak_unit_count = ${task.weakUnitCount},
-        updated_at = ${sqlValue(now)}::timestamptz
-      where id = ${sqlValue(task.id)}
-        and exists (select 1 from updated_item)
-      returning plan_id
-    ), updated_plan as (
-      update memory_plans
-      set adaptive_status = ${sqlValue(plan.adaptiveStatus)}, updated_at = ${sqlValue(now)}::timestamptz
-      where id = ${sqlValue(plan.id)}
-        and exists (select 1 from updated_task)
-      returning id
-    ), recorded as (
-      insert into idempotency_records (
-        user_id, idempotency_key, operation_type, entity_id, request_payload, response_payload
-      )
-      select
-        ${sqlValue(normalizedUserId)}, ${sqlValue(idempotencyKey)},
-        'adaptive_task_item_completion', ${sqlValue(item.id)},
-        ${sqlJson(payload)}::jsonb, ${sqlJson(response)}::jsonb
-      from updated_plan
-      on conflict (user_id, idempotency_key) do nothing
-      returning response_payload as "responsePayload"
-    )
-    select row_to_json(recorded) from recorded
+    )` : ''}
+    select count(*) from updated_state
   `);
-  const row = persistedJson ? JSON.parse(persistedJson) : null;
-  return row?.responsePayload || null;
+}
+
+function reconcileAdaptiveCompletion(planId, taskId, now) {
+  queryScalar(`
+    with task_counts as (
+      select
+        count(*) filter (where status = 'pending')::int as pending_count,
+        count(*) filter (where task_type = 'new')::int as new_count,
+        count(*) filter (where task_type = 'due_review')::int as review_count,
+        count(*) filter (where task_type = 'weak_review')::int as weak_count
+      from daily_study_task_items
+      where task_id = ${sqlValue(taskId)}
+    ), updated_task as (
+      update daily_study_tasks task
+      set
+        status = case when task_counts.pending_count = 0 then 'completed' else 'pending' end,
+        estimated_minutes = ceil(
+          task_counts.new_count * 1.5
+          + (task_counts.review_count + task_counts.weak_count) * 0.5
+        )::int,
+        new_unit_count = task_counts.new_count,
+        review_unit_count = task_counts.review_count,
+        weak_unit_count = task_counts.weak_count,
+        updated_at = ${sqlValue(now)}::timestamptz
+      from task_counts
+      where task.id = ${sqlValue(taskId)}
+      returning task.plan_id
+    ), updated_plan as (
+      update memory_plans plan
+      set
+        adaptive_status = case
+          when exists (
+            select 1 from memory_item_states state_row
+            where state_row.plan_id = plan.id
+          )
+          and not exists (
+            select 1 from memory_item_states state_row
+            where state_row.plan_id = plan.id
+              and state_row.phase <> 'stable'
+          )
+          and not exists (
+            select 1
+            from daily_study_task_items retry_item
+            join daily_study_tasks retry_task on retry_task.id = retry_item.task_id
+            where retry_task.plan_id = plan.id
+              and retry_item.task_type = 'weak_review'
+              and retry_item.status = 'pending'
+          ) then 'initial_complete'
+          else 'active'
+        end,
+        updated_at = ${sqlValue(now)}::timestamptz
+      where plan.id = ${sqlValue(planId)}
+        and exists (select 1 from updated_task)
+      returning plan.id
+    )
+    select id::text from updated_plan
+  `);
+}
+
+function readAdaptiveCompletion(planId, userId, taskDate, itemId) {
+  const plan = getAdaptivePlanById(planId, userId);
+  if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
+  const task = getAdaptiveDailyTask(planId, taskDate);
+  if (!task) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
+  const item = task.items.find((candidate) => candidate.id === itemId);
+  if (!item) throw adaptivePlanError('STUDY_TASK_ITEM_NOT_FOUND', 404);
+  const state = plan.itemStates.find((candidate) => candidate.memoryUnitId === item.memoryUnitId);
+  if (!state) throw adaptivePlanError('STUDY_TASK_ITEM_NOT_FOUND', 404);
+  return { plan, task, item, state };
 }
 
 function recordAdaptiveCompletion(userId, idempotencyKey, itemId, payload, response) {
@@ -1976,7 +2055,7 @@ function recordAdaptiveCompletion(userId, idempotencyKey, itemId, payload, respo
       user_id, idempotency_key, operation_type, entity_id, request_payload, response_payload
     ) values (
       ${sqlValue(userId)}, ${sqlValue(idempotencyKey)},
-      'adaptive_task_item_completion', ${sqlValue(itemId)},
+      ${sqlValue(STUDY_TASK_ITEM_COMPLETE_OPERATION)}, ${sqlValue(itemId)},
       ${sqlJson(payload)}::jsonb, ${sqlJson(response)}::jsonb
     )
     on conflict (user_id, idempotency_key) do nothing
@@ -2165,6 +2244,12 @@ function normalizeAdaptiveStrategy(value, targetDays) {
   if (targetDays <= 7) return 'accelerated';
   if (targetDays <= 14) return 'standard';
   return 'steady';
+}
+
+function isPendingNewAllocationConflict(error) {
+  return [error?.message, error?.stderr, error?.stdout]
+    .filter(Boolean)
+    .some((value) => String(value).includes(PENDING_NEW_INDEX));
 }
 
 function createAdaptiveSequenceRangeLabel(items) {
@@ -2451,6 +2536,7 @@ function listPlans(userId = IDS.demoUser) {
       mastery_score as "masteryScore",
       streak_hits as "streakHits",
       last_reviewed_at as "lastReviewedAt",
+      adaptive_status as "__adaptiveStatus",
       created_at as "createdAt",
       updated_at as "updatedAt"
     from memory_plans
@@ -2459,10 +2545,14 @@ function listPlans(userId = IDS.demoUser) {
     order by created_at desc
   `);
 
-  return plans.map((plan) => ({
-    ...plan,
-    tasks: getTasksForPlan(plan.id)
-  }));
+  return plans.map((plan) => {
+    const { __adaptiveStatus, ...legacyPlan } = plan;
+    if (__adaptiveStatus) return getAdaptivePlanById(plan.id, normalizedUserId);
+    return {
+      ...legacyPlan,
+      tasks: getTasksForPlan(plan.id)
+    };
+  });
 }
 
 function createPlan({ userId = IDS.demoUser, contentId, startDate = todayDate(), mode = 'scientific' }) {

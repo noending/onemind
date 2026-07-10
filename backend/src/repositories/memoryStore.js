@@ -20,6 +20,8 @@ const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
 const REVIEW_TAIL_INTERVAL = 15;
 const GROWTH_STAGES = ['初见', '熟悉', '稳定', '通顺', '已持诵'];
 const MAX_IDEMPOTENCY_KEY_LENGTH = 180;
+const ADAPTIVE_PLAN_CREATE_OPERATION = 'adaptive_plan_create';
+const STUDY_TASK_ITEM_COMPLETE_OPERATION = 'study_task_item_complete';
 
 const state = {
   users: [
@@ -874,12 +876,16 @@ function archiveFestival(festivalId) {
 }
 
 function listPlans(userId = 'demo-user') {
-  return state.plans
+  const legacyPlans = state.plans
     .filter((plan) => plan.userId === userId)
     .map((plan) => ({
       ...plan,
       tasks: state.tasks.filter((task) => task.planId === plan.id)
     }));
+  const adaptivePlans = state.adaptivePlans
+    .filter((plan) => plan.userId === userId)
+    .map(toAdaptivePlan);
+  return [...legacyPlans, ...adaptivePlans];
 }
 
 function listOrganizations() {
@@ -1078,7 +1084,16 @@ function createAdaptivePlan(payload = {}) {
   if (!userId) throw adaptivePlanError('ADAPTIVE_PLAN_USER_REQUIRED', 400);
   if (!contentId) throw adaptivePlanError('ADAPTIVE_PLAN_CONTENT_REQUIRED', 400);
   if (!contentVersionId) throw adaptivePlanError('ADAPTIVE_PLAN_CONTENT_VERSION_REQUIRED', 400);
-  if (cached) return cloneJson(cached.response);
+  if (cached) {
+    if (
+      cached.operationType !== ADAPTIVE_PLAN_CREATE_OPERATION
+      || !cached.entityId
+      || cached.response?.id !== cached.entityId
+    ) {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(cached.response);
+  }
 
   const startDate = String(payload.date || payload.startDate || todayDate()).slice(0, 10);
   const structure = getContentStructure(contentId, contentVersionId);
@@ -1125,7 +1140,8 @@ function createAdaptivePlan(payload = {}) {
   const task = createAdaptiveDailyTask(plan, startDate);
   const response = { ...toAdaptivePlan(plan), task: toAdaptiveDailyTask(task) };
   state.adaptiveIdempotencyResponses[`${userId}:${idempotencyKey}`] = {
-    itemId: null,
+    operationType: ADAPTIVE_PLAN_CREATE_OPERATION,
+    entityId: plan.id,
     response: cloneJson(response)
   };
   return response;
@@ -1149,7 +1165,13 @@ function completeStudyTaskItem(payload = {}) {
   const cached = state.adaptiveIdempotencyResponses[responseKey];
 
   if (cached) {
-    if (cached.itemId !== itemId) throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    if (
+      cached.operationType !== STUDY_TASK_ITEM_COMPLETE_OPERATION
+      || cached.entityId !== itemId
+      || cached.response?.item?.id !== itemId
+    ) {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
     return cloneJson(cached.response);
   }
 
@@ -1193,7 +1215,11 @@ function completeStudyTaskItem(payload = {}) {
     item: cloneJson(item),
     state: cloneJson(stateItem)
   };
-  state.adaptiveIdempotencyResponses[responseKey] = { itemId, response: cloneJson(response) };
+  state.adaptiveIdempotencyResponses[responseKey] = {
+    operationType: STUDY_TASK_ITEM_COMPLETE_OPERATION,
+    entityId: itemId,
+    response: cloneJson(response)
+  };
   return response;
 }
 
@@ -1270,7 +1296,7 @@ function createSequenceRangeLabel(items) {
 
 function ensureAdaptiveUser(userId) {
   if (state.users.some((user) => user.id === userId)) return;
-  state.users.push({ id: userId, nickname: '未命名用户', platform: 'wechat', status: 'active' });
+  state.users.push({ id: userId, nickname: 'User', platform: 'wechat', status: 'active' });
 }
 
 function normalizeAdaptiveIdempotencyKey(value) {

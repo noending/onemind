@@ -1,9 +1,174 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync, spawn } = require('node:child_process');
 
 const store = require('../src/repositories/memoryStore');
 const { contents } = require('../src/data/seed');
+
+const POSTGRES_CONTENT_ID = '33333333-3333-4333-8333-000000000005';
+
+function resolvePsqlBinary() {
+  return [
+    process.env.PSQL_BIN,
+    '/opt/homebrew/bin/psql',
+    '/usr/local/bin/psql',
+    '/usr/bin/psql',
+    'psql'
+  ].filter(Boolean).find((candidate) => !candidate.includes('/') || fs.existsSync(candidate));
+}
+
+function sqlValue(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function runPostgresSql(sql) {
+  return execFileSync(resolvePsqlBinary(), [
+    '-X',
+    '-h', process.env.PGHOST || '127.0.0.1',
+    '-p', process.env.PGPORT || '5432',
+    '-U', process.env.PGUSER || 'magic',
+    '-d', process.env.PGDATABASE || 'onemind',
+    '-v', 'ON_ERROR_STOP=1',
+    '-t',
+    '-A',
+    '-c', sql
+  ], {
+    env: {
+      ...process.env,
+      PGPASSWORD: process.env.PGPASSWORD || 'Noending5@'
+    },
+    encoding: 'utf8'
+  }).trim();
+}
+
+function queryPostgresRows(sql) {
+  const result = runPostgresSql(`
+    select coalesce(json_agg(row_to_json(result_row)), '[]'::json)
+    from (${sql}) result_row
+  `);
+  return JSON.parse(result || '[]');
+}
+
+function createPostgresTestUser() {
+  const userId = crypto.randomUUID();
+  runPostgresSql(`
+    insert into users (id, nickname)
+    values (${sqlValue(userId)}, 'Adaptive concurrency test')
+  `);
+  return userId;
+}
+
+function cleanupPostgresAdaptiveUser(userId) {
+  runPostgresSql(`
+    delete from daily_study_task_items
+    where plan_id in (
+      select id from memory_plans where user_id = ${sqlValue(userId)}
+    );
+    delete from idempotency_records where user_id = ${sqlValue(userId)};
+    delete from memory_plans where user_id = ${sqlValue(userId)};
+    delete from users where id = ${sqlValue(userId)};
+  `);
+}
+
+function installCompletionDelayTrigger() {
+  runPostgresSql(`
+    create or replace function onemind_test_delay_adaptive_completion()
+    returns trigger language plpgsql as $$
+    begin
+      if current_setting('onemind.test_delay_adaptive_completion', true) = 'on' then
+        perform pg_sleep(0.75);
+      end if;
+      return new;
+    end
+    $$;
+    drop trigger if exists onemind_test_delay_adaptive_completion
+      on daily_study_task_items;
+    create trigger onemind_test_delay_adaptive_completion
+      before update of status on daily_study_task_items
+      for each row
+      when (old.status = 'pending' and new.status = 'completed')
+      execute function onemind_test_delay_adaptive_completion();
+  `);
+}
+
+function removeCompletionDelayTrigger() {
+  runPostgresSql(`
+    drop trigger if exists onemind_test_delay_adaptive_completion
+      on daily_study_task_items;
+    drop function if exists onemind_test_delay_adaptive_completion();
+  `);
+}
+
+function installTaskInsertDelayTrigger() {
+  runPostgresSql(`
+    create or replace function onemind_test_delay_adaptive_task_insert()
+    returns trigger language plpgsql as $$
+    begin
+      if current_setting('onemind.test_delay_adaptive_task_insert', true) = 'on' then
+        perform pg_sleep(0.75);
+      end if;
+      return new;
+    end
+    $$;
+    drop trigger if exists onemind_test_delay_adaptive_task_insert
+      on daily_study_tasks;
+    create trigger onemind_test_delay_adaptive_task_insert
+      before insert on daily_study_tasks
+      for each row execute function onemind_test_delay_adaptive_task_insert();
+  `);
+}
+
+function removeTaskInsertDelayTrigger() {
+  runPostgresSql(`
+    drop trigger if exists onemind_test_delay_adaptive_task_insert
+      on daily_study_tasks;
+    drop function if exists onemind_test_delay_adaptive_task_insert();
+  `);
+}
+
+function runPostgresStoreChild(method, args, setting) {
+  const runner = `
+    const store = require('./src/repositories/postgresStore');
+    try {
+      const result = store[process.argv[1]](...JSON.parse(process.argv[2]));
+      process.stdout.write(JSON.stringify(result));
+    } catch (error) {
+      process.stderr.write(JSON.stringify({
+        message: error.message,
+        code: error.code,
+        statusCode: error.statusCode,
+        stderr: error.stderr ? String(error.stderr) : ''
+      }));
+      process.exitCode = 1;
+    }
+  `;
+  const pgOptions = [process.env.PGOPTIONS, setting ? `-c ${setting}=on` : '']
+    .filter(Boolean)
+    .join(' ');
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', runner, method, JSON.stringify(args)], {
+      cwd: path.join(__dirname, '..'),
+      env: { ...process.env, PGOPTIONS: pgOptions },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Postgres child ${method} failed: ${stderr || stdout}`));
+        return;
+      }
+      resolve(JSON.parse(stdout));
+    });
+  });
+}
 
 function uniqueKey(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -89,6 +254,55 @@ test('adaptive plan creation is idempotent and does not reinitialize item states
 
   assert.deepEqual(second, first);
   assert.equal(second.itemStates.length, 84);
+});
+
+test('memory listPlans returns legacy and adaptive plans with the real adaptive shape', () => {
+  const userId = uniqueKey('mixed-plan-user');
+  const legacy = store.createPlan({
+    userId,
+    contentId: 'heart-sutra-core',
+    startDate: '2026-07-10'
+  }).plan;
+  const adaptive = createAdaptivePlan({ userId });
+  const listed = store.listPlans(userId);
+  const listedLegacy = listed.find((plan) => plan.id === legacy.id);
+  const listedAdaptive = listed.find((plan) => plan.id === adaptive.id);
+
+  assert.ok(listedLegacy);
+  assert.ok(Array.isArray(listedLegacy.tasks));
+  assert.ok(listedAdaptive);
+  assert.equal(listedAdaptive.contentVersionId, adaptive.contentVersionId);
+  assert.equal(listedAdaptive.adaptiveStatus, adaptive.adaptiveStatus);
+  assert.deepEqual(listedAdaptive.itemStates, adaptive.itemStates);
+  assert.equal(Object.hasOwn(listedAdaptive, 'task'), false);
+});
+
+test('memory idempotency keys cannot cross adaptive operations', () => {
+  const userId = uniqueKey('operation-bound-user');
+  const createKey = uniqueKey('operation-create');
+  const completionKey = uniqueKey('operation-complete');
+  const plan = createAdaptivePlan({ userId, idempotencyKey: createKey });
+  const item = plan.task.items[0];
+
+  assert.throws(() => store.completeStudyTaskItem({
+    userId,
+    itemId: item.id,
+    grade: 'good',
+    idempotencyKey: createKey,
+    reviewedAt: '2026-07-10T08:00:00.000Z'
+  }), { code: 'IDEMPOTENCY_KEY_CONFLICT', statusCode: 409 });
+
+  store.completeStudyTaskItem({
+    userId,
+    itemId: item.id,
+    grade: 'good',
+    idempotencyKey: completionKey,
+    reviewedAt: '2026-07-10T08:00:00.000Z'
+  });
+  assert.throws(() => createAdaptivePlan({
+    userId,
+    idempotencyKey: completionKey
+  }), { code: 'IDEMPOTENCY_KEY_CONFLICT', statusCode: 409 });
 });
 
 test('today task is generated lazily for a later date and cannot be read by another user', () => {
@@ -360,4 +574,256 @@ test('postgres again leaves exactly one pending weak retry and duplicate complet
   assert.equal(first.plan.adaptiveStatus, 'active');
   assert.equal(duplicate.state.lapseCount, 1);
   assert.equal(duplicate.task.items.filter((item) => item.taskType === 'weak_review').length, 1);
+});
+
+test('postgres concurrent same-key plan creation persists exactly one entity set', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, async () => {
+  getGatedPostgresStore();
+  const userId = createPostgresTestUser();
+  const idempotencyKey = uniqueKey('postgres-concurrent-create');
+  const payload = {
+    userId,
+    contentId: 'great-compassion-opening',
+    contentVersionId: 'great-compassion-v1',
+    scopeType: 'full',
+    targetDays: 14,
+    dailyMinutes: 15,
+    familiarityLevel: 'partial',
+    date: '2026-07-10',
+    idempotencyKey
+  };
+
+  try {
+    const [first, second] = await Promise.all([
+      runPostgresStoreChild('createAdaptivePlan', [payload]),
+      runPostgresStoreChild('createAdaptivePlan', [payload])
+    ]);
+    const [counts] = queryPostgresRows(`
+      select
+        (select count(*)::int from memory_plans
+          where user_id = ${sqlValue(userId)} and adaptive_status is not null) as "planCount",
+        (select count(*)::int from memory_item_states
+          where user_id = ${sqlValue(userId)}) as "stateCount",
+        (select count(*)::int from daily_study_tasks task
+          join memory_plans plan on plan.id = task.plan_id
+          where plan.user_id = ${sqlValue(userId)}) as "taskCount",
+        (select count(*)::int from daily_study_task_items item
+          join daily_study_tasks task on task.id = item.task_id
+          join memory_plans plan on plan.id = task.plan_id
+          where plan.user_id = ${sqlValue(userId)}) as "itemCount",
+        (select count(*)::int from idempotency_records
+          where user_id = ${sqlValue(userId)}
+            and idempotency_key = ${sqlValue(idempotencyKey)}) as "recordCount",
+        (select operation_type from idempotency_records
+          where user_id = ${sqlValue(userId)}
+            and idempotency_key = ${sqlValue(idempotencyKey)}) as "operationType"
+    `);
+
+    assert.equal(first.id, second.id);
+    assert.deepEqual(counts, {
+      planCount: 1,
+      stateCount: 84,
+      taskCount: 1,
+      itemCount: 6,
+      recordCount: 1,
+      operationType: 'adaptive_plan_create'
+    });
+  } finally {
+    cleanupPostgresAdaptiveUser(userId);
+  }
+});
+
+test('postgres concurrent final-item completion reconciles and persists database terminal state', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, async () => {
+  const postgresStore = getGatedPostgresStore();
+  const userId = createPostgresTestUser();
+  const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+  const finalItems = plan.task.items.slice(-2);
+  const completionKeys = [
+    uniqueKey('postgres-concurrent-complete-a'),
+    uniqueKey('postgres-concurrent-complete-b')
+  ];
+
+  runPostgresSql(`
+    update memory_item_states
+    set phase = 'stable', last_grade = 'good',
+      last_reviewed_at = '2026-07-09T08:00:00.000Z'::timestamptz,
+      due_at = '2026-07-20'::date, successful_recall_count = 2,
+      cross_day_success_count = 1, updated_at = now()
+    where plan_id = ${sqlValue(plan.id)};
+    update memory_item_states
+    set phase = 'learning', cross_day_success_count = 0,
+      successful_recall_count = 1
+    where plan_id = ${sqlValue(plan.id)}
+      and memory_unit_id in (${finalItems.map((item) => sqlValue(item.memoryUnitId)).join(',')});
+    update daily_study_task_items
+    set status = 'completed',
+      result = '{"grade":"good","completedAt":"2026-07-10T07:00:00.000Z"}'::jsonb,
+      updated_at = now()
+    where task_id = ${sqlValue(plan.task.id)}
+      and id not in (${finalItems.map((item) => sqlValue(item.id)).join(',')});
+    update daily_study_tasks set status = 'pending', updated_at = now()
+      where id = ${sqlValue(plan.task.id)};
+    update memory_plans set adaptive_status = 'active', updated_at = now()
+      where id = ${sqlValue(plan.id)};
+  `);
+  installCompletionDelayTrigger();
+
+  try {
+    const results = await Promise.all(finalItems.map((item, index) => (
+      runPostgresStoreChild('completeStudyTaskItem', [{
+        userId,
+        itemId: item.id,
+        grade: 'good',
+        idempotencyKey: completionKeys[index],
+        reviewedAt: '2026-07-10T08:00:00.000Z'
+      }], 'onemind.test_delay_adaptive_completion')
+    )));
+    const [terminal] = queryPostgresRows(`
+      select
+        task.status as "taskStatus",
+        plan.adaptive_status as "adaptiveStatus",
+        (select count(*)::int from daily_study_task_items
+          where task_id = task.id and status = 'pending') as "pendingItemCount",
+        (select count(*)::int from memory_item_states
+          where plan_id = plan.id and phase <> 'stable') as "nonStableStateCount"
+      from daily_study_tasks task
+      join memory_plans plan on plan.id = task.plan_id
+      where task.id = ${sqlValue(plan.task.id)}
+    `);
+    const records = queryPostgresRows(`
+      select operation_type as "operationType", response_payload as response
+      from idempotency_records
+      where user_id = ${sqlValue(userId)}
+        and idempotency_key in (${completionKeys.map(sqlValue).join(',')})
+      order by idempotency_key
+    `);
+
+    assert.deepEqual(terminal, {
+      taskStatus: 'completed',
+      adaptiveStatus: 'initial_complete',
+      pendingItemCount: 0,
+      nonStableStateCount: 0
+    });
+    assert.equal(results.some((result) => (
+      result.task.status === 'completed'
+      && result.plan.adaptiveStatus === 'initial_complete'
+    )), true);
+    assert.equal(records.length, 2);
+    assert.equal(records.every((record) => record.operationType === 'study_task_item_complete'), true);
+    assert.equal(records.some((record) => (
+      record.response.task.status === 'completed'
+      && record.response.plan.adaptiveStatus === 'initial_complete'
+    )), true);
+  } finally {
+    removeCompletionDelayTrigger();
+    cleanupPostgresAdaptiveUser(userId);
+  }
+});
+
+test('postgres concurrent different-date allocation never overlaps pending new units', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, async () => {
+  const postgresStore = getGatedPostgresStore();
+  const userId = createPostgresTestUser();
+  const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+  installTaskInsertDelayTrigger();
+
+  try {
+    const [firstDate, secondDate] = await Promise.all([
+      runPostgresStoreChild(
+        'getTodayStudyTask',
+        [userId, plan.id, '2026-07-11'],
+        'onemind.test_delay_adaptive_task_insert'
+      ),
+      runPostgresStoreChild(
+        'getTodayStudyTask',
+        [userId, plan.id, '2026-07-12'],
+        'onemind.test_delay_adaptive_task_insert'
+      )
+    ]);
+    const firstNewIds = new Set(firstDate.items
+      .filter((item) => item.taskType === 'new' && item.status === 'pending')
+      .map((item) => item.memoryUnitId));
+    const secondNewIds = new Set(secondDate.items
+      .filter((item) => item.taskType === 'new' && item.status === 'pending')
+      .map((item) => item.memoryUnitId));
+    const overlap = [...firstNewIds].filter((memoryUnitId) => secondNewIds.has(memoryUnitId));
+    const [stored] = queryPostgresRows(`
+      select
+        (select count(*)::int from daily_study_tasks
+          where plan_id = ${sqlValue(plan.id)}
+            and task_date in ('2026-07-11'::date, '2026-07-12'::date)) as "taskCount",
+        (select count(*)::int from daily_study_tasks task
+          where task.plan_id = ${sqlValue(plan.id)}
+            and task.task_date in ('2026-07-11'::date, '2026-07-12'::date)
+            and not exists (
+              select 1 from daily_study_task_items item where item.task_id = task.id
+            )) as "emptyTaskCount",
+        (select count(*)::int from (
+          select item.memory_unit_id
+          from daily_study_task_items item
+          join daily_study_tasks task on task.id = item.task_id
+          where task.plan_id = ${sqlValue(plan.id)}
+            and item.task_type = 'new'
+            and item.status = 'pending'
+          group by item.memory_unit_id
+          having count(*) > 1
+        ) duplicated) as "duplicatePendingNewCount"
+    `);
+
+    assert.ok(firstNewIds.size > 0);
+    assert.ok(secondNewIds.size > 0);
+    assert.deepEqual(overlap, []);
+    assert.deepEqual(stored, {
+      taskCount: 2,
+      emptyTaskCount: 0,
+      duplicatePendingNewCount: 0
+    });
+  } finally {
+    removeTaskInsertDelayTrigger();
+    cleanupPostgresAdaptiveUser(userId);
+  }
+});
+
+test('postgres listPlans returns the real adaptive public shape and unchanged legacy rows', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const userId = createPostgresTestUser();
+  const legacyId = crypto.randomUUID();
+  runPostgresSql(`
+    insert into memory_plans (
+      id, user_id, content_id, mode, title, start_date,
+      total_days, current_day, state
+    ) values (
+      ${sqlValue(legacyId)}, ${sqlValue(userId)}, ${sqlValue(POSTGRES_CONTENT_ID)},
+      'scientific', 'Legacy test plan', '2026-07-10'::date, 5, 1, 'reviewing'
+    )
+  `);
+
+  try {
+    const adaptive = createPostgresAdaptivePlan(postgresStore, { userId });
+    const listed = postgresStore.listPlans(userId);
+    const listedLegacy = listed.find((plan) => plan.id === legacyId);
+    const listedAdaptive = listed.find((plan) => plan.id === adaptive.id);
+
+    assert.ok(listedLegacy);
+    assert.ok(Array.isArray(listedLegacy.tasks));
+    assert.equal(Object.hasOwn(listedLegacy, 'itemStates'), false);
+    assert.ok(listedAdaptive);
+    for (const field of [
+      'userId', 'contentId', 'contentVersionId', 'scopeType', 'scopeId',
+      'targetDays', 'dailyMinutes', 'familiarityLevel', 'strategy',
+      'startDate', 'expectedFinishDate', 'adaptiveStatus'
+    ]) {
+      assert.deepEqual(listedAdaptive[field], adaptive[field], field);
+    }
+    assert.deepEqual(listedAdaptive.itemStates, adaptive.itemStates);
+    assert.equal(Object.hasOwn(listedAdaptive, 'task'), false);
+  } finally {
+    cleanupPostgresAdaptiveUser(userId);
+  }
 });
