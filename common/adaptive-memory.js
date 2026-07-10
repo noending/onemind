@@ -77,7 +77,7 @@ function applyReviewGrade(state = {}, review = {}) {
   const reviewedDate = naturalDate(review.reviewedAt);
   const previousReviewedDate = naturalDate(state.lastReviewedAt);
   const isSuccessful = grade !== 'again';
-  const crossDaySuccess = isSuccessful && previousReviewedDate && reviewedDate && previousReviewedDate !== reviewedDate;
+  const crossDaySuccess = isSuccessful && previousReviewedDate && reviewedDate && reviewedDate > previousReviewedDate;
   const successfulRecallCount = Number(state.successfulRecallCount || 0) + (isSuccessful ? 1 : 0);
   const crossDaySuccessCount = Number(state.crossDaySuccessCount || 0) + (crossDaySuccess ? 1 : 0);
   const interval = INTERVAL_BY_GRADE[grade] || INTERVAL_BY_GRADE.good;

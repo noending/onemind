@@ -72,3 +72,19 @@ test('a unit only becomes stable after a later-day successful recall', () => {
   assert.equal(second.phase, 'stable');
   assert.equal(isInitialComplete([second]), true);
 });
+
+test('an earlier out-of-order successful review does not count as a cross-day success', () => {
+  const next = applyReviewGrade(
+    {
+      memoryUnitId: 'u1',
+      phase: 'learning',
+      successfulRecallCount: 1,
+      crossDaySuccessCount: 0,
+      lastReviewedAt: '2026-07-11T08:00:00.000Z'
+    },
+    { grade: 'good', reviewedAt: '2026-07-10T08:00:00.000Z' }
+  );
+
+  assert.equal(next.crossDaySuccessCount, 0);
+  assert.notEqual(next.phase, 'stable');
+});
