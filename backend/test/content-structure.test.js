@@ -152,3 +152,28 @@ test('content normalization uses the reviewed builtin structure only when server
   assert.deepEqual(normalized.sections, builtin.sections);
   assert.equal(normalized.publishedVersionId, 'great-compassion-v1');
 });
+
+test('postgres seeds and returns the reviewed great compassion structure idempotently', {
+  skip: process.env.RUN_POSTGRES_STRUCTURE_TEST !== '1'
+}, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+
+  postgresStore.initializeDatabase();
+  const first = postgresStore.getContentStructure('great-compassion-opening', 'great-compassion-v1');
+  assert.equal(first.contentVersionId, 'great-compassion-v1');
+  assert.equal(first.reviewStatus, 'approved');
+  assert.equal(first.sections.length, 6);
+  assert.deepEqual(first.sections.map((section) => section.sortOrder), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(first.sections.map((section) => section.units.length), [14, 14, 14, 14, 14, 14]);
+  assert.equal(first.sections.flatMap((section) => section.units).length, 84);
+  assert.deepEqual(
+    first.sections.flatMap((section) => section.units).map((unit) => unit.sortOrder),
+    Array.from({ length: 84 }, (_, index) => index + 1)
+  );
+
+  postgresStore.initializeDatabase();
+  const second = postgresStore.getContentStructure('great-compassion-opening', 'great-compassion-v1');
+  assert.equal(second.contentVersionId, 'great-compassion-v1');
+  assert.equal(second.sections.length, 6);
+  assert.equal(second.sections.flatMap((section) => section.units).length, 84);
+});

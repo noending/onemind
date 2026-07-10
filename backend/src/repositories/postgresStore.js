@@ -159,6 +159,33 @@ const GREAT_COMPASSION_SEGMENTS = [
 
 const GREAT_COMPASSION_BODY = GREAT_COMPASSION_SEGMENTS.join('，');
 
+const GREAT_COMPASSION_VERSION = {
+  id: 'great-compassion-v1',
+  versionNo: 1,
+  reviewStatus: 'approved',
+  sourceNote: '经人工校对的首发版本',
+  versionNote: '首版 84 句学习结构'
+};
+
+const GREAT_COMPASSION_STRUCTURE_SECTIONS = [
+  [0, 14],
+  [14, 28],
+  [28, 42],
+  [42, 56],
+  [56, 70],
+  [70, 84]
+].map(([startIndex, endIndex], index) => ({
+  title: `第${index + 1}学习段`,
+  sortOrder: index + 1,
+  units: GREAT_COMPASSION_SEGMENTS.slice(startIndex, endIndex).map((text, offset) => ({
+    text,
+    pinyin: '',
+    firstCharacterCue: Array.from(text)[0] || '',
+    estimatedSeconds: 30,
+    sortOrder: startIndex + offset + 1
+  }))
+}));
+
 const LEGACY_ID_MAP = {
   ...IDS.contents,
   'om-mani': IDS.contents['six-syllable-mantra'],
@@ -170,6 +197,13 @@ const LEGACY_ID_MAP = {
   'asset-heart-audio': IDS.assets.heartAudio,
   'asset-guanyin-thangka': IDS.assets.guanyinThangka,
   'asset-private-ritual': IDS.assets.privateRitual
+};
+
+const CONTENT_VERSION_ALIASES = {
+  [GREAT_COMPASSION_VERSION.id]: {
+    contentId: IDS.contents['great-compassion-opening'],
+    versionNo: GREAT_COMPASSION_VERSION.versionNo
+  }
 };
 
 function initializeDatabase() {
@@ -1019,19 +1053,30 @@ function getContent(contentId) {
 function getContentStructure(contentId, versionId) {
   const normalizedContentId = normalizeId(contentId);
   const normalizedVersionId = String(versionId || '').trim();
-  if (!normalizedContentId || !isUuid(normalizedVersionId)) {
+  if (!normalizedContentId || !normalizedVersionId) {
     throw contentStructureError('CONTENT_VERSION_NOT_FOUND', 404);
   }
 
+  const versionAlias = CONTENT_VERSION_ALIASES[normalizedVersionId];
+  if (versionAlias && versionAlias.contentId !== normalizedContentId) {
+    throw contentStructureError('CONTENT_VERSION_NOT_FOUND', 404);
+  }
+  if (!isUuid(normalizedVersionId) && !versionAlias) {
+    throw contentStructureError('CONTENT_VERSION_NOT_FOUND', 404);
+  }
+
+  const versionFilter = isUuid(normalizedVersionId)
+    ? `id = ${sqlValue(normalizedVersionId)}`
+    : `version_no = ${Number(versionAlias.versionNo)}`;
   const version = queryOne(`
     select
-      id::text as "contentVersionId",
+      id::text as "internalContentVersionId",
       review_status as "reviewStatus",
       source_note as "sourceNote",
       version_note as "versionNote"
     from content_versions
-    where id = ${sqlValue(normalizedVersionId)}
-      and content_id = ${sqlValue(normalizedContentId)}
+    where content_id = ${sqlValue(normalizedContentId)}
+      and ${versionFilter}
     limit 1
   `);
 
@@ -1042,33 +1087,51 @@ function getContentStructure(contentId, versionId) {
     throw contentStructureError('CONTENT_VERSION_NOT_APPROVED', 409);
   }
 
-  const sections = queryRows(`
+  const structureRows = queryRows(`
     select
-      id::text as "id",
-      title,
-      sort_order as "sortOrder"
-    from content_sections
-    where content_version_id = ${sqlValue(version.contentVersionId)}
-    order by sort_order asc
-  `).map((section) => ({
-    ...section,
-    units: queryRows(`
-      select
-        id::text as "id",
-        text,
-        coalesce(phonetic_text, '') as "pinyin",
-        coalesce(first_character_cue, '') as "firstCharacterCue",
-        estimated_seconds as "estimatedSeconds",
-        sort_order as "sortOrder"
-      from memory_units
-      where section_id = ${sqlValue(section.id)}
-      order by sort_order asc
-    `)
-  }));
+      cs.id::text as "sectionId",
+      cs.title as "sectionTitle",
+      cs.sort_order as "sectionSortOrder",
+      mu.id::text as "unitId",
+      mu.text as "unitText",
+      coalesce(mu.phonetic_text, '') as "unitPinyin",
+      coalesce(mu.first_character_cue, '') as "unitFirstCharacterCue",
+      mu.estimated_seconds as "unitEstimatedSeconds",
+      mu.sort_order as "unitSortOrder"
+    from content_sections cs
+    left join memory_units mu on mu.section_id = cs.id
+    where cs.content_version_id = ${sqlValue(version.internalContentVersionId)}
+    order by cs.sort_order asc, mu.sort_order asc
+  `);
+  const sectionsById = new Map();
+  const sections = [];
+  structureRows.forEach((row) => {
+    let section = sectionsById.get(row.sectionId);
+    if (!section) {
+      section = {
+        id: row.sectionId,
+        title: row.sectionTitle,
+        sortOrder: row.sectionSortOrder,
+        units: []
+      };
+      sectionsById.set(row.sectionId, section);
+      sections.push(section);
+    }
+    if (row.unitId) {
+      section.units.push({
+        id: row.unitId,
+        text: row.unitText,
+        pinyin: row.unitPinyin,
+        firstCharacterCue: row.unitFirstCharacterCue,
+        estimatedSeconds: row.unitEstimatedSeconds,
+        sortOrder: row.unitSortOrder
+      });
+    }
+  });
 
   return {
     contentId: String(contentId),
-    contentVersionId: version.contentVersionId,
+    contentVersionId: normalizedVersionId,
     reviewStatus: version.reviewStatus,
     sourceNote: version.sourceNote || '',
     versionNote: version.versionNote || '',
@@ -3152,6 +3215,7 @@ function seedDatabase() {
     recommendedRecitationTime: 'morning',
     recitationTheme: '大悲咒全文读诵'
   });
+  seedGreatCompassionStructure();
 
   seedFestival({
     id: IDS.festivals['guanyin-birthday'],
@@ -3318,6 +3382,95 @@ function seedContent(content) {
     recommendedRecitationTime: content.recommendedRecitationTime || 'morning',
     recitationTheme: content.recitationTheme || content.title
   });
+}
+
+function seedGreatCompassionStructure() {
+  const contentId = IDS.contents['great-compassion-opening'];
+  let version = queryReturningOne(`
+    insert into content_versions (
+      content_id,
+      version_no,
+      snapshot_json,
+      change_note,
+      created_by,
+      review_status,
+      source_note,
+      version_note,
+      reviewed_by,
+      reviewed_at,
+      published_at
+    ) values (
+      ${sqlValue(contentId)},
+      ${GREAT_COMPASSION_VERSION.versionNo},
+      ${sqlJson({
+        id: GREAT_COMPASSION_VERSION.id,
+        contentId: 'great-compassion-opening',
+        versionNo: GREAT_COMPASSION_VERSION.versionNo,
+        reviewStatus: GREAT_COMPASSION_VERSION.reviewStatus,
+        sourceNote: GREAT_COMPASSION_VERSION.sourceNote,
+        versionNote: GREAT_COMPASSION_VERSION.versionNote
+      })}::jsonb,
+      ${sqlValue(GREAT_COMPASSION_VERSION.versionNote)},
+      ${sqlValue(IDS.adminUser)},
+      ${sqlValue(GREAT_COMPASSION_VERSION.reviewStatus)},
+      ${sqlValue(GREAT_COMPASSION_VERSION.sourceNote)},
+      ${sqlValue(GREAT_COMPASSION_VERSION.versionNote)},
+      ${sqlValue(IDS.adminUser)},
+      now(),
+      now()
+    )
+    on conflict (content_id, version_no) do nothing
+    returning id::text as "id"
+  `);
+
+  if (!version) {
+    version = queryOne(`
+      select id::text as "id"
+      from content_versions
+      where content_id = ${sqlValue(contentId)}
+        and version_no = ${GREAT_COMPASSION_VERSION.versionNo}
+      limit 1
+    `);
+  }
+  if (!version) return;
+
+  const sectionValues = GREAT_COMPASSION_STRUCTURE_SECTIONS.map((section) => `(
+    ${sqlValue(version.id)},
+    ${sqlValue(section.title)},
+    ${section.sortOrder}
+  )`).join(',');
+  queryScalar(`
+    insert into content_sections (content_version_id, title, sort_order)
+    values ${sectionValues}
+    on conflict (content_version_id, sort_order) do nothing
+  `);
+
+  const sections = queryRows(`
+    select id::text as "id", sort_order as "sortOrder"
+    from content_sections
+    where content_version_id = ${sqlValue(version.id)}
+    order by sort_order asc
+  `);
+  const sectionIds = new Map(sections.map((section) => [Number(section.sortOrder), section.id]));
+  const unitValues = GREAT_COMPASSION_STRUCTURE_SECTIONS.flatMap((section) => section.units.map((unit) => `(
+    ${sqlValue(sectionIds.get(section.sortOrder))},
+    ${sqlValue(unit.text)},
+    ${sqlValue(unit.pinyin)},
+    ${sqlValue(unit.firstCharacterCue)},
+    ${unit.estimatedSeconds},
+    ${unit.sortOrder}
+  )`)).join(',');
+  queryScalar(`
+    insert into memory_units (
+      section_id,
+      text,
+      phonetic_text,
+      first_character_cue,
+      estimated_seconds,
+      sort_order
+    ) values ${unitValues}
+    on conflict (section_id, sort_order) do nothing
+  `);
 }
 
 function seedFestival(festival) {
