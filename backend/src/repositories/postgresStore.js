@@ -8,6 +8,7 @@ const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空�
 const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
 const REVIEW_TAIL_INTERVAL = 15;
 const GROWTH_STAGES = ['初见', '熟悉', '稳定', '通顺', '已持诵'];
+const MAX_IDEMPOTENCY_KEY_LENGTH = 180;
 
 const DB_CONFIG = {
   host: process.env.PGHOST || '127.0.0.1',
@@ -1146,8 +1147,9 @@ function createMemoryAssessment(payload = {}) {
   const contentVersionId = String(payload.contentVersionId || '').trim();
   const scopeType = String(payload.scopeType || 'full').trim() || 'full';
   const scopeId = payload.scopeId ? String(payload.scopeId).trim() : null;
-  const idempotencyKey = String(payload.idempotencyKey || '').trim()
-    || `direct-assessment-${crypto.randomUUID()}`;
+  const idempotencyKey = Object.hasOwn(payload, 'idempotencyKey')
+    ? normalizeAssessmentIdempotencyKey(payload.idempotencyKey)
+    : `direct-assessment-${crypto.randomUUID()}`;
 
   if (!userId) throw assessmentError('ASSESSMENT_USER_REQUIRED', 400);
   if (!contentId) throw assessmentError('ASSESSMENT_CONTENT_REQUIRED', 400);
@@ -1188,24 +1190,17 @@ function createMemoryAssessment(payload = {}) {
 }
 
 function recommendMemoryPlan(payload = {}) {
-  const answers = Array.isArray(payload.answers) ? payload.answers.map((answer) => ({ ...answer })) : [];
-  const averageScore = calculateAssessmentAverage(answers);
-  const familiarityLevel = averageScore < 0.75 ? 'new' : averageScore < 1.5 ? 'partial' : 'familiar';
-  const recommendation = {
-    familiarityLevel,
-    averageScore,
-    ...recommendPlan({
-      unitCount: payload.unitCount,
-      familiarityLevel,
-      dailyMinutes: payload.dailyMinutes,
-      targetDays: payload.targetDays
-    })
-  };
-
   const assessmentId = String(payload.assessmentId || '').trim();
   const userId = String(payload.userId || '').trim();
-  const idempotencyKey = String(payload.idempotencyKey || '').trim();
-  if (!assessmentId || !userId || !idempotencyKey) return recommendation;
+  if (!assessmentId || !userId) {
+    if (Object.hasOwn(payload, 'idempotencyKey')) {
+      normalizeAssessmentIdempotencyKey(payload.idempotencyKey);
+    }
+    const answers = Array.isArray(payload.answers) ? payload.answers.map((answer) => ({ ...answer })) : [];
+    return buildAssessmentRecommendation(payload, answers, payload.unitCount);
+  }
+
+  const idempotencyKey = normalizeAssessmentIdempotencyKey(payload.idempotencyKey);
 
   const normalizedUserId = normalizeUserId(userId);
   const assessment = getMemoryAssessmentById(assessmentId, normalizedUserId);
@@ -1213,7 +1208,10 @@ function recommendMemoryPlan(payload = {}) {
 
   const existingResponse = getAssessmentCompletionResponse(normalizedUserId, idempotencyKey);
   if (existingResponse) {
-    if (existingResponse.operationType !== 'memory_assessment_completion') {
+    if (
+      existingResponse.operationType !== 'memory_assessment_completion'
+      || existingResponse.entityId !== assessmentId
+    ) {
       throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
     }
     return existingResponse.responsePayload;
@@ -1223,9 +1221,20 @@ function recommendMemoryPlan(payload = {}) {
       normalizedUserId,
       assessment.completionIdempotencyKey
     );
-    if (completedResponse) return completedResponse.responsePayload;
+    if (completedResponse) {
+      if (
+        completedResponse.operationType !== 'memory_assessment_completion'
+        || completedResponse.entityId !== assessmentId
+      ) {
+        throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
+      }
+      return completedResponse.responsePayload;
+    }
   }
 
+  const answers = normalizeAssessmentAnswers(payload.answers, assessment.items);
+  const recommendation = buildAssessmentRecommendation(payload, answers, assessment.items.length);
+  const { familiarityLevel } = recommendation;
   const publicAssessment = toMemoryAssessment(assessment);
   const structure = getContentStructure(publicAssessment.contentId, publicAssessment.contentVersionId);
   const unitCount = getAssessmentScopeUnits(
@@ -1242,14 +1251,7 @@ function recommendMemoryPlan(payload = {}) {
     completedAt
   };
   const response = {
-    familiarityLevel,
-    averageScore,
-    ...recommendPlan({
-      unitCount,
-      familiarityLevel,
-      dailyMinutes: payload.dailyMinutes,
-      targetDays: payload.targetDays
-    }),
+    ...buildAssessmentRecommendation(payload, answers, unitCount),
     assessment: completedAssessment
   };
   const persistedJson = queryScalar(`
@@ -1264,6 +1266,12 @@ function recommendMemoryPlan(payload = {}) {
       where id = ${sqlValue(assessmentId)}
         and user_id = ${sqlValue(normalizedUserId)}
         and completion_idempotency_key is null
+        and not exists (
+          select 1
+          from idempotency_records existing_key
+          where existing_key.user_id = ${sqlValue(normalizedUserId)}
+            and existing_key.idempotency_key = ${sqlValue(idempotencyKey)}
+        )
       returning id::text as "id"
     ), recorded as (
       insert into idempotency_records (
@@ -1291,16 +1299,75 @@ function recommendMemoryPlan(payload = {}) {
     from idempotency_records
     where user_id = ${sqlValue(normalizedUserId)}
       and idempotency_key = ${sqlValue(idempotencyKey)}
+      and operation_type = 'memory_assessment_completion'
+      and entity_id = ${sqlValue(assessmentId)}
     limit 1
   `);
   if (persistedJson) return JSON.parse(persistedJson);
 
+  const concurrentKeyResponse = getAssessmentCompletionResponse(normalizedUserId, idempotencyKey);
+  if (concurrentKeyResponse) {
+    if (
+      concurrentKeyResponse.operationType !== 'memory_assessment_completion'
+      || concurrentKeyResponse.entityId !== assessmentId
+    ) {
+      throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return concurrentKeyResponse.responsePayload;
+  }
   const concurrentAssessment = getMemoryAssessmentById(assessmentId, normalizedUserId);
   const concurrentResponse = concurrentAssessment?.completionIdempotencyKey
     ? getAssessmentCompletionResponse(normalizedUserId, concurrentAssessment.completionIdempotencyKey)
     : null;
   if (concurrentResponse) return concurrentResponse.responsePayload;
   throw assessmentError('ASSESSMENT_COMPLETION_FAILED', 409);
+}
+
+function normalizeAssessmentIdempotencyKey(value) {
+  const idempotencyKey = String(value || '').trim();
+  if (!idempotencyKey) throw assessmentError('IDEMPOTENCY_KEY_REQUIRED', 400);
+  if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    throw assessmentError('IDEMPOTENCY_KEY_INVALID', 400);
+  }
+  return idempotencyKey;
+}
+
+function normalizeAssessmentAnswers(rawAnswers, sampledItems) {
+  const answers = Array.isArray(rawAnswers) ? rawAnswers : [];
+  const items = Array.isArray(sampledItems) ? sampledItems : [];
+  if (answers.length !== items.length) {
+    throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+  }
+
+  const expectedIds = new Set(items.map((item) => String(item.memoryUnitId)));
+  const answersById = new Map();
+  answers.forEach((answer) => {
+    const memoryUnitId = String(answer?.memoryUnitId || '').trim();
+    if (!expectedIds.has(memoryUnitId) || answersById.has(memoryUnitId)) {
+      throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+    }
+    answersById.set(memoryUnitId, { ...answer, memoryUnitId });
+  });
+
+  if (answersById.size !== expectedIds.size) {
+    throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+  }
+  return items.map((item) => answersById.get(String(item.memoryUnitId)));
+}
+
+function buildAssessmentRecommendation(payload, answers, unitCount) {
+  const averageScore = calculateAssessmentAverage(answers);
+  const familiarityLevel = averageScore < 0.75 ? 'new' : averageScore < 1.5 ? 'partial' : 'familiar';
+  return {
+    familiarityLevel,
+    averageScore,
+    ...recommendPlan({
+      unitCount,
+      familiarityLevel,
+      dailyMinutes: payload.dailyMinutes,
+      targetDays: payload.targetDays
+    })
+  };
 }
 
 function resolveAssessmentContentVersion(contentId, versionId) {
@@ -1414,6 +1481,7 @@ function getAssessmentCompletionResponse(userId, idempotencyKey) {
   return queryOne(`
     select
       operation_type as "operationType",
+      entity_id as "entityId",
       response_payload as "responsePayload"
     from idempotency_records
     where user_id = ${sqlValue(userId)}

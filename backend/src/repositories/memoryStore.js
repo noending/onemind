@@ -14,6 +14,7 @@ const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空�
 const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
 const REVIEW_TAIL_INTERVAL = 15;
 const GROWTH_STAGES = ['初见', '熟悉', '稳定', '通顺', '已持诵'];
+const MAX_IDEMPOTENCY_KEY_LENGTH = 180;
 
 const state = {
   users: [
@@ -492,7 +493,9 @@ function createMemoryAssessment(payload = {}) {
   const contentVersionId = String(payload.contentVersionId || '').trim();
   const scopeType = String(payload.scopeType || 'full').trim() || 'full';
   const scopeId = payload.scopeId ? String(payload.scopeId).trim() : null;
-  const idempotencyKey = String(payload.idempotencyKey || '').trim() || createId('direct-assessment');
+  const idempotencyKey = Object.hasOwn(payload, 'idempotencyKey')
+    ? normalizeAssessmentIdempotencyKey(payload.idempotencyKey)
+    : createId('direct-assessment');
 
   if (!userId) throw assessmentError('ASSESSMENT_USER_REQUIRED', 400);
   if (!contentId) throw assessmentError('ASSESSMENT_CONTENT_REQUIRED', 400);
@@ -528,55 +531,97 @@ function createMemoryAssessment(payload = {}) {
 }
 
 function recommendMemoryPlan(payload = {}) {
-  const answers = Array.isArray(payload.answers) ? payload.answers.map((answer) => ({ ...answer })) : [];
-  const averageScore = calculateAssessmentAverage(answers);
-  const familiarityLevel = averageScore < 0.75 ? 'new' : averageScore < 1.5 ? 'partial' : 'familiar';
-  const recommendation = {
-    familiarityLevel,
-    averageScore,
-    ...recommendPlan({
-      unitCount: payload.unitCount,
-      familiarityLevel,
-      dailyMinutes: payload.dailyMinutes,
-      targetDays: payload.targetDays
-    })
-  };
-
   const assessmentId = String(payload.assessmentId || '').trim();
   const userId = String(payload.userId || '').trim();
-  const idempotencyKey = String(payload.idempotencyKey || '').trim();
-  if (!assessmentId || !userId || !idempotencyKey) return recommendation;
+  if (!assessmentId || !userId) {
+    if (Object.hasOwn(payload, 'idempotencyKey')) {
+      normalizeAssessmentIdempotencyKey(payload.idempotencyKey);
+    }
+    const answers = Array.isArray(payload.answers) ? payload.answers.map((answer) => ({ ...answer })) : [];
+    return buildAssessmentRecommendation(payload, answers, payload.unitCount);
+  }
+
+  const idempotencyKey = normalizeAssessmentIdempotencyKey(payload.idempotencyKey);
 
   const responseKey = `${userId}:${idempotencyKey}`;
-  if (state.assessmentCompletionResponses[responseKey]) {
-    return cloneJson(state.assessmentCompletionResponses[responseKey]);
+  const cachedCompletion = state.assessmentCompletionResponses[responseKey];
+  if (cachedCompletion) {
+    if (cachedCompletion.assessmentId !== assessmentId) {
+      throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(cachedCompletion.response);
   }
 
   const assessment = state.memoryAssessments.find((item) => item.id === assessmentId && item.userId === userId);
   if (!assessment) throw assessmentError('ASSESSMENT_NOT_FOUND', 404);
   if (assessment.completionResponse) return cloneJson(assessment.completionResponse);
 
-  const completedRecommendation = {
-    ...recommendation,
-    ...recommendPlan({
-      unitCount: assessment.unitCount,
-      familiarityLevel,
-      dailyMinutes: payload.dailyMinutes,
-      targetDays: payload.targetDays
-    })
-  };
+  const answers = normalizeAssessmentAnswers(payload.answers, assessment.items);
+  const recommendation = buildAssessmentRecommendation(payload, answers, assessment.unitCount);
+  const { familiarityLevel } = recommendation;
+
   assessment.answers = answers;
   assessment.familiarityLevel = familiarityLevel;
   assessment.status = 'completed';
   assessment.completionIdempotencyKey = idempotencyKey;
   assessment.completedAt = new Date().toISOString();
   const response = {
-    ...completedRecommendation,
+    ...recommendation,
     assessment: toMemoryAssessment(assessment)
   };
   assessment.completionResponse = cloneJson(response);
-  state.assessmentCompletionResponses[responseKey] = cloneJson(response);
+  state.assessmentCompletionResponses[responseKey] = {
+    assessmentId,
+    response: cloneJson(response)
+  };
   return response;
+}
+
+function normalizeAssessmentIdempotencyKey(value) {
+  const idempotencyKey = String(value || '').trim();
+  if (!idempotencyKey) throw assessmentError('IDEMPOTENCY_KEY_REQUIRED', 400);
+  if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    throw assessmentError('IDEMPOTENCY_KEY_INVALID', 400);
+  }
+  return idempotencyKey;
+}
+
+function normalizeAssessmentAnswers(rawAnswers, sampledItems) {
+  const answers = Array.isArray(rawAnswers) ? rawAnswers : [];
+  const items = Array.isArray(sampledItems) ? sampledItems : [];
+  if (answers.length !== items.length) {
+    throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+  }
+
+  const expectedIds = new Set(items.map((item) => String(item.memoryUnitId)));
+  const answersById = new Map();
+  answers.forEach((answer) => {
+    const memoryUnitId = String(answer?.memoryUnitId || '').trim();
+    if (!expectedIds.has(memoryUnitId) || answersById.has(memoryUnitId)) {
+      throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+    }
+    answersById.set(memoryUnitId, { ...answer, memoryUnitId });
+  });
+
+  if (answersById.size !== expectedIds.size) {
+    throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+  }
+  return items.map((item) => answersById.get(String(item.memoryUnitId)));
+}
+
+function buildAssessmentRecommendation(payload, answers, unitCount) {
+  const averageScore = calculateAssessmentAverage(answers);
+  const familiarityLevel = averageScore < 0.75 ? 'new' : averageScore < 1.5 ? 'partial' : 'familiar';
+  return {
+    familiarityLevel,
+    averageScore,
+    ...recommendPlan({
+      unitCount,
+      familiarityLevel,
+      dailyMinutes: payload.dailyMinutes,
+      targetDays: payload.targetDays
+    })
+  };
 }
 
 function getAssessmentScopeUnits(structure, scopeType, scopeId) {

@@ -448,6 +448,7 @@ async function handleRequest(req, res, body) {
     if (!userSession) return sendJson(res, 401, { error: 'AUTH_REQUIRED' });
     const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
     if (!idempotencyKey) return sendJson(res, 400, { error: 'IDEMPOTENCY_KEY_REQUIRED' });
+    if (idempotencyKey.length > 180) return sendJson(res, 400, { error: 'IDEMPOTENCY_KEY_INVALID' });
     const payload = parseJsonBody(body);
     return sendJson(res, 201, {
       data: createMemoryAssessment({
@@ -465,11 +466,13 @@ async function handleRequest(req, res, body) {
     if (!userSession) return sendJson(res, 401, { error: 'AUTH_REQUIRED' });
     const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
     if (!idempotencyKey) return sendJson(res, 400, { error: 'IDEMPOTENCY_KEY_REQUIRED' });
+    if (idempotencyKey.length > 180) return sendJson(res, 400, { error: 'IDEMPOTENCY_KEY_INVALID' });
     const payload = parseJsonBody(body);
-    if (!payload.assessmentId) return sendJson(res, 400, { error: 'ASSESSMENT_ID_REQUIRED' });
+    const assessmentId = String(payload.assessmentId || '').trim();
+    if (!assessmentId) return sendJson(res, 400, { error: 'ASSESSMENT_ID_REQUIRED' });
     return sendJson(res, 200, {
       data: recommendMemoryPlan({
-        assessmentId: payload.assessmentId,
+        assessmentId,
         answers: payload.answers,
         dailyMinutes: payload.dailyMinutes,
         targetDays: payload.targetDays,

@@ -23,6 +23,10 @@ function uniqueKey(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function fixedLengthKey(prefix, length) {
+  return `${uniqueKey(prefix)}${'x'.repeat(length)}`.slice(0, length);
+}
+
 function createAssessment(overrides = {}) {
   return memoryStore.createMemoryAssessment({
     userId: 'demo-user',
@@ -31,6 +35,28 @@ function createAssessment(overrides = {}) {
     scopeType: 'full',
     scopeId: null,
     idempotencyKey: uniqueKey('assessment-start'),
+    ...overrides
+  });
+}
+
+let gatedPostgresStore = null;
+
+function getGatedPostgresStore() {
+  if (!gatedPostgresStore) {
+    gatedPostgresStore = require('../src/repositories/postgresStore');
+    gatedPostgresStore.initializeDatabase();
+  }
+  return gatedPostgresStore;
+}
+
+function createPostgresAssessment(postgresStore, overrides = {}) {
+  return postgresStore.createMemoryAssessment({
+    userId: 'demo-user',
+    contentId: 'great-compassion-opening',
+    contentVersionId: 'great-compassion-v1',
+    scopeType: 'full',
+    scopeId: null,
+    idempotencyKey: uniqueKey('postgres-assessment-start'),
     ...overrides
   });
 }
@@ -58,10 +84,10 @@ test('assessment samples exactly eight deterministic cues across start middle an
 test('assessment returns every available unit once when the scope has fewer than eight units', () => {
   const content = {
     id: uniqueKey('short-content'),
-    title: '短测验内容',
-    body: '甲乙丙',
-    preview: '甲乙丙',
-    segments: ['甲', '乙', '丙'],
+    title: 'Short assessment content',
+    body: 'Alpha Beta Gamma',
+    preview: 'Alpha Beta Gamma',
+    segments: ['Alpha', 'Beta', 'Gamma'],
     publishStatus: 'published',
     reviewStatus: 'approved',
     publishedVersion: {
@@ -71,9 +97,9 @@ test('assessment returns every available unit once when the scope has fewer than
     },
     sections: [{
       id: uniqueKey('short-section'),
-      title: '短段',
+      title: 'Short section',
       sortOrder: 1,
-      units: ['甲', '乙', '丙'].map((text, index) => ({
+      units: ['Alpha', 'Beta', 'Gamma'].map((text, index) => ({
         id: uniqueKey(`short-unit-${index}`),
         text,
         firstCharacterCue: text,
@@ -179,7 +205,10 @@ test('assessment completion persists answers and is idempotent per user and comp
     result: 'complete',
     revealed: false,
     latencyMs: 2500
-  }));
+  })).reverse();
+  const normalizedAnswers = assessment.items.map((item) => (
+    answers.find((answer) => answer.memoryUnitId === item.memoryUnitId)
+  ));
   const first = memoryStore.recommendMemoryPlan({
     assessmentId: assessment.id,
     userId: assessment.userId,
@@ -198,26 +227,120 @@ test('assessment completion persists answers and is idempotent per user and comp
   assert.deepEqual(second, first);
   assert.equal(first.familiarityLevel, 'familiar');
   assert.equal(first.assessment.status, 'completed');
-  assert.deepEqual(first.assessment.answers, answers);
+  assert.deepEqual(first.assessment.answers, normalizedAnswers);
   assert.equal(first.assessment.familiarityLevel, 'familiar');
+});
+
+test('assessment completion rejects unknown missing and duplicate sampled unit answers', () => {
+  const invalidAnswers = {
+    unknown(assessment, answers) {
+      return answers.map((answer, index) => (
+        index === 0 ? { ...answer, memoryUnitId: 'unknown-memory-unit' } : answer
+      ));
+    },
+    missing(assessment, answers) {
+      return answers.slice(1);
+    },
+    duplicate(assessment, answers) {
+      return answers.map((answer, index) => (
+        index === answers.length - 1
+          ? { ...answer, memoryUnitId: assessment.items[0].memoryUnitId }
+          : answer
+      ));
+    }
+  };
+
+  Object.entries(invalidAnswers).forEach(([kind, mutate]) => {
+    const assessment = createAssessment();
+    const answers = assessment.items.map((item) => ({
+      memoryUnitId: item.memoryUnitId,
+      result: 'partial'
+    }));
+
+    assert.throws(() => memoryStore.recommendMemoryPlan({
+      assessmentId: assessment.id,
+      userId: assessment.userId,
+      idempotencyKey: uniqueKey(`invalid-${kind}`),
+      answers: mutate(assessment, answers)
+    }), {
+      code: 'ASSESSMENT_ANSWERS_INVALID',
+      statusCode: 400
+    });
+  });
+});
+
+test('completion key cannot return a response from another assessment', () => {
+  const first = createAssessment();
+  const second = createAssessment();
+  const completionKey = uniqueKey('cross-assessment-completion');
+  const answersFor = (assessment) => assessment.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result: 'complete'
+  }));
+
+  memoryStore.recommendMemoryPlan({
+    assessmentId: first.id,
+    userId: first.userId,
+    idempotencyKey: completionKey,
+    answers: answersFor(first)
+  });
+
+  assert.throws(() => memoryStore.recommendMemoryPlan({
+    assessmentId: second.id,
+    userId: second.userId,
+    idempotencyKey: completionKey,
+    answers: answersFor(second)
+  }), {
+    code: 'IDEMPOTENCY_KEY_CONFLICT',
+    statusCode: 409
+  });
+});
+
+test('memory assessment idempotency keys accept 180 characters and reject longer values', () => {
+  const startKey = fixedLengthKey('memory-start-limit', 180);
+  const completionKey = fixedLengthKey('memory-completion-limit', 180);
+  const assessment = createAssessment({ idempotencyKey: startKey });
+  const answers = assessment.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result: 'partial'
+  }));
+
+  assert.equal(assessment.status, 'started');
+  assert.equal(memoryStore.recommendMemoryPlan({
+    assessmentId: assessment.id,
+    userId: assessment.userId,
+    idempotencyKey: completionKey,
+    answers
+  }).assessment.status, 'completed');
+  assert.throws(() => createAssessment({ idempotencyKey: '   ' }), {
+    code: 'IDEMPOTENCY_KEY_REQUIRED',
+    statusCode: 400
+  });
+  assert.throws(() => createAssessment({
+    idempotencyKey: fixedLengthKey('memory-start-too-long', 181)
+  }), {
+    code: 'IDEMPOTENCY_KEY_INVALID',
+    statusCode: 400
+  });
+  assert.throws(() => memoryStore.recommendMemoryPlan({
+    assessmentId: createAssessment().id,
+    userId: assessment.userId,
+    idempotencyKey: fixedLengthKey('memory-completion-too-long', 181),
+    answers
+  }), {
+    code: 'IDEMPOTENCY_KEY_INVALID',
+    statusCode: 400
+  });
 });
 
 test('postgres persists assessment start and completion idempotently', {
   skip: process.env.RUN_POSTGRES_ASSESSMENT_TEST !== '1'
 }, () => {
-  const postgresStore = require('../src/repositories/postgresStore');
-  const startKey = uniqueKey('postgres-assessment-start');
-  const completionKey = uniqueKey('postgres-assessment-complete');
+  const postgresStore = getGatedPostgresStore();
+  const startKey = fixedLengthKey('postgres-assessment-start', 180);
+  const completionKey = fixedLengthKey('postgres-assessment-complete', 180);
 
-  postgresStore.initializeDatabase();
-  const first = postgresStore.createMemoryAssessment({
-    userId: 'demo-user',
-    contentId: 'great-compassion-opening',
-    contentVersionId: 'great-compassion-v1',
-    scopeType: 'full',
-    scopeId: null,
-    idempotencyKey: startKey
-  });
+  const first = createPostgresAssessment(postgresStore, { idempotencyKey: startKey });
   const repeatedStart = postgresStore.createMemoryAssessment({
     userId: 'demo-user',
     contentId: 'great-compassion-opening',
@@ -243,7 +366,10 @@ test('postgres persists assessment start and completion idempotently', {
     result: 'complete',
     revealed: false,
     latencyMs: 2500
-  }));
+  })).reverse();
+  const normalizedAnswers = first.items.map((item) => (
+    answers.find((answer) => answer.memoryUnitId === item.memoryUnitId)
+  ));
   const completed = postgresStore.recommendMemoryPlan({
     assessmentId: first.id,
     userId: first.userId,
@@ -269,8 +395,110 @@ test('postgres persists assessment start and completion idempotently', {
   assert.deepEqual(repeatedCompletion, completed);
   assert.equal(completed.familiarityLevel, 'familiar');
   assert.equal(completed.assessment.status, 'completed');
-  assert.deepEqual(persisted.answers, answers);
+  assert.deepEqual(persisted.answers, normalizedAnswers);
   assert.equal(persisted.familiarityLevel, 'familiar');
   assert.equal(persisted.status, 'completed');
   assert.ok(persisted.completedAt);
+});
+
+test('postgres completion key cannot return a response from another assessment', {
+  skip: process.env.RUN_POSTGRES_ASSESSMENT_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const first = createPostgresAssessment(postgresStore);
+  const second = createPostgresAssessment(postgresStore);
+  const completionKey = uniqueKey('postgres-cross-assessment-completion');
+  const firstAnswers = first.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result: 'complete'
+  }));
+  const secondAnswers = second.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result: 'partial'
+  }));
+
+  postgresStore.recommendMemoryPlan({
+    assessmentId: first.id,
+    userId: first.userId,
+    idempotencyKey: completionKey,
+    answers: firstAnswers
+  });
+  assert.throws(() => postgresStore.recommendMemoryPlan({
+    assessmentId: second.id,
+    userId: second.userId,
+    idempotencyKey: completionKey,
+    answers: secondAnswers
+  }), {
+    code: 'IDEMPOTENCY_KEY_CONFLICT',
+    statusCode: 409
+  });
+});
+
+const postgresInvalidAnswerMutations = {
+  unknown: (assessment, validAnswers) => validAnswers.map((answer, index) => (
+    index === 0 ? { ...answer, memoryUnitId: 'unknown-memory-unit' } : answer
+  )),
+  missing: (assessment, validAnswers) => validAnswers.slice(1),
+  duplicate: (assessment, validAnswers) => validAnswers.map((answer, index) => (
+    index === validAnswers.length - 1
+      ? { ...answer, memoryUnitId: assessment.items[0].memoryUnitId }
+      : answer
+  ))
+};
+
+Object.entries(postgresInvalidAnswerMutations).forEach(([kind, mutate]) => {
+  test(`postgres assessment completion rejects ${kind} sampled unit answers`, {
+    skip: process.env.RUN_POSTGRES_ASSESSMENT_TEST !== '1'
+  }, () => {
+    const postgresStore = getGatedPostgresStore();
+    const assessment = createPostgresAssessment(postgresStore);
+    const validAnswers = assessment.items.map((item) => ({
+      memoryUnitId: item.memoryUnitId,
+      result: 'partial'
+    }));
+    assert.throws(() => postgresStore.recommendMemoryPlan({
+      assessmentId: assessment.id,
+      userId: assessment.userId,
+      idempotencyKey: uniqueKey(`postgres-invalid-completion-${kind}`),
+      answers: mutate(assessment, validAnswers)
+    }), {
+      code: 'ASSESSMENT_ANSWERS_INVALID',
+      statusCode: 400
+    });
+  });
+});
+
+test('postgres assessment idempotency keys reject blank and oversized values', {
+  skip: process.env.RUN_POSTGRES_ASSESSMENT_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const assessment = createPostgresAssessment(postgresStore);
+  const answers = assessment.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result: 'partial'
+  }));
+
+  assert.throws(() => createPostgresAssessment(postgresStore, { idempotencyKey: '  ' }), {
+    code: 'IDEMPOTENCY_KEY_REQUIRED',
+    statusCode: 400
+  });
+  assert.throws(() => postgresStore.createMemoryAssessment({
+    userId: 'demo-user',
+    contentId: 'great-compassion-opening',
+    contentVersionId: 'great-compassion-v1',
+    scopeType: 'full',
+    idempotencyKey: fixedLengthKey('postgres-start-too-long', 181)
+  }), {
+    code: 'IDEMPOTENCY_KEY_INVALID',
+    statusCode: 400
+  });
+  assert.throws(() => postgresStore.recommendMemoryPlan({
+    assessmentId: assessment.id,
+    userId: assessment.userId,
+    idempotencyKey: fixedLengthKey('postgres-completion-too-long', 181),
+    answers
+  }), {
+    code: 'IDEMPOTENCY_KEY_INVALID',
+    statusCode: 400
+  });
 });

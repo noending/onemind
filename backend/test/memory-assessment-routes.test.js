@@ -20,6 +20,10 @@ function uniqueKey(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function fixedLengthKey(prefix, length) {
+  return `${uniqueKey(prefix)}${'x'.repeat(length)}`.slice(0, length);
+}
+
 function request({ method = 'POST', pathname, headers = {}, payload }) {
   return new Promise((resolve, reject) => {
     const response = {
@@ -45,7 +49,7 @@ async function login() {
     pathname: '/api/auth/wechat/login',
     payload: {
       code: uniqueKey('assessment-route-login'),
-      userInfo: { nickName: '测验路由用户' }
+      userInfo: { nickName: 'Assessment Route User' }
     }
   });
 
@@ -98,6 +102,76 @@ test('assessment routes require a signed user session and an idempotency key', a
   });
   assert.equal(missingAssessmentId.statusCode, 400);
   assert.equal(missingAssessmentId.body.error, 'ASSESSMENT_ID_REQUIRED');
+
+  const blankAssessmentId = await request({
+    pathname: '/api/memory-plans/recommendation',
+    headers: {
+      ...authorization(session.token),
+      'idempotency-key': uniqueKey('blank-assessment-id')
+    },
+    payload: { assessmentId: '   ' }
+  });
+  assert.equal(blankAssessmentId.statusCode, 400);
+  assert.equal(blankAssessmentId.body.error, 'ASSESSMENT_ID_REQUIRED');
+});
+
+test('assessment routes accept 180-character idempotency keys and reject longer keys', async () => {
+  const session = await login();
+  const oversizedKey = fixedLengthKey('route-too-long', 181);
+  const oversizedStart = await request({
+    pathname: '/api/memory-assessments',
+    headers: {
+      ...authorization(session.token),
+      'idempotency-key': oversizedKey
+    },
+    payload: {
+      contentId: 'great-compassion-opening',
+      contentVersionId: 'great-compassion-v1'
+    }
+  });
+  const oversizedCompletion = await request({
+    pathname: '/api/memory-plans/recommendation',
+    headers: {
+      ...authorization(session.token),
+      'idempotency-key': oversizedKey
+    },
+    payload: {}
+  });
+
+  assert.equal(oversizedStart.statusCode, 400);
+  assert.equal(oversizedStart.body.error, 'IDEMPOTENCY_KEY_INVALID');
+  assert.equal(oversizedCompletion.statusCode, 400);
+  assert.equal(oversizedCompletion.body.error, 'IDEMPOTENCY_KEY_INVALID');
+
+  const acceptedStart = await request({
+    pathname: '/api/memory-assessments',
+    headers: {
+      ...authorization(session.token),
+      'idempotency-key': fixedLengthKey('route-start-limit', 180)
+    },
+    payload: {
+      contentId: 'great-compassion-opening',
+      contentVersionId: 'great-compassion-v1'
+    }
+  });
+  const answers = acceptedStart.body.data.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result: 'partial'
+  }));
+  const acceptedCompletion = await request({
+    pathname: '/api/memory-plans/recommendation',
+    headers: {
+      ...authorization(session.token),
+      'idempotency-key': fixedLengthKey('route-completion-limit', 180)
+    },
+    payload: {
+      assessmentId: acceptedStart.body.data.id,
+      answers
+    }
+  });
+
+  assert.equal(acceptedStart.statusCode, 201);
+  assert.equal(acceptedCompletion.statusCode, 200);
 });
 
 test('assessment routes use the authenticated user and preserve start and completion idempotency', async () => {
