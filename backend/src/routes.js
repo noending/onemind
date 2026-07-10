@@ -33,6 +33,7 @@ const {
   listRecitationGoals,
   listTodayFocus,
   loginByWechatCode,
+  updateUserProfile,
   upsertNotificationSetting,
   upsertRecitationGoal,
   updateAsset,
@@ -51,8 +52,10 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'magic';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Noending5@';
 const ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET || 'oneMind-local-admin';
 const USER_TOKEN_SECRET = process.env.USER_TOKEN_SECRET || 'oneMind-local-user';
+const USER_REFRESH_TOKEN_SECRET = process.env.USER_REFRESH_TOKEN_SECRET || `${USER_TOKEN_SECRET}:refresh`;
 const ADMIN_TOKEN_EXPIRE_SECONDS = Number(process.env.ADMIN_TOKEN_EXPIRE_SECONDS || 60 * 60 * 24 * 7);
 const USER_TOKEN_EXPIRE_SECONDS = Number(process.env.USER_TOKEN_EXPIRE_SECONDS || 60 * 60 * 24 * 30);
+const USER_REFRESH_EXPIRE_SECONDS = Number(process.env.USER_REFRESH_EXPIRE_SECONDS || 60 * 60 * 24 * 90);
 const DEMO_USER_ID = process.env.DEMO_USER_ID || 'demo-user';
 const WECHAT_LOGIN_MODE = process.env.WECHAT_LOGIN_MODE || 'mock';
 const WECHAT_APP_ID = process.env.WECHAT_APP_ID || '';
@@ -154,21 +157,39 @@ async function handleRequest(req, res, body) {
     });
   }
 
-  if (req.method === 'POST' && pathname === '/api/auth/wechat/login') {
+  if (req.method === 'POST' && (pathname === '/api/auth/wechat/login' || pathname === '/auth/wechat-login')) {
     const payload = parseJsonBody(body);
     const userPayload = await resolveWechatLoginPayload(payload);
     const user = loginByWechatCode
       ? loginByWechatCode(userPayload)
       : { id: DEMO_USER_ID, nickname: '微信用户', avatarUrl: '', platform: 'wechat', status: 'active' };
     return sendJson(res, 200, {
+      data: createUserSessionPayload(user)
+    });
+  }
+
+  if (req.method === 'POST' && (pathname === '/api/auth/refresh-token' || pathname === '/auth/refresh-token')) {
+    const payload = parseJsonBody(body);
+    const refreshToken = String(payload.refreshToken || '').trim();
+    const parsed = verifySignedToken(refreshToken, USER_REFRESH_TOKEN_SECRET, 'urf');
+    if (!parsed || !parsed.sub) {
+      return sendJson(res, 401, { error: 'INVALID_REFRESH_TOKEN' });
+    }
+
+    const user = typeof getUserById === 'function' ? getUserById(parsed.sub) : null;
+    if (!user) {
+      return sendJson(res, 401, { error: 'INVALID_REFRESH_TOKEN' });
+    }
+
+    return sendJson(res, 200, {
+      data: createUserSessionPayload(user)
+    });
+  }
+
+  if (req.method === 'POST' && (pathname === '/api/auth/logout' || pathname === '/auth/logout')) {
+    return sendJson(res, 200, {
       data: {
-        token: createSignedToken(
-          { sub: user.id, platform: user.platform || 'wechat' },
-          USER_TOKEN_SECRET,
-          USER_TOKEN_EXPIRE_SECONDS,
-          'usr'
-        ),
-        user
+        ok: true
       }
     });
   }
@@ -181,9 +202,22 @@ async function handleRequest(req, res, body) {
     return sendJson(res, 200, { data: adminSession });
   }
 
-  if (req.method === 'GET' && pathname === '/api/auth/me') {
+  if (req.method === 'GET' && (pathname === '/api/auth/me' || pathname === '/auth/me')) {
     if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     return sendJson(res, 200, { data: userSession });
+  }
+
+  if (req.method === 'PUT' && (pathname === '/api/auth/profile' || pathname === '/auth/profile')) {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
+    const payload = parseJsonBody(body);
+    const nextUser = typeof updateUserProfile === 'function'
+      ? updateUserProfile(userSession.id, payload)
+      : {
+        ...userSession,
+        nickname: payload.nickname || userSession.nickname,
+        avatarUrl: payload.avatarUrl || userSession.avatarUrl || ''
+      };
+    return sendJson(res, 200, { data: nextUser });
   }
 
   if (req.method === 'GET' && pathname === '/api/notification-settings') {
@@ -387,15 +421,17 @@ async function handleRequest(req, res, body) {
   }
 
   if (req.method === 'GET' && pathname === '/api/memory-plans') {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     return sendJson(res, 200, {
-      data: listPlans(userSession?.id || requestUrl.searchParams.get('userId') || DEMO_USER_ID)
+      data: listPlans(userSession.id)
     });
   }
 
   if (req.method === 'POST' && pathname === '/api/memory-plans') {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     const payload = parseJsonBody(body);
     const result = createPlan({
-      userId: userSession?.id || payload.userId || DEMO_USER_ID,
+      userId: userSession.id,
       contentId: payload.contentId,
       startDate: payload.startDate,
       mode: payload.mode || 'scientific'
@@ -409,11 +445,13 @@ async function handleRequest(req, res, body) {
   }
 
   if (req.method === 'POST' && pathname.startsWith('/api/review-tasks/') && pathname.endsWith('/complete')) {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     const taskId = decodeURIComponent(pathname.replace('/api/review-tasks/', '').replace('/complete', ''));
     const payload = parseJsonBody(body);
     return sendJson(res, 200, {
       data: completeTask({
         taskId,
+        userId: userSession.id,
         result: payload.result || 'stronger',
         selfRating: payload.selfRating || '',
         latencyBand: payload.latencyBand || '',
@@ -424,29 +462,33 @@ async function handleRequest(req, res, body) {
   }
 
   if (req.method === 'GET' && pathname === '/api/today-focus') {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     return sendJson(res, 200, {
-      data: listTodayFocus(userSession?.id || requestUrl.searchParams.get('userId') || DEMO_USER_ID)
+      data: listTodayFocus(userSession.id)
     });
   }
 
   if (req.method === 'GET' && pathname === '/api/growth-overview') {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     return sendJson(res, 200, {
-      data: getGrowthOverview(userSession?.id || requestUrl.searchParams.get('userId') || DEMO_USER_ID)
+      data: getGrowthOverview(userSession.id)
     });
   }
 
   if (req.method === 'GET' && pathname === '/api/recitation-goals') {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     return sendJson(res, 200, {
-      data: listRecitationGoals(userSession?.id || requestUrl.searchParams.get('userId') || DEMO_USER_ID)
+      data: listRecitationGoals(userSession.id)
     });
   }
 
   if (req.method === 'PUT' && pathname.startsWith('/api/recitation-goals/')) {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     const contentId = decodeURIComponent(pathname.replace('/api/recitation-goals/', ''));
     const payload = parseJsonBody(body);
     return sendJson(res, 200, {
       data: upsertRecitationGoal({
-        userId: userSession?.id || payload.userId || DEMO_USER_ID,
+        userId: userSession.id,
         contentId,
         goalType: payload.goalType || 'daily',
         preferredPeriod: payload.preferredPeriod || 'morning',
@@ -456,10 +498,11 @@ async function handleRequest(req, res, body) {
   }
 
   if (req.method === 'POST' && pathname === '/api/recitation-sessions') {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     const payload = parseJsonBody(body);
     return sendJson(res, 201, {
       data: createRecitationSession({
-        userId: userSession?.id || payload.userId || DEMO_USER_ID,
+        userId: userSession.id,
         contentId: payload.contentId,
         goalId: payload.goalId || null,
         sessionType: payload.sessionType || 'free',
@@ -773,14 +816,50 @@ function resolveUserSession(req) {
   if (!parsed || !parsed.sub) return null;
 
   const user = typeof getUserById === 'function' ? getUserById(parsed.sub) : null;
-  if (user) return user;
+  if (user) return toUserProfile(user);
 
-  return {
+  return toUserProfile({
     id: parsed.sub,
     nickname: '微信用户',
     avatarUrl: '',
     platform: parsed.platform || 'wechat',
     status: 'active'
+  });
+}
+
+function createUserSessionPayload(user = {}) {
+  const platform = user.platform || 'wechat';
+  const profile = toUserProfile(user);
+  return {
+    token: createSignedToken(
+      { sub: profile.id, platform },
+      USER_TOKEN_SECRET,
+      USER_TOKEN_EXPIRE_SECONDS,
+      'usr'
+    ),
+    refreshToken: createSignedToken(
+      { sub: profile.id, platform, tokenType: 'refresh' },
+      USER_REFRESH_TOKEN_SECRET,
+      USER_REFRESH_EXPIRE_SECONDS,
+      'urf'
+    ),
+    expiresIn: USER_TOKEN_EXPIRE_SECONDS,
+    refreshExpiresIn: USER_REFRESH_EXPIRE_SECONDS,
+    user: profile,
+    profileComplete: profile.profileComplete
+  };
+}
+
+function toUserProfile(user = {}) {
+  const nickname = String(user.nickname || '').trim();
+  return {
+    id: user.id || DEMO_USER_ID,
+    nickname: nickname || '微信用户',
+    avatarUrl: user.avatarUrl || '',
+    platform: user.platform || 'wechat',
+    status: user.status || 'active',
+    phone: user.phone || '',
+    profileComplete: Boolean(nickname && nickname !== '微信用户')
   };
 }
 

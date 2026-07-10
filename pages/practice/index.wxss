@@ -1,11 +1,11 @@
 .train-screen {
   min-height: 100vh;
-  padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(176rpx + env(safe-area-inset-bottom));
   background: #f6ecd7;
 }
 
 .train-header {
-  padding: 0 36rpx 28rpx;
+  padding: 0 30rpx 20rpx;
   background: rgba(251, 245, 233, 0.94);
   border-bottom: 1rpx solid rgba(232, 215, 180, 0.6);
 }
@@ -19,7 +19,7 @@
 
 .back {
   color: #8a7860;
-  font-size: 28rpx;
+  font-size: 26rpx;
   font-weight: 600;
 }
 
@@ -32,18 +32,18 @@
 }
 
 .fulltext-button {
-  height: 44rpx;
-  padding: 0 20rpx;
+  height: 42rpx;
+  padding: 0 18rpx;
   border-radius: 999rpx;
   background: rgba(126, 42, 28, 0.1);
   color: #7e2a1c;
   font-size: 20rpx;
-  line-height: 44rpx;
+  line-height: 42rpx;
 }
 
 .train-progress {
-  margin-top: 16rpx;
-  height: 8rpx;
+  margin-top: 14rpx;
+  height: 6rpx;
   border-radius: 999rpx;
   background: #efe3cb;
   overflow: hidden;
@@ -56,7 +56,7 @@
 }
 
 .train-chip-row {
-  margin-top: 18rpx;
+  margin-top: 14rpx;
   display: flex;
   gap: 12rpx;
   flex-wrap: wrap;
@@ -65,13 +65,13 @@
 .train-info-chip {
   display: inline-flex;
   align-items: center;
-  height: 40rpx;
-  padding: 0 16rpx;
+  height: 36rpx;
+  padding: 0 14rpx;
   border-radius: 999rpx;
   background: #efe3cb;
   color: #8a7860;
-  font-size: 20rpx;
-  line-height: 40rpx;
+  font-size: 19rpx;
+  line-height: 36rpx;
 }
 
 .train-info-chip.strong {
@@ -80,7 +80,7 @@
 }
 
 .train-title-row {
-  margin-top: 18rpx;
+  margin-top: 14rpx;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -95,12 +95,12 @@
 .train-mode-chip {
   display: inline-flex;
   align-items: center;
-  height: 42rpx;
-  padding: 0 18rpx;
+  height: 38rpx;
+  padding: 0 16rpx;
   border-radius: 999rpx;
   background: rgba(126, 42, 28, 0.08);
   color: #7e2a1c;
-  font-size: 22rpx;
+  font-size: 20rpx;
   font-weight: 700;
 }
 
@@ -111,26 +111,26 @@
 
 .train-title {
   display: block;
-  margin-top: 12rpx;
+  margin-top: 10rpx;
   color: #7e2a1c;
-  font-size: 50rpx;
+  font-size: 44rpx;
   font-weight: 500;
-  line-height: 1.16;
+  line-height: 1.12;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
 }
 
 .train-scene {
   display: block;
-  margin-top: 12rpx;
+  margin-top: 8rpx;
   color: #8a7860;
   font-size: 22rpx;
-  line-height: 1.45;
+  line-height: 1.35;
 }
 
 .stage-badge {
   flex-shrink: 0;
-  padding: 16rpx 18rpx;
-  border-radius: 26rpx;
+  padding: 12rpx 14rpx;
+  border-radius: 22rpx;
   background: #fff2dc;
   text-align: center;
 }
@@ -138,33 +138,33 @@
 .stage-label {
   display: block;
   color: #80655c;
-  font-size: 20rpx;
+  font-size: 18rpx;
 }
 
 .stage-text {
   display: block;
-  margin-top: 8rpx;
+  margin-top: 6rpx;
   color: #a63127;
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 700;
 }
 
 .helper-text {
   display: block;
-  margin-top: 18rpx;
+  margin-top: 12rpx;
   color: #80655c;
-  font-size: 24rpx;
-  line-height: 1.5;
+  font-size: 22rpx;
+  line-height: 1.42;
 }
 
 .fulltext-strip {
-  margin-top: 18rpx;
-  padding: 16rpx 18rpx;
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
   display: flex;
   align-items: center;
   gap: 16rpx;
   border: 1rpx solid rgba(232, 215, 180, 0.7);
-  border-radius: 24rpx;
+  border-radius: 22rpx;
   background: #fff8ea;
 }
 
@@ -241,18 +241,18 @@
 
 .step-tip {
   display: block;
-  margin-top: 10rpx;
+  margin-top: 8rpx;
   color: #8a7860;
   font-size: 20rpx;
 }
 
 .train-body {
-  padding: 30rpx 36rpx 10rpx;
+  padding: 20rpx 30rpx 12rpx;
 }
 
 .risk-card {
-  margin-bottom: 20rpx;
-  padding: 24rpx 26rpx;
+  margin-bottom: 18rpx;
+  padding: 22rpx 24rpx;
   border: 1rpx solid rgba(166, 49, 39, 0.16);
   border-radius: 32rpx;
   background: linear-gradient(160deg, #fff4ed, #f9e2d7);
@@ -302,8 +302,8 @@
 }
 
 .insight-card {
-  margin-bottom: 22rpx;
-  padding: 24rpx 26rpx;
+  margin-bottom: 18rpx;
+  padding: 20rpx 24rpx;
   border: 1rpx solid rgba(232, 215, 180, 0.6);
   border-radius: 32rpx;
   background: rgba(255, 250, 242, 0.72);
@@ -317,20 +317,20 @@
 .insight-title {
   display: block;
   color: #351b18;
-  font-size: 28rpx;
+  font-size: 26rpx;
   font-weight: 700;
 }
 
 .insight-body {
   display: block;
-  margin-top: 10rpx;
+  margin-top: 8rpx;
   color: #80655c;
-  font-size: 24rpx;
-  line-height: 1.55;
+  font-size: 22rpx;
+  line-height: 1.45;
 }
 
 .segment-head {
-  margin-bottom: 16rpx;
+  margin-bottom: 14rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -339,8 +339,8 @@
 
 .segment-label {
   color: #80655c;
-  font-size: 24rpx;
-  letter-spacing: 2rpx;
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
 }
 
 .segment-progress {
@@ -349,12 +349,12 @@
 }
 
 .segment-card {
-  margin-bottom: 16rpx;
-  padding: 24rpx;
+  margin-bottom: 14rpx;
+  padding: 20rpx;
   display: flex;
-  gap: 18rpx;
+  gap: 14rpx;
   border: 1rpx solid rgba(232, 215, 180, 0.6);
-  border-radius: 32rpx;
+  border-radius: 28rpx;
   background: rgba(255, 250, 242, 0.72);
   box-shadow: 0 8rpx 20rpx rgba(83, 56, 36, 0.03);
 }
@@ -368,8 +368,8 @@
 }
 
 .segment-audio {
-  width: 70rpx;
-  height: 70rpx;
+  width: 54rpx;
+  height: 54rpx;
   border-radius: 50%;
   flex-shrink: 0;
   background: #7e2a1c;
@@ -380,7 +380,7 @@
 
 .segment-audio-icon {
   color: #fbe9c8;
-  font-size: 24rpx;
+  font-size: 22rpx;
   line-height: 1;
 }
 
@@ -393,15 +393,15 @@
 
 .segment-index {
   color: #8a7860;
-  font-size: 18rpx;
+  font-size: 17rpx;
 }
 
 .segment-line {
-  margin-top: 10rpx;
+  margin-top: 8rpx;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  row-gap: 14rpx;
+  row-gap: 12rpx;
   column-gap: 8rpx;
 }
 
@@ -412,7 +412,7 @@
 
 .segment-unit {
   width: 58rpx;
-  min-height: 72rpx;
+  min-height: 68rpx;
   display: inline-flex;
   flex-direction: column;
   align-items: center;
@@ -420,7 +420,7 @@
 }
 
 .segment-line.compact .segment-unit {
-  width: 40rpx;
+  width: 39rpx;
 }
 
 .segment-unit.hidden .unit-text {
@@ -436,9 +436,9 @@
 }
 
 .unit-pinyin {
-  min-height: 28rpx;
+  min-height: 26rpx;
   color: #a56646;
-  font-size: 18rpx;
+  font-size: 17rpx;
   line-height: 1.15;
   font-weight: 600;
   text-align: center;
@@ -451,9 +451,9 @@
 }
 
 .unit-text {
-  margin-top: 6rpx;
+  margin-top: 5rpx;
   color: #2d2018;
-  font-size: 40rpx;
+  font-size: 39rpx;
   line-height: 1.08;
   font-weight: 500;
   text-align: center;
@@ -461,7 +461,7 @@
 }
 
 .segment-line.compact .unit-text {
-  font-size: 34rpx;
+  font-size: 33rpx;
 }
 
 .segment-hint {
@@ -471,18 +471,30 @@
 }
 
 .step-actions {
-  margin-top: 12rpx;
+  position: fixed;
+  left: 30rpx;
+  right: 30rpx;
+  bottom: calc(18rpx + env(safe-area-inset-bottom));
+  z-index: 30;
+  margin-top: 0;
+  padding: 14rpx;
   display: flex;
   gap: 12rpx;
+  border: 1rpx solid rgba(232, 215, 180, 0.68);
+  border-radius: 34rpx;
+  background: rgba(255, 250, 242, 0.94);
+  box-shadow: 0 16rpx 36rpx rgba(83, 56, 36, 0.12);
+  backdrop-filter: blur(12rpx);
 }
 
 .step-btn {
   flex: 1;
-  height: 64rpx;
-  border-radius: 24rpx;
+  height: 72rpx;
+  margin: 0;
+  border-radius: 26rpx;
   font-size: 24rpx;
   font-weight: 700;
-  line-height: 64rpx;
+  line-height: 72rpx;
 }
 
 .step-btn.ghost {
@@ -496,8 +508,13 @@
   color: #fbe9c8;
 }
 
+.step-btn.primary.needs-review {
+  background: #b87a52;
+  color: #fff8ed;
+}
+
 .feedback {
-  padding: 24rpx 36rpx calc(28rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 30rpx calc(28rpx + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, rgba(246, 236, 215, 0), #f6ecd7 20%);
 }
 

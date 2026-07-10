@@ -1,3 +1,92 @@
+const GREAT_COMPASSION_SEGMENTS = [
+  "南无喝啰怛那哆啰夜耶",
+  "南无阿唎耶",
+  "婆卢羯帝烁钵啰耶",
+  "菩提萨埵婆耶",
+  "摩诃萨埵婆耶",
+  "摩诃迦卢尼迦耶",
+  "唵",
+  "萨皤啰罚曳",
+  "数怛那怛写",
+  "南无悉吉栗埵伊蒙阿唎耶",
+  "婆卢吉帝室佛啰楞驮婆",
+  "南无那啰谨墀",
+  "醯唎摩诃皤哆沙咩",
+  "萨婆阿他豆输朋",
+  "阿逝孕",
+  "萨婆萨哆那摩婆萨哆那摩婆伽",
+  "摩罚特豆",
+  "怛侄他",
+  "唵阿婆卢醯",
+  "卢迦帝",
+  "迦罗帝",
+  "夷醯唎",
+  "摩诃菩提萨埵",
+  "萨婆萨婆",
+  "摩啰摩啰",
+  "摩醯摩醯唎驮孕",
+  "俱卢俱卢羯蒙",
+  "度卢度卢罚阇耶帝",
+  "摩诃罚阇耶帝",
+  "陀啰陀啰",
+  "地唎尼",
+  "室佛啰耶",
+  "遮啰遮啰",
+  "摩么罚摩啰",
+  "穆帝隶",
+  "伊醯伊醯",
+  "室那室那",
+  "阿啰参佛啰舍利",
+  "罚沙罚参",
+  "佛啰舍耶",
+  "呼卢呼卢摩啰",
+  "呼卢呼卢醯利",
+  "娑啰娑啰",
+  "悉唎悉唎",
+  "苏嚧苏嚧",
+  "菩提夜菩提夜",
+  "菩驮夜菩驮夜",
+  "弥帝唎夜",
+  "那啰谨墀",
+  "地利瑟尼那",
+  "波夜摩那",
+  "娑婆诃",
+  "悉陀夜",
+  "娑婆诃",
+  "摩诃悉陀夜",
+  "娑婆诃",
+  "悉陀喻艺",
+  "室皤啰耶",
+  "娑婆诃",
+  "那啰谨墀",
+  "娑婆诃",
+  "摩啰那啰",
+  "娑婆诃",
+  "悉啰僧阿穆佉耶",
+  "娑婆诃",
+  "娑婆摩诃阿悉陀夜",
+  "娑婆诃",
+  "者吉啰阿悉陀夜",
+  "娑婆诃",
+  "波陀摩羯悉陀夜",
+  "娑婆诃",
+  "那啰谨墀皤伽啰耶",
+  "娑婆诃",
+  "摩婆利胜羯啰夜",
+  "娑婆诃",
+  "南无喝啰怛那哆啰夜耶",
+  "南无阿唎耶",
+  "婆嚧吉帝",
+  "烁皤啰夜",
+  "娑婆诃",
+  "唵悉殿都",
+  "漫多啰",
+  "跋陀耶",
+  "娑婆诃"
+];
+
+const GREAT_COMPASSION_BODY = GREAT_COMPASSION_SEGMENTS.join("，");
+
 const contents = [
   {
     id: "om-mani",
@@ -9,7 +98,7 @@ const contents = [
     pinyinSegments: ["ōng mā ní bā mī hōng"],
     lengthTier: "short",
     lengthLevel: "short",
-    planDays: 1,
+    planDays: 4,
     lengthLabel: "长度 短",
     scene: "通勤路上 · 睡前持诵",
     hasAudio: true,
@@ -25,7 +114,7 @@ const contents = [
     pinyinSegments: ["ōng dá liè dū dá liè dū liè suō hā"],
     lengthTier: "short",
     lengthLevel: "short",
-    planDays: 2,
+    planDays: 4,
     lengthLabel: "长度 短",
     scene: "祈愿安顺 · 出行平安",
     hasAudio: true,
@@ -91,7 +180,7 @@ const contents = [
     pinyinSegments: ["ná mó ā mí tuó fó"],
     lengthTier: "short",
     lengthLevel: "short",
-    planDays: 1,
+    planDays: 4,
     lengthLabel: "长度 短",
     scene: "日常持名 · 静心安神",
     hasAudio: true,
@@ -115,20 +204,25 @@ const contents = [
   },
   {
     id: "great-compassion-snippet",
-    title: "大悲咒·开头段",
-    category: "经文片段",
-    body: "南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶。",
-    preview: "南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶。",
-    segments: ["南无喝啰怛那哆啰夜耶", "南无阿唎耶", "婆卢羯帝烁钵啰耶"],
-    pinyinSegments: ["ná mó hē là dá nà duō là yè yē", "ná mó ā lì yē", "pó lú jié dì shuò bō là yē"],
+    title: "大悲咒",
+    category: "长咒",
+    body: GREAT_COMPASSION_BODY,
+    preview: "南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶，菩提萨埵婆耶。",
+    segments: GREAT_COMPASSION_SEGMENTS,
+    pinyinSegments: [],
     lengthTier: "long",
     lengthLevel: "long",
-    planDays: 10,
+    planDays: 28,
     lengthLabel: "长度 长",
     festival: "观音菩萨圣诞",
     festivalTag: "观音菩萨圣诞",
-    scene: "慈悲发愿 · 长期修持",
-    hasAudio: true,
+    scene: "84 句分段 · 28 天科学背诵",
+    hasAudio: false,
+    defaultMode: "scientific",
+    supportedModes: ["scientific"],
+    supportsRecitation: true,
+    recommendedRecitationTime: "morning",
+    recitationTheme: "大悲咒全文读诵",
     accessLevel: "public"
   }
 ];
@@ -153,20 +247,19 @@ const festivals = [
 ];
 
 const todayReviews = [
-  { id: "om-mani", title: "六字大明咒", category: "短咒", meta: "第 1/1 天 · 拆段跟读", body: "唵 嘛呢 叭咪 吽" },
+  { id: "om-mani", title: "六字大明咒", category: "短咒", meta: "第 1/4 天 · 拆段跟读", body: "唵 嘛呢 叭咪 吽" },
   { id: "diamond-end", title: "金刚经·结尾偈", category: "经文片段", meta: "第 1/4 天 · 拆段跟读", body: "一切有为法，如梦幻泡影，如露亦如电，应作如是观。" },
-  { id: "great-compassion-snippet", title: "大悲咒·开头段", category: "经文片段", meta: "第 1/10 天 · 拆段跟读", body: "南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶。" }
+  { id: "great-compassion-snippet", title: "大悲咒", category: "长咒", meta: "第 1/28 天 · 拆段跟读", body: "南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶。" }
 ];
 
 const progressItems = {
   reviewing: [
+    { id: "om-mani", title: "六字大明咒", scene: "通勤路上 · 睡前持诵", current: 1, total: 4 },
     { id: "diamond-end", title: "金刚经·结尾偈", scene: "观照无常 · 放下执着", current: 0, total: 4 },
-    { id: "great-compassion-snippet", title: "大悲咒·开头段", scene: "慈悲发愿 · 长期修持", current: 0, total: 10 }
+    { id: "great-compassion-snippet", title: "大悲咒", scene: "84 句分段 · 28 天科学背诵", current: 0, total: 28 }
   ],
   atRisk: [],
-  mastered: [
-    { id: "om-mani", title: "六字大明咒", scene: "通勤路上 · 睡前持诵", current: 1, total: 1 }
-  ]
+  mastered: []
 };
 
 function findContent(id) {

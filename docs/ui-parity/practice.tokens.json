@@ -3,7 +3,7 @@
     "page": "practice",
     "source": "design/src/app/App.tsx#TrainingModal",
     "target": "pages/practice/index.(wxml|wxss|js)",
-    "updatedAt": "2026-06-03",
+    "updatedAt": "2026-07-07",
     "designFrame": {
       "widthPx": 390,
       "heightPx": 844
@@ -66,7 +66,7 @@
   },
   "selectorSnapshot": {
     ".train-progress": [
-      "height: 8rpx",
+      "height: 6rpx",
       "background: #efe3cb"
     ],
     ".train-info-chip": [

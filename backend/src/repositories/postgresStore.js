@@ -69,6 +69,95 @@ const DEFAULT_ADMIN_SEEDS = [
   }
 ];
 
+const GREAT_COMPASSION_SEGMENTS = [
+  '南无喝啰怛那哆啰夜耶',
+  '南无阿唎耶',
+  '婆卢羯帝烁钵啰耶',
+  '菩提萨埵婆耶',
+  '摩诃萨埵婆耶',
+  '摩诃迦卢尼迦耶',
+  '唵',
+  '萨皤啰罚曳',
+  '数怛那怛写',
+  '南无悉吉栗埵伊蒙阿唎耶',
+  '婆卢吉帝室佛啰楞驮婆',
+  '南无那啰谨墀',
+  '醯唎摩诃皤哆沙咩',
+  '萨婆阿他豆输朋',
+  '阿逝孕',
+  '萨婆萨哆那摩婆萨哆那摩婆伽',
+  '摩罚特豆',
+  '怛侄他',
+  '唵阿婆卢醯',
+  '卢迦帝',
+  '迦罗帝',
+  '夷醯唎',
+  '摩诃菩提萨埵',
+  '萨婆萨婆',
+  '摩啰摩啰',
+  '摩醯摩醯唎驮孕',
+  '俱卢俱卢羯蒙',
+  '度卢度卢罚阇耶帝',
+  '摩诃罚阇耶帝',
+  '陀啰陀啰',
+  '地唎尼',
+  '室佛啰耶',
+  '遮啰遮啰',
+  '摩么罚摩啰',
+  '穆帝隶',
+  '伊醯伊醯',
+  '室那室那',
+  '阿啰参佛啰舍利',
+  '罚沙罚参',
+  '佛啰舍耶',
+  '呼卢呼卢摩啰',
+  '呼卢呼卢醯利',
+  '娑啰娑啰',
+  '悉唎悉唎',
+  '苏嚧苏嚧',
+  '菩提夜菩提夜',
+  '菩驮夜菩驮夜',
+  '弥帝唎夜',
+  '那啰谨墀',
+  '地利瑟尼那',
+  '波夜摩那',
+  '娑婆诃',
+  '悉陀夜',
+  '娑婆诃',
+  '摩诃悉陀夜',
+  '娑婆诃',
+  '悉陀喻艺',
+  '室皤啰耶',
+  '娑婆诃',
+  '那啰谨墀',
+  '娑婆诃',
+  '摩啰那啰',
+  '娑婆诃',
+  '悉啰僧阿穆佉耶',
+  '娑婆诃',
+  '娑婆摩诃阿悉陀夜',
+  '娑婆诃',
+  '者吉啰阿悉陀夜',
+  '娑婆诃',
+  '波陀摩羯悉陀夜',
+  '娑婆诃',
+  '那啰谨墀皤伽啰耶',
+  '娑婆诃',
+  '摩婆利胜羯啰夜',
+  '娑婆诃',
+  '南无喝啰怛那哆啰夜耶',
+  '南无阿唎耶',
+  '婆嚧吉帝',
+  '烁皤啰夜',
+  '娑婆诃',
+  '唵悉殿都',
+  '漫多啰',
+  '跋陀耶',
+  '娑婆诃'
+];
+
+const GREAT_COMPASSION_BODY = GREAT_COMPASSION_SEGMENTS.join('，');
+
 const LEGACY_ID_MAP = {
   ...IDS.contents,
   'om-mani': IDS.contents['six-syllable-mantra'],
@@ -1217,6 +1306,10 @@ function createPlan({ userId = IDS.demoUser, contentId, startDate = todayDate(),
   `);
 
   if (existing) {
+    scheduleNextPlanReminderJobs(normalizedUserId, {
+      ...existing,
+      tasks: getTasksForPlan(existing.id)
+    }, content);
     return {
       isNew: false,
       plan: {
@@ -1290,20 +1383,28 @@ function createPlan({ userId = IDS.demoUser, contentId, startDate = todayDate(),
     `);
   }
 
+  const planWithTasks = {
+    ...plan,
+    tasks: getTasksForPlan(plan.id)
+  };
+  scheduleNextPlanReminderJobs(normalizedUserId, planWithTasks, content);
+
   return {
     isNew: true,
-    plan: {
-      ...plan,
-      tasks: getTasksForPlan(plan.id)
-    }
+    plan: planWithTasks
   };
 }
 
-function completeTask({ taskId, result = 'stronger', selfRating = '', latencyBand = '', mistakeCount = 0, note = '' }) {
+function completeTask({ taskId, userId = '', result = 'stronger', selfRating = '', latencyBand = '', mistakeCount = 0, note = '' }) {
   const normalizedTaskId = normalizeId(taskId);
   const task = normalizedTaskId ? getTask(normalizedTaskId) : null;
 
   if (!task) {
+    const error = new Error('Review task not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (userId && task.userId !== userId) {
     const error = new Error('Review task not found');
     error.statusCode = 404;
     throw error;
@@ -1324,13 +1425,13 @@ function completeTask({ taskId, result = 'stronger', selfRating = '', latencyBan
       and status = 'completed'
   `)) + (task.status === 'completed' ? 0 : 1);
   const total = Number(plan.totalDays || 1);
-  const nextMasteryScore = result === 'mastered'
-    ? 100
-    : Math.max(0, Math.min(100, Number(plan.masteryScore || 0) + masteryDelta));
+  const mastered = doneCount >= total;
+  const rawNextMasteryScore = Math.max(0, Math.min(100, Number(plan.masteryScore || 0) + masteryDelta));
+  const nextMasteryScore = mastered ? 100 : Math.min(95, rawNextMasteryScore);
   const state = result === 'needs_work'
     ? 'at_risk'
-    : (nextMasteryScore >= 100 || doneCount >= total ? 'mastered' : 'reviewing');
-  const masteryScore = state === 'mastered' ? 100 : nextMasteryScore;
+    : (mastered ? 'mastered' : 'reviewing');
+  const masteryScore = nextMasteryScore;
   const streakHits = result === 'needs_work'
     ? Number(plan.streakHits || 0)
     : Number(plan.streakHits || 0) + 1;
@@ -1430,9 +1531,15 @@ function completeTask({ taskId, result = 'stronger', selfRating = '', latencyBan
     returning id::text
   `);
 
+  const planWithTasks = {
+    ...updatedPlan,
+    tasks: getTasksForPlan(updatedPlan.id)
+  };
+  scheduleNextPlanReminderJobs(updatedTask.userId, planWithTasks, getContent(updatedPlan.contentId));
+
   return {
     task: updatedTask,
-    plan: updatedPlan
+    plan: planWithTasks
   };
 }
 
@@ -2041,7 +2148,8 @@ function loginByWechatCode(payload = {}) {
   const userInfo = payload.userInfo || {};
   const openid = String(payload.wechatOpenid || `mock_${hashValue(code).slice(0, 24)}`).trim();
   const unionid = String(payload.unionid || '').trim() || null;
-  const nickname = String(userInfo.nickName || payload.nickname || '微信用户').trim() || '微信用户';
+  const incomingNickname = String(userInfo.nickName || payload.nickname || '').trim();
+  const nickname = incomingNickname || '微信用户';
   const avatarUrl = String(userInfo.avatarUrl || payload.avatarUrl || '').trim() || null;
   const platform = String(payload.platform || 'wechat').trim() || 'wechat';
 
@@ -2059,11 +2167,15 @@ function loginByWechatCode(payload = {}) {
   `);
 
   if (existing) {
+    const nextNickname = isMeaningfulNickname(incomingNickname)
+      ? incomingNickname
+      : existing.nickname || '微信用户';
+    const nextAvatarUrl = avatarUrl || existing.avatarUrl || null;
     queryScalar(`
       update users
       set
-        nickname = ${sqlValue(nickname)},
-        avatar_url = ${sqlValue(avatarUrl)},
+        nickname = ${sqlValue(nextNickname)},
+        avatar_url = ${sqlValue(nextAvatarUrl)},
         unionid = coalesce(${sqlValue(unionid)}, unionid),
         platform = ${sqlValue(platform)},
         last_login_at = now(),
@@ -2073,8 +2185,8 @@ function loginByWechatCode(payload = {}) {
     `);
     return {
       ...existing,
-      nickname,
-      avatarUrl: avatarUrl || existing.avatarUrl || ''
+      nickname: nextNickname,
+      avatarUrl: nextAvatarUrl || ''
     };
   }
 
@@ -2114,12 +2226,51 @@ function getUserById(userId) {
       nickname,
       avatar_url as "avatarUrl",
       platform,
-      status
+      status,
+      phone
     from users
     where id = ${sqlValue(normalizedUserId)}
       and deleted_at is null
     limit 1
   `);
+}
+
+function updateUserProfile(userId, payload = {}) {
+  const normalizedUserId = normalizeId(userId) || normalizeUserId(userId);
+  if (!normalizedUserId) {
+    const error = new Error('User id is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const nickname = String(payload.nickname || payload.nickName || '').trim();
+  const avatarUrl = String(payload.avatarUrl || '').trim();
+  const phone = String(payload.phone || '').trim();
+
+  const user = queryReturningOne(`
+    update users
+    set
+      nickname = coalesce(${sqlValue(nickname || null)}, nickname),
+      avatar_url = coalesce(${sqlValue(avatarUrl || null)}, avatar_url),
+      phone = coalesce(${sqlValue(phone || null)}, phone),
+      updated_at = now()
+    where id = ${sqlValue(normalizedUserId)}
+      and deleted_at is null
+    returning
+      id::text as "id",
+      nickname,
+      avatar_url as "avatarUrl",
+      platform,
+      status,
+      phone
+  `);
+
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  return user;
 }
 
 function getNotificationSettings(userId = IDS.demoUser) {
@@ -2229,6 +2380,132 @@ function createNotificationJob({ userId = IDS.demoUser, taskId = null, channel, 
   `);
 }
 
+function scheduleNextPlanReminderJobs(userId, plan = {}, content = {}) {
+  if (plan.state === 'mastered') return [];
+  const nextTask = (plan.tasks || [])
+    .filter((task) => task.status !== 'completed')
+    .slice()
+    .sort((left, right) => {
+      const byDate = String(left.dueDate || '').localeCompare(String(right.dueDate || ''));
+      if (byDate !== 0) return byDate;
+      return Number(left.dayIndex || 0) - Number(right.dayIndex || 0);
+    })[0];
+  if (!nextTask) return [];
+
+  return scheduleNotificationJobs({
+    userId,
+    taskId: nextTask.id,
+    date: nextTask.dueDate || todayDate(),
+    period: 'morning',
+    payload: {
+      type: 'review',
+      planId: plan.id,
+      contentId: plan.contentId,
+      title: plan.title || content.title || '',
+      mode: plan.mode || 'scientific',
+      dayIndex: nextTask.dayIndex,
+      totalDays: plan.totalDays,
+      method: nextTask.method,
+      message: `今天复习 ${plan.title || content.title || '修持内容'}`
+    }
+  });
+}
+
+function scheduleNextRecitationReminderJobs(userId, goal = {}, content = {}, date = addDays(todayDate(), 1)) {
+  if (!goal || !goal.contentId) return [];
+  return scheduleNotificationJobs({
+    userId,
+    taskId: null,
+    date,
+    period: goal.preferredPeriod || 'morning',
+    payload: {
+      type: 'recitation',
+      goalId: goal.id || '',
+      contentId: goal.contentId,
+      title: content.title || '',
+      dailyTargetCount: goal.dailyTargetCount || 1,
+      preferredPeriod: goal.preferredPeriod || 'morning',
+      message: `今天读诵 ${content.title || '修持内容'}`
+    }
+  });
+}
+
+function scheduleNotificationJobs({ userId, taskId = null, date, period = 'morning', payload = {} }) {
+  const scheduledAt = buildReminderScheduledAt(date, period);
+  return getEnabledNotificationChannels(userId)
+    .map((channel) => ensureNotificationJob({
+      userId,
+      taskId,
+      channel,
+      scheduledAt,
+      payload
+    }))
+    .filter(Boolean);
+}
+
+function getEnabledNotificationChannels(userId) {
+  return getNotificationSettings(userId)
+    .filter((setting) => setting.enabled !== false)
+    .map((setting) => setting.channel)
+    .filter(Boolean);
+}
+
+function ensureNotificationJob({ userId, taskId = null, channel, scheduledAt, payload = {} }) {
+  const normalizedUserId = ensureUser(userId);
+  const normalizedTaskId = normalizeId(taskId);
+  const existingWhere = normalizedTaskId
+    ? [
+      `user_id = ${sqlValue(normalizedUserId)}`,
+      `channel = ${sqlValue(channel)}`,
+      "status = 'pending'",
+      `task_id = ${sqlValue(normalizedTaskId)}`
+    ]
+    : [
+      `user_id = ${sqlValue(normalizedUserId)}`,
+      `channel = ${sqlValue(channel)}`,
+      "status = 'pending'",
+      'task_id is null',
+      `payload ->> 'type' = ${sqlValue(payload.type || '')}`,
+      `payload ->> 'contentId' = ${sqlValue(payload.contentId || '')}`,
+      `coalesce(payload ->> 'goalId', '') = ${sqlValue(payload.goalId || '')}`,
+      `scheduled_at::date = (${sqlValue(scheduledAt)})::timestamptz::date`
+    ];
+  const existing = queryOne(`
+    select
+      id::text as "id",
+      user_id::text as "userId",
+      task_id::text as "taskId",
+      channel,
+      scheduled_at as "scheduledAt",
+      status,
+      payload,
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from notification_jobs
+    where ${existingWhere.join(' and ')}
+    order by scheduled_at asc
+    limit 1
+  `);
+  if (existing) return existing;
+  return createNotificationJob({ userId: normalizedUserId, taskId: normalizedTaskId, channel, scheduledAt, payload });
+}
+
+function buildReminderScheduledAt(date, period = 'morning') {
+  const hourByPeriod = {
+    morning: 8,
+    noon: 12,
+    evening: 18,
+    night: 21,
+    theme: 8
+  };
+  const dateText = String(date || todayDate()).slice(0, 10);
+  const hour = hourByPeriod[String(period || 'morning')] || hourByPeriod.morning;
+  const intended = new Date(`${dateText}T${String(hour).padStart(2, '0')}:00:00+08:00`);
+  const minimum = new Date(Date.now() + 10 * 60 * 1000);
+  const scheduled = Number.isNaN(intended.getTime()) || intended < minimum ? minimum : intended;
+  return scheduled.toISOString();
+}
+
 function listNotificationJobs({ userId, limit = 20, status, startAt, endAt, organizationId, type, mode, includeAllUsers = false } = {}) {
   const normalizedUserId = normalizeId(userId);
   const effectiveUserId = normalizedUserId || IDS.demoUser;
@@ -2263,7 +2540,7 @@ function listNotificationJobs({ userId, limit = 20, status, startAt, endAt, orga
       nj.updated_at as "updatedAt",
       mp.mode,
       c.id::text as "contentId",
-      c.title
+      coalesce(c.title, nj.payload ->> 'title', '') as title
     from notification_jobs nj
     left join users u on u.id = nj.user_id
     left join review_tasks rt on rt.id = nj.task_id
@@ -2405,7 +2682,7 @@ function upsertRecitationGoal({ userId = IDS.demoUser, contentId, goalType = 'da
     throw error;
   }
 
-  return queryReturningOne(`
+  const goal = queryReturningOne(`
     insert into recitation_goals (
       user_id,
       content_id,
@@ -2437,6 +2714,8 @@ function upsertRecitationGoal({ userId = IDS.demoUser, contentId, goalType = 'da
       created_at as "createdAt",
       updated_at as "updatedAt"
   `);
+  scheduleNextRecitationReminderJobs(normalizedUserId, goal, content, addDays(todayDate(), 1));
+  return goal;
 }
 
 function createRecitationSession({ userId = IDS.demoUser, contentId, goalId = null, sessionType = 'free', period = 'morning', roundCount = 1, durationSeconds = 0, completed = true, note = '' }) {
@@ -2449,7 +2728,7 @@ function createRecitationSession({ userId = IDS.demoUser, contentId, goalId = nu
     throw error;
   }
 
-  return queryReturningOne(`
+  const session = queryReturningOne(`
     insert into recitation_sessions (
       user_id,
       content_id,
@@ -2484,6 +2763,37 @@ function createRecitationSession({ userId = IDS.demoUser, contentId, goalId = nu
       note,
       created_at as "createdAt"
   `);
+  if (session && session.completed) {
+    const goal = normalizeId(goalId)
+      ? queryOne(`
+        select
+          id::text as "id",
+          user_id::text as "userId",
+          content_id::text as "contentId",
+          goal_type as "goalType",
+          preferred_period as "preferredPeriod",
+          daily_target_count as "dailyTargetCount",
+          status
+        from recitation_goals
+        where id = ${sqlValue(normalizeId(goalId))}
+          and user_id = ${sqlValue(normalizedUserId)}
+        limit 1
+      `)
+      : null;
+    scheduleNextRecitationReminderJobs(
+      normalizedUserId,
+      goal || {
+        id: goalId || '',
+        contentId: normalizedContentId,
+        preferredPeriod: period,
+        dailyTargetCount: roundCount,
+        goalType: sessionType || 'daily'
+      },
+      content,
+      addDays(todayDate(), 1)
+    );
+  }
+  return session;
 }
 
 function listTodayFocus(userId = IDS.demoUser) {
@@ -2723,9 +3033,9 @@ function seedDatabase() {
     body: '唵 嘛呢 叭咪 吽',
     preview: '唵 嘛呢 叭咪 吽',
     lengthTier: 'short',
-    planDays: 1,
+    planDays: 4,
     scene: '通勤路上 · 睡前持诵',
-    segments: ['唵', '嘛呢', '叭咪', '吽']
+    segments: ['唵嘛呢叭咪吽']
   });
   seedContent({
     id: IDS.contents['green-tara-mantra'],
@@ -2735,9 +3045,9 @@ function seedDatabase() {
     body: '嗡 达列 都达列 都列 梭哈',
     preview: '嗡 达列 都达列 都列 梭哈',
     lengthTier: 'short',
-    planDays: 2,
+    planDays: 4,
     scene: '祈愿安顺 · 出行平安',
-    segments: ['嗡', '达列', '都达列', '都列', '梭哈']
+    segments: ['嗡达列都达列都列梭哈']
   });
   seedContent({
     id: IDS.contents['diamond-sutra-ending'],
@@ -2765,15 +3075,20 @@ function seedDatabase() {
   });
   seedContent({
     id: IDS.contents['great-compassion-opening'],
-    title: '大悲咒·开头段',
-    subtitle: '经文片段',
+    title: '大悲咒',
+    subtitle: '长咒',
     type: 'sutra_segment',
-    body: '南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶。',
-    preview: '南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶。',
+    body: GREAT_COMPASSION_BODY,
+    preview: '南无喝啰怛那哆啰夜耶，南无阿唎耶，婆卢羯帝烁钵啰耶，菩提萨埵婆耶。',
     lengthTier: 'long',
-    planDays: 10,
-    scene: '慈悲发愿 · 长期修持',
-    segments: ['南无', '喝啰怛那', '哆啰夜耶', '南无', '阿唎耶', '婆卢羯帝', '烁钵啰耶']
+    planDays: 28,
+    scene: '84 句分段 · 28 天科学背诵',
+    segments: GREAT_COMPASSION_SEGMENTS,
+    defaultMode: 'scientific',
+    supportedModes: ['scientific'],
+    supportsRecitation: true,
+    recommendedRecitationTime: 'morning',
+    recitationTheme: '大悲咒全文读诵'
   });
 
   seedFestival({
@@ -2912,8 +3227,13 @@ function seedContent(content) {
     )
     on conflict (id) do update set
       title = excluded.title,
+      subtitle = excluded.subtitle,
+      type = excluded.type,
       body = excluded.body,
       preview = excluded.preview,
+      length_tier = excluded.length_tier,
+      plan_days = excluded.plan_days,
+      scene = excluded.scene,
       updated_at = now()
     returning id::text
   `);
@@ -3076,6 +3396,11 @@ function hashValue(value) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
 
+function isMeaningfulNickname(value) {
+  const nickname = String(value || '').trim();
+  return Boolean(nickname && nickname !== '微信用户');
+}
+
 function resolvePsqlBinary() {
   const candidates = [
     process.env.PSQL_BIN,
@@ -3112,6 +3437,7 @@ module.exports = {
   getAdminById,
   initializeDatabase,
   loginByWechatCode,
+  updateUserProfile,
   findAdminByCredentials,
   listAdminContents,
   listAdminFestivals,

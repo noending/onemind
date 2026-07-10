@@ -3,7 +3,7 @@
     "page": "library",
     "source": "design/src/app/App.tsx#BrowseScreen",
     "target": "pages/library/index.(wxml|wxss|js)",
-    "updatedAt": "2026-06-01",
+    "updatedAt": "2026-07-07",
     "designFrame": {
       "widthPx": 390,
       "heightPx": 844
@@ -28,17 +28,17 @@
     "pageTitle": {
       "designPx": 30,
       "miniRpx": 58,
-      "implementedRpx": 58
+      "implementedRpx": 54
     },
     "seriesTitle": {
       "designPx": 26,
       "miniRpx": 50,
-      "implementedRpx": 46
+      "implementedRpx": 42
     },
     "contentTitle": {
       "designPx": 22,
       "miniRpx": 42,
-      "implementedRpx": 31
+      "implementedRpx": 32
     },
     "filterText": {
       "designPx": 13,
@@ -55,24 +55,24 @@
     "contentRadius": {
       "designPx": 20,
       "miniRpx": 38,
-      "implementedRpx": 36
+      "implementedRpx": 32
     },
     "sheetRadius": {
       "designPx": 36,
       "miniRpx": 69,
-      "implementedRpx": 42
+      "implementedRpx": 38
     }
   },
   "spacing": {
     "pageTop": {
       "designPx": 8,
       "miniRpx": 15,
-      "implementedRpx": 26
+      "implementedRpx": 124
     },
     "filterMarginTop": {
       "designPx": 20,
       "miniRpx": 38,
-      "implementedRpx": 20
+      "implementedRpx": 18
     },
     "cardGap": {
       "designPx": 12,
@@ -82,10 +82,10 @@
   },
   "selectorSnapshot": {
     ".library-body": [
-      "padding-top: 26rpx"
+      "padding-top: 124rpx"
     ],
     ".filters": [
-      "margin: 20rpx 0 24rpx",
+      "margin: 18rpx 0 20rpx",
       "overflow-x: auto"
     ],
     ".series-card": [
@@ -93,11 +93,11 @@
       "background: linear-gradient(140deg, #7e2a1c, #5c1f14)"
     ],
     ".content-card": [
-      "padding: 22rpx",
-      "border-radius: 36rpx"
+      "padding: 22rpx 24rpx",
+      "border-radius: 32rpx"
     ],
     ".plan-sheet": [
-      "border-radius: 42rpx 42rpx 0 0",
+      "border-radius: 38rpx 38rpx 0 0",
       "background: #fffaf2"
     ]
   }

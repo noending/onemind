@@ -15,18 +15,19 @@ const {
   resetChecklistStatus
 } = require("../../common/platform");
 const {
-  clearAuthSession,
   getNotificationSettingsApi,
   getAuthUser,
   getCurrentUser,
   isBackendEnabled,
   listNotificationJobsApi,
   loginWithWechat,
+  logout,
   updateNotificationSettingApi
 } = require("../../common/api");
 
 const PROFILE_NOTIFICATION_SETTINGS_KEY = "oneMind.profile.notification-settings";
 const PROFILE_NOTIFICATION_JOBS_KEY = "oneMind.profile.notification-jobs";
+const PROFILE_LOCAL_WECHAT_USER_KEY = "oneMind.profile.local-wechat-user";
 const NOTIFICATION_CHANNELS = ["wechat_subscribe", "app_push", "sms"];
 
 function buildCurveData(totalDays) {
@@ -393,6 +394,43 @@ function normalizeGrowthOverview(overview) {
   };
 }
 
+function normalizeWechatProfile(userInfo = {}) {
+  const nickname = String(userInfo.nickname || userInfo.nickName || userInfo.name || "").trim();
+  const avatarUrl = String(userInfo.avatarUrl || userInfo.avatar || "").trim();
+  return {
+    nickname: nickname || "修行者",
+    avatarUrl,
+    avatarInitial: (nickname || "行").slice(0, 1)
+  };
+}
+
+function isMeaningfulWechatNickname(value) {
+  const nickname = String(value || "").trim();
+  return Boolean(nickname && nickname !== "修行者" && nickname !== "微信用户");
+}
+
+function buildWechatUserInfoFromDraft(draft = {}) {
+  const nickname = String(draft.nickname || "").trim();
+  const avatarUrl = String(draft.avatarUrl || "").trim();
+  return {
+    nickName: nickname,
+    nickname,
+    avatarUrl
+  };
+}
+
+function buildAuthView(user, options = {}) {
+  const profile = normalizeWechatProfile(user || {});
+  const loggedIn = Boolean(options.loggedIn);
+  return {
+    loggedIn,
+    nickname: profile.nickname,
+    avatarUrl: profile.avatarUrl,
+    avatarInitial: profile.avatarInitial,
+    statusText: options.statusText || (loggedIn ? "已完成微信授权" : "可选：微信授权同步跨端进度")
+  };
+}
+
 function getNotificationCache() {
   return normalizeNotificationSettings(safeGetStorage(PROFILE_NOTIFICATION_SETTINGS_KEY, buildDefaultNotificationSettings()));
 }
@@ -477,6 +515,12 @@ Page({
       avatarUrl: "",
       avatarInitial: "行",
       statusText: "专注当下，持续修持"
+    },
+    authProfileSheetVisible: false,
+    authDraft: {
+      avatarUrl: "",
+      nickname: "",
+      saving: false
     },
     summaryText: "今日继续一小段，节律比速度更重要。"
   },
@@ -573,18 +617,17 @@ Page({
   refreshAuth() {
     const cachedUser = getAuthUser();
     if (!isBackendEnabled()) {
+      const localWechatUser = safeGetStorage(PROFILE_LOCAL_WECHAT_USER_KEY, null);
+      const displayUser = localWechatUser || cachedUser || null;
       const session = {
         loggedIn: false,
-        user: cachedUser || null
+        user: displayUser
       };
       this.setData({
-        auth: {
+        auth: buildAuthView(displayUser, {
           loggedIn: false,
-          nickname: (cachedUser && cachedUser.nickname) || "修行者",
-          avatarUrl: (cachedUser && cachedUser.avatarUrl) || "",
-          avatarInitial: ((cachedUser && cachedUser.nickname) || "行").slice(0, 1),
-          statusText: "专注修持，无需复杂设置"
-        }
+          statusText: localWechatUser ? "已使用微信资料（本地）" : "点击头像可授权微信资料"
+        })
       });
       return Promise.resolve(session);
     }
@@ -592,13 +635,10 @@ Page({
     return getCurrentUser().then((session) => {
       const loggedIn = Boolean(session.loggedIn);
       this.setData({
-        auth: {
+        auth: buildAuthView(session.user || null, {
           loggedIn,
-          nickname: (session.user && session.user.nickname) || "修行者",
-          avatarUrl: (session.user && session.user.avatarUrl) || "",
-          avatarInitial: (((session.user && session.user.nickname) || "行")).slice(0, 1),
           statusText: loggedIn ? "已完成微信授权" : "可选：微信授权同步跨端进度"
-        }
+        })
       });
       return session;
     });
@@ -668,67 +708,143 @@ Page({
     });
   },
 
-  authorizeWechatLogin() {
-    if (!isBackendEnabled()) {
-      wx.showToast({ title: "当前为本地模式", icon: "none" });
+  showWechatProfileSheet() {
+    const currentAuth = this.data.auth || {};
+    this.setData({
+      authProfileSheetVisible: true,
+      authDraft: {
+        avatarUrl: currentAuth.avatarUrl || "",
+        nickname: isMeaningfulWechatNickname(currentAuth.nickname) ? currentAuth.nickname : "",
+        saving: false
+      }
+    });
+  },
+
+  onChooseWechatAvatar(event) {
+    const avatarUrl = event && event.detail ? String(event.detail.avatarUrl || "").trim() : "";
+    if (!avatarUrl) {
+      wx.showToast({ title: "未选择头像", icon: "none" });
       return;
     }
 
-    wx.getUserProfile({
-      desc: "用于同步你的修持进度",
-      success: (profile) => {
-        loginWithWechat(profile.userInfo || {}).then((session) => {
-          const user = session.user || {};
-          this.setData({
-            auth: {
-              loggedIn: true,
-              nickname: user.nickname || "修行者",
-              avatarUrl: user.avatarUrl || "",
-              avatarInitial: (user.nickname || "行").slice(0, 1),
-              statusText: "已完成微信授权"
-            }
-          }, () => {
-            this.refreshNotificationPanel({
-              loggedIn: true,
-              user
-            });
-          });
-          wx.showToast({ title: "授权成功", icon: "success" });
-        }).catch((error) => {
-          wx.showToast({ title: error.message || "授权失败", icon: "none" });
-        });
-      },
-      fail: () => {
-        wx.showToast({ title: "已取消授权", icon: "none" });
+    const draft = this.data.authDraft || {};
+    this.setData({
+      authProfileSheetVisible: true,
+      authDraft: {
+        ...draft,
+        avatarUrl,
+        saving: false
       }
+    });
+  },
+
+  onWechatNicknameInput(event) {
+    const draft = this.data.authDraft || {};
+    this.setData({
+      authDraft: {
+        ...draft,
+        nickname: String(event.detail.value || "").trim()
+      }
+    });
+  },
+
+  closeWechatProfileSheet() {
+    if (this.data.authDraft && this.data.authDraft.saving) return;
+    this.setData({
+      authProfileSheetVisible: false
+    });
+  },
+
+  noop() {},
+
+  confirmWechatLogin() {
+    const draft = this.data.authDraft || {};
+    const userInfo = buildWechatUserInfoFromDraft(draft);
+    if (!userInfo.avatarUrl) {
+      wx.showToast({ title: "请先选择微信头像", icon: "none" });
+      return;
+    }
+    if (!isMeaningfulWechatNickname(userInfo.nickName)) {
+      wx.showToast({ title: "请先选择微信昵称", icon: "none" });
+      return;
+    }
+
+    this.setData({
+      authDraft: {
+        ...draft,
+        saving: true
+      }
+    });
+
+    if (!isBackendEnabled()) {
+      const localUser = normalizeWechatProfile(userInfo);
+      safeSetStorage(PROFILE_LOCAL_WECHAT_USER_KEY, localUser);
+      this.setData({
+        auth: buildAuthView(localUser, {
+          loggedIn: false,
+          statusText: "已使用微信资料（本地）"
+        }),
+        authProfileSheetVisible: false,
+        authDraft: {
+          avatarUrl: localUser.avatarUrl,
+          nickname: localUser.nickname,
+          saving: false
+        }
+      });
+      wx.showToast({ title: "已显示微信资料", icon: "success" });
+      return;
+    }
+
+    loginWithWechat(userInfo).then((session) => {
+      const user = session.user || {};
+      this.setData({
+        auth: buildAuthView(user, {
+          loggedIn: true,
+          statusText: "已完成微信授权"
+        }),
+        authProfileSheetVisible: false,
+        authDraft: {
+          avatarUrl: user.avatarUrl || userInfo.avatarUrl,
+          nickname: user.nickname || userInfo.nickName,
+          saving: false
+        }
+      }, () => {
+        this.refreshNotificationPanel({
+          loggedIn: true,
+          user
+        });
+      });
+      wx.showToast({ title: "授权成功", icon: "success" });
+    }).catch((error) => {
+      this.setData({
+        authDraft: {
+          ...this.data.authDraft,
+          saving: false
+        }
+      });
+      wx.showToast({ title: error.message || "授权失败", icon: "none" });
     });
   },
 
   logoutWechat() {
-    clearAuthSession();
-    this.setData({
-      auth: {
-        loggedIn: false,
-        nickname: "修行者",
-        avatarUrl: "",
-        avatarInitial: "行",
-        statusText: "已退出微信授权"
-      }
-    }, () => {
-      this.refreshNotificationPanel({
-        loggedIn: false,
-        user: null
+    logout().then(() => {
+      safeSetStorage(PROFILE_LOCAL_WECHAT_USER_KEY, null);
+      this.setData({
+        auth: {
+          loggedIn: false,
+          nickname: "修行者",
+          avatarUrl: "",
+          avatarInitial: "行",
+          statusText: "已退出微信授权"
+        }
+      }, () => {
+        this.refreshNotificationPanel({
+          loggedIn: false,
+          user: null
+        });
       });
+      wx.showToast({ title: "已退出", icon: "success" });
     });
-    wx.showToast({ title: "已退出", icon: "success" });
-  },
-
-  onAuthAction() {
-    if (!this.data.auth.loggedIn) {
-      this.authorizeWechatLogin();
-      return;
-    }
-    this.setData({ subTab: "settings" });
   },
 
   openRecitation(event) {
@@ -928,7 +1044,7 @@ Page({
 
       const renderWidth = first.width && Number(first.width) > 0 ? Number(first.width) : plotWidth;
       const renderHeight = first.height && Number(first.height) > 0 ? Number(first.height) : plotHeight;
-      const dprInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
+      const dprInfo = typeof wx.getWindowInfo === "function" ? wx.getWindowInfo() : {};
       const dpr = Number(dprInfo.pixelRatio || 2);
       canvas.width = Math.max(1, Math.round(renderWidth * dpr));
       canvas.height = Math.max(1, Math.round(renderHeight * dpr));

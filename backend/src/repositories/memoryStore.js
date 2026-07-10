@@ -823,6 +823,10 @@ function createPlan({ userId = 'demo-user', contentId, startDate = todayDate(), 
   ));
 
   if (existing) {
+    scheduleNextPlanReminderJobs(userId, {
+      ...existing,
+      tasks: state.tasks.filter((task) => task.planId === existing.id)
+    }, content);
     return {
       isNew: false,
       plan: {
@@ -876,6 +880,7 @@ function createPlan({ userId = 'demo-user', contentId, startDate = todayDate(), 
 
   state.plans.push(plan);
   state.tasks.push(...tasks);
+  scheduleNextPlanReminderJobs(userId, { ...plan, tasks }, content);
 
   return {
     isNew: true,
@@ -886,9 +891,14 @@ function createPlan({ userId = 'demo-user', contentId, startDate = todayDate(), 
   };
 }
 
-function completeTask({ taskId, result = 'stronger', selfRating = '', latencyBand = '', mistakeCount = 0, note = '' }) {
+function completeTask({ taskId, userId = '', result = 'stronger', selfRating = '', latencyBand = '', mistakeCount = 0, note = '' }) {
   const task = state.tasks.find((item) => item.id === taskId);
   if (!task) {
+    const error = new Error('Review task not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (userId && task.userId !== userId) {
     const error = new Error('Review task not found');
     error.statusCode = 404;
     throw error;
@@ -909,22 +919,22 @@ function completeTask({ taskId, result = 'stronger', selfRating = '', latencyBan
   task.completedAt = now;
   task.updatedAt = now;
 
-  plan.masteryScore = Math.max(0, Math.min(100, plan.masteryScore + masteryDelta));
-  plan.currentDay = Math.min(plan.totalDays, task.dayIndex + 1);
+  const doneCount = state.tasks.filter((item) => item.planId === plan.id && item.status === 'completed').length;
+  const total = Number(plan.totalDays || 1);
+  const mastered = doneCount >= total;
+  const rawNextMasteryScore = Math.max(0, Math.min(100, plan.masteryScore + masteryDelta));
+  plan.masteryScore = mastered ? 100 : Math.min(95, rawNextMasteryScore);
+  plan.currentDay = mastered ? total : Math.min(total, doneCount + 1);
   plan.streakHits += result === 'needs_work' ? 0 : 1;
   plan.lastReviewedAt = now;
   plan.updatedAt = now;
 
   if (result === 'needs_work') {
     plan.state = 'at_risk';
-  } else if (plan.masteryScore >= 100 || result === 'mastered') {
+  } else if (mastered) {
     plan.state = 'mastered';
   } else {
     plan.state = 'reviewing';
-  }
-
-  if (plan.state === 'mastered') {
-    plan.masteryScore = 100;
   }
 
   state.reviewRecords.push({
@@ -952,18 +962,24 @@ function completeTask({ taskId, result = 'stronger', selfRating = '', latencyBan
     note,
     createdAt: now
   });
+  const planWithTasks = {
+    ...plan,
+    tasks: state.tasks.filter((item) => item.planId === plan.id)
+  };
+  scheduleNextPlanReminderJobs(task.userId, planWithTasks, contents.find((item) => item.id === plan.contentId));
 
   return {
     task,
-    plan
+    plan: planWithTasks
   };
 }
 
 function loginByWechatCode(payload = {}) {
   const code = String(payload.code || '').trim() || `mock-${Date.now()}`;
-  const openid = `mock_${hashValue(code).slice(0, 24)}`;
+  const openid = String(payload.wechatOpenid || `mock_${hashValue(code).slice(0, 24)}`).trim();
   const userInfo = payload.userInfo || {};
-  const nickname = String(userInfo.nickName || payload.nickname || '微信用户').trim() || '微信用户';
+  const incomingNickname = String(userInfo.nickName || payload.nickname || '').trim();
+  const nickname = incomingNickname || '微信用户';
   const avatarUrl = String(userInfo.avatarUrl || payload.avatarUrl || '').trim();
 
   const existingId = state.usersByOpenId[openid];
@@ -981,8 +997,12 @@ function loginByWechatCode(payload = {}) {
     state.users.push(user);
     state.usersByOpenId[openid] = user.id;
   } else {
-    user.nickname = nickname;
-    user.avatarUrl = avatarUrl || user.avatarUrl || '';
+    if (isMeaningfulNickname(incomingNickname)) {
+      user.nickname = incomingNickname;
+    }
+    if (avatarUrl) {
+      user.avatarUrl = avatarUrl;
+    }
     user.lastLoginAt = new Date().toISOString();
   }
 
@@ -991,7 +1011,8 @@ function loginByWechatCode(payload = {}) {
     nickname: user.nickname,
     avatarUrl: user.avatarUrl || '',
     platform: user.platform,
-    status: user.status
+    status: user.status,
+    phone: user.phone || ''
   };
 }
 
@@ -1003,8 +1024,34 @@ function getUserById(userId) {
     nickname: user.nickname || '微信用户',
     avatarUrl: user.avatarUrl || '',
     platform: user.platform || 'wechat',
-    status: user.status || 'active'
+    status: user.status || 'active',
+    phone: user.phone || ''
   };
+}
+
+function updateUserProfile(userId, payload = {}) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const nickname = String(payload.nickname || payload.nickName || '').trim();
+  const avatarUrl = String(payload.avatarUrl || '').trim();
+  const phone = String(payload.phone || '').trim();
+
+  if (nickname) user.nickname = nickname;
+  if (avatarUrl) user.avatarUrl = avatarUrl;
+  if (phone) user.phone = phone;
+  user.updatedAt = new Date().toISOString();
+
+  return getUserById(user.id);
+}
+
+function isMeaningfulNickname(value) {
+  const nickname = String(value || '').trim();
+  return Boolean(nickname && nickname !== '微信用户');
 }
 
 function getNotificationSettings(userId = 'demo-user') {
@@ -1077,6 +1124,107 @@ function createNotificationJob({ userId = 'demo-user', taskId = null, channel, s
 
   state.notificationJobs.push(job);
   return job;
+}
+
+function scheduleNextPlanReminderJobs(userId, plan = {}, content = {}) {
+  if (plan.state === 'mastered') return [];
+  const nextTask = (plan.tasks || [])
+    .filter((task) => task.status !== 'completed')
+    .slice()
+    .sort((left, right) => {
+      const byDate = String(left.dueDate || '').localeCompare(String(right.dueDate || ''));
+      if (byDate !== 0) return byDate;
+      return Number(left.dayIndex || 0) - Number(right.dayIndex || 0);
+    })[0];
+  if (!nextTask) return [];
+
+  return scheduleNotificationJobs({
+    userId,
+    taskId: nextTask.id,
+    date: nextTask.dueDate || todayDate(),
+    period: 'morning',
+    payload: {
+      type: 'review',
+      planId: plan.id,
+      contentId: plan.contentId,
+      title: plan.title || content.title || '',
+      mode: plan.mode || 'scientific',
+      dayIndex: nextTask.dayIndex,
+      totalDays: plan.totalDays,
+      method: nextTask.method,
+      message: `今天复习 ${plan.title || content.title || '修持内容'}`
+    }
+  });
+}
+
+function scheduleNextRecitationReminderJobs(userId, goal = {}, content = {}, date = addDays(todayDate(), 1)) {
+  if (!goal || !goal.contentId) return [];
+  return scheduleNotificationJobs({
+    userId,
+    taskId: null,
+    date,
+    period: goal.preferredPeriod || 'morning',
+    payload: {
+      type: 'recitation',
+      goalId: goal.id || '',
+      contentId: goal.contentId,
+      title: content.title || '',
+      dailyTargetCount: goal.dailyTargetCount || 1,
+      preferredPeriod: goal.preferredPeriod || 'morning',
+      message: `今天读诵 ${content.title || '修持内容'}`
+    }
+  });
+}
+
+function scheduleNotificationJobs({ userId, taskId = null, date, period = 'morning', payload = {} }) {
+  const scheduledAt = buildReminderScheduledAt(date, period);
+  return getEnabledNotificationChannels(userId)
+    .map((channel) => ensureNotificationJob({
+      userId,
+      taskId,
+      channel,
+      scheduledAt,
+      payload
+    }))
+    .filter(Boolean);
+}
+
+function getEnabledNotificationChannels(userId) {
+  return getNotificationSettings(userId)
+    .filter((setting) => setting.enabled !== false)
+    .map((setting) => setting.channel)
+    .filter(Boolean);
+}
+
+function ensureNotificationJob({ userId, taskId = null, channel, scheduledAt, payload = {} }) {
+  const existing = state.notificationJobs.find((job) => {
+    if (job.userId !== userId || job.channel !== channel || job.status !== 'pending') return false;
+    if (taskId) return job.taskId === taskId;
+    const existingPayload = job.payload || {};
+    return !job.taskId &&
+      existingPayload.type === payload.type &&
+      existingPayload.contentId === payload.contentId &&
+      String(existingPayload.goalId || '') === String(payload.goalId || '') &&
+      String(job.scheduledAt || '').slice(0, 10) === String(scheduledAt || '').slice(0, 10);
+  });
+  if (existing) return existing;
+  return createNotificationJob({ userId, taskId, channel, scheduledAt, payload });
+}
+
+function buildReminderScheduledAt(date, period = 'morning') {
+  const hourByPeriod = {
+    morning: 8,
+    noon: 12,
+    evening: 18,
+    night: 21,
+    theme: 8
+  };
+  const dateText = String(date || todayDate()).slice(0, 10);
+  const hour = hourByPeriod[String(period || 'morning')] || hourByPeriod.morning;
+  const intended = new Date(`${dateText}T${String(hour).padStart(2, '0')}:00:00+08:00`);
+  const minimum = new Date(Date.now() + 10 * 60 * 1000);
+  const scheduled = Number.isNaN(intended.getTime()) || intended < minimum ? minimum : intended;
+  return scheduled.toISOString();
 }
 
 function listNotificationJobs({ userId = 'demo-user', limit = 20, status, startAt, endAt, organizationId, type, mode, includeAllUsers = false } = {}) {
@@ -1191,6 +1339,7 @@ function upsertRecitationGoal({ userId = 'demo-user', contentId, goalType = 'dai
     existing.dailyTargetCount = Math.max(1, Number(dailyTargetCount || existing.dailyTargetCount || 1));
     existing.status = 'active';
     existing.updatedAt = new Date().toISOString();
+    scheduleNextRecitationReminderJobs(userId, existing, content, addDays(todayDate(), 1));
     return existing;
   }
   const goal = {
@@ -1205,6 +1354,7 @@ function upsertRecitationGoal({ userId = 'demo-user', contentId, goalType = 'dai
     updatedAt: new Date().toISOString()
   };
   state.recitationGoals.unshift(goal);
+  scheduleNextRecitationReminderJobs(userId, goal, content, addDays(todayDate(), 1));
   return goal;
 }
 
@@ -1229,6 +1379,21 @@ function createRecitationSession({ userId = 'demo-user', contentId, goalId = nul
     createdAt: new Date().toISOString()
   };
   state.recitationSessions.unshift(session);
+  if (session.completed) {
+    const goal = state.recitationGoals.find((item) => item.id === goalId && item.userId === userId);
+    scheduleNextRecitationReminderJobs(
+      userId,
+      goal || {
+        id: goalId,
+        contentId,
+        preferredPeriod: period,
+        dailyTargetCount: roundCount,
+        goalType: sessionType || 'daily'
+      },
+      content,
+      addDays(todayDate(), 1)
+    );
+  }
   return session;
 }
 
@@ -1517,6 +1682,7 @@ module.exports = {
   getDashboard,
   listNotificationJobs,
   loginByWechatCode,
+  updateUserProfile,
   createPlan,
   createAsset,
   createContent,

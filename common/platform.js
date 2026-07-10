@@ -1,21 +1,28 @@
 const VALIDATION_STORAGE_KEY = "oneMind.phase2.validation";
 
 function getPlatformInfo() {
-  let info = {};
+  let deviceInfo = {};
+  let appBaseInfo = {};
   try {
-    info = wx.getSystemInfoSync();
+    if (typeof wx.getDeviceInfo === "function") {
+      deviceInfo = wx.getDeviceInfo() || {};
+    }
+    if (typeof wx.getAppBaseInfo === "function") {
+      appBaseInfo = wx.getAppBaseInfo() || {};
+    }
   } catch (error) {
-    info = {};
+    deviceInfo = {};
+    appBaseInfo = {};
   }
 
-  const host = info.host || {};
-  const platform = info.platform || "unknown";
+  const host = appBaseInfo.host || {};
+  const platform = deviceInfo.platform || "unknown";
 
   return {
     platform,
     hostName: host.env || host.appId || "wechat-miniapp",
-    system: info.system || "",
-    model: info.model || ""
+    system: deviceInfo.system || "",
+    model: deviceInfo.model || ""
   };
 }
 

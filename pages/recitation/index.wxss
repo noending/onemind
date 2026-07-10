@@ -1,11 +1,11 @@
 .recitation-screen {
   min-height: 100vh;
-  padding-bottom: calc(340rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(190rpx + env(safe-area-inset-bottom));
   background: #f6ecd7;
 }
 
 .recitation-header {
-  padding: 0 36rpx 18rpx;
+  padding: 0 32rpx 16rpx;
   background: linear-gradient(180deg, rgba(251, 245, 233, 0.96), rgba(243, 233, 210, 0.86));
 }
 
@@ -17,37 +17,37 @@
 }
 
 .back {
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 26rpx;
   font-weight: 600;
 }
 
 .header-top-title {
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 22rpx;
 }
 
 .heart-button {
-  width: 48rpx;
-  height: 48rpx;
-  border-radius: 999rpx;
+  width: var(--btn-h-sm);
+  height: var(--btn-h-sm);
+  border-radius: var(--radius-pill);
   background: rgba(255, 250, 242, 0.9);
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 30rpx;
-  line-height: 48rpx;
+  line-height: var(--btn-h-sm);
   text-align: center;
 }
 
 .heart-button.active {
-  color: #7e2a1c;
+  color: var(--color-primary);
 }
 
 .hero-card {
   position: relative;
   overflow: hidden;
   margin-top: 12rpx;
-  border-radius: 36rpx;
-  padding: 28rpx 28rpx 26rpx;
+  border-radius: 34rpx;
+  padding: 24rpx 26rpx;
   background: linear-gradient(140deg, #7e2a1c, #8b3322 58%, #4a1810);
   color: #fbe9c8;
   box-shadow: 0 16rpx 36rpx rgba(126, 42, 28, 0.18);
@@ -77,8 +77,8 @@
   display: block;
   margin-top: 8rpx;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
-  font-size: 50rpx;
-  line-height: 1.2;
+  font-size: var(--text-xl);
+  line-height: var(--lh-tight);
 }
 
 .hero-subtitle {
@@ -109,26 +109,26 @@
 .empty-desc {
   display: block;
   margin-top: 12rpx;
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 24rpx;
   line-height: 1.5;
 }
 
 .empty-button {
   margin-top: 20rpx;
-  width: 180rpx;
-  height: 58rpx;
-  border-radius: 999rpx;
-  background: #7e2a1c;
-  color: #fff8ed;
-  font-size: 24rpx;
+  width: 204rpx;
+  height: var(--btn-h-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--text-sm);
   font-weight: 700;
-  line-height: 58rpx;
+  line-height: var(--btn-h-sm);
 }
 
 .stats-strip {
-  padding: 14rpx 10rpx;
-  margin-bottom: 18rpx;
+  padding: 12rpx 10rpx;
+  margin-bottom: 16rpx;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   border: 1rpx solid rgba(232, 216, 194, 0.9);
@@ -138,7 +138,7 @@
 }
 
 .stat-cell {
-  min-height: 86rpx;
+  min-height: 78rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -158,7 +158,7 @@
 
 .stat-sub {
   margin-top: 4rpx;
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 20rpx;
 }
 
@@ -171,13 +171,13 @@
 }
 
 .segment-head-title {
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 22rpx;
   letter-spacing: 4rpx;
 }
 
 .segment-head-meta {
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 20rpx;
 }
 
@@ -187,7 +187,7 @@
 
 .segment-card {
   margin-bottom: 12rpx;
-  padding: 22rpx;
+  padding: 20rpx 22rpx;
   display: flex;
   gap: 14rpx;
   align-items: flex-start;
@@ -197,14 +197,9 @@
   box-shadow: 0 8rpx 20rpx rgba(83, 56, 36, 0.03);
 }
 
-.segment-card.active {
-  border-color: rgba(126, 42, 28, 0.35);
-  background: linear-gradient(135deg, #fff5e6, #f4e2c6);
-}
-
 .segment-index {
   min-width: 34rpx;
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 20rpx;
   line-height: 1.5;
 }
@@ -215,17 +210,10 @@
 }
 
 .segment-text {
-  color: #2d2018;
+  color: var(--color-ink);
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
-  font-size: 34rpx;
-  line-height: 1.45;
-}
-
-.segment-status {
-  display: block;
-  margin-top: 8rpx;
-  color: #7e2a1c;
-  font-size: 20rpx;
+  font-size: var(--text-lg);
+  line-height: var(--lh-base);
 }
 
 .note-card {
@@ -264,7 +252,7 @@
   display: block;
   margin-top: 22rpx;
   text-align: center;
-  color: rgba(138, 120, 96, 0.6);
+  color: var(--color-ink-3);
   font-size: 20rpx;
 }
 
@@ -275,21 +263,21 @@
   bottom: 0;
   width: 100%;
   max-width: 750rpx;
-  padding: 16rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
+  padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
   border-top: 1rpx solid #ead8c2;
   background: rgba(251, 245, 233, 0.97);
   backdrop-filter: blur(12rpx);
 }
 
 .round-inline {
-  margin-bottom: 10rpx;
+  margin-bottom: 14rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .round-inline-label {
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 20rpx;
 }
 
@@ -300,13 +288,13 @@
 }
 
 .round-inline-btn {
-  width: 42rpx;
-  height: 42rpx;
-  border-radius: 999rpx;
+  width: var(--btn-h-sm);
+  height: var(--btn-h-sm);
+  border-radius: var(--radius-pill);
   background: #f6e4d1;
-  color: #5c4838;
+  color: var(--color-ink-2);
   font-size: 24rpx;
-  line-height: 42rpx;
+  line-height: var(--btn-h-sm);
   text-align: center;
 }
 
@@ -318,88 +306,15 @@
   font-weight: 700;
 }
 
-.time-row {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.time {
-  width: 56rpx;
-  color: #8a7860;
-  font-size: 19rpx;
-  text-align: center;
-}
-
-.progress-slider {
-  flex: 1;
-}
-
-.control-row {
-  margin-top: 6rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.control-main {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-}
-
-.control-btn {
-  width: 54rpx;
-  height: 54rpx;
-  border-radius: 50%;
-  border: 1rpx solid #ead8c2;
-  color: #5c4838;
-  font-size: 26rpx;
-  line-height: 52rpx;
-}
-
-.control-play {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #7e2a1c, #5c1f14);
-  color: #fbe9c8;
-  font-size: 32rpx;
-  line-height: 68rpx;
-}
-
-.control-mini {
-  width: 60rpx;
-  height: 42rpx;
-  border-radius: 999rpx;
-  border: 1rpx solid #ead8c2;
-  color: #7e2a1c;
-  font-size: 21rpx;
-  line-height: 40rpx;
-  background: #fffaf2;
-}
-
-.control-mini.active {
-  background: rgba(126, 42, 28, 0.1);
-}
-
-.player-hint {
-  display: block;
-  margin-top: 8rpx;
-  text-align: center;
-  color: #8a7860;
-  font-size: 20rpx;
-}
-
 .complete-button {
-  margin-top: 12rpx;
-  height: 76rpx;
-  border-radius: 999rpx;
-  background: #7e2a1c;
-  color: #fff8ed;
-  font-size: 27rpx;
+  margin-top: 0;
+  height: var(--btn-h-md);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--text-base);
   font-weight: 700;
-  line-height: 76rpx;
+  line-height: var(--btn-h-md);
 }
 
 .complete-button.done {

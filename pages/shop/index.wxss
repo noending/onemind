@@ -1,11 +1,11 @@
 .shop-body {
-  padding-top: 22rpx;
+  padding-top: 124rpx;
   padding-bottom: calc(28rpx + env(safe-area-inset-bottom));
 }
 
 .shop-body .page-title {
   margin-top: 0;
-  font-size: 64rpx;
+  font-size: 54rpx;
   line-height: 1.15;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
 }
@@ -21,8 +21,8 @@
 .cart-button {
   position: relative;
   flex-shrink: 0;
-  width: 58rpx;
-  height: 58rpx;
+  width: 64rpx;
+  height: 64rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -92,16 +92,16 @@
 }
 
 .shop-body .page-subtitle {
-  margin-top: 10rpx;
-  font-size: 24rpx;
+  margin-top: 8rpx;
+  font-size: 22rpx;
   line-height: 1.45;
   color: #7f6b5f;
 }
 
 .theme-card {
   margin-top: 14rpx;
-  padding: 50rpx 46rpx 54rpx;
-  border-radius: 52rpx;
+  padding: 34rpx 34rpx 36rpx;
+  border-radius: 40rpx;
   background: linear-gradient(135deg, #942b1f 0%, #a73927 55%, #7d2b1d 100%);
   color: #fff8ed;
   box-shadow: 0 18rpx 42rpx rgba(132, 43, 34, 0.14);
@@ -110,15 +110,15 @@
 
 .theme-label {
   display: block;
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 700;
   color: #f0b866;
 }
 
 .theme-title {
   display: block;
-  margin-top: 10rpx;
-  font-size: 62rpx;
+  margin-top: 8rpx;
+  font-size: 48rpx;
   font-weight: 500;
   line-height: 1.14;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
@@ -126,7 +126,7 @@
 
 .theme-desc {
   display: block;
-  margin-top: 10rpx;
+  margin-top: 8rpx;
   color: rgba(255, 248, 237, 0.88);
   font-size: 24rpx;
   font-weight: 600;
@@ -144,15 +144,15 @@
 }
 
 .discount {
-  height: 58rpx;
-  min-width: 166rpx;
-  padding: 0 22rpx;
+  height: 56rpx;
+  min-width: 154rpx;
+  padding: 0 20rpx;
   border: 1rpx solid rgba(255, 250, 242, 0.6);
   border-radius: 999rpx;
   background: #f5ecd8;
   color: #351b18;
-  line-height: 58rpx;
-  font-size: 34rpx;
+  line-height: 56rpx;
+  font-size: 30rpx;
   text-align: center;
   font-weight: 700;
 }
@@ -164,18 +164,18 @@
 }
 
 .shop-tabs {
-  margin: 22rpx 0 18rpx;
+  margin: 20rpx 0 16rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0;
+  gap: 10rpx;
   overflow: visible;
   white-space: normal;
 }
 
 .shop-tab {
-  flex-shrink: 0;
-  width: 156rpx;
+  flex: 1;
+  min-width: 0;
   height: 58rpx;
   border-radius: 999rpx;
   color: #6f5a4f;
@@ -197,23 +197,21 @@
 }
 
 .shop-tab-text {
-  font-size: 40rpx;
-  transform: scale(0.58);
-  transform-origin: center;
+  font-size: 23rpx;
   white-space: nowrap;
   font-weight: inherit;
 }
 
 .shop-stats {
-  margin-bottom: 20rpx;
+  margin-bottom: 18rpx;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14rpx;
 }
 
 .shop-stat-card {
-  padding: 20rpx 18rpx 18rpx;
-  border-radius: 28rpx;
+  padding: 18rpx 14rpx 16rpx;
+  border-radius: 26rpx;
   border: 1rpx solid rgba(224, 214, 196, 0.95);
   background: rgba(255, 250, 242, 0.92);
 }
@@ -221,7 +219,7 @@
 .shop-stat-value {
   display: block;
   color: #8d2f22;
-  font-size: 40rpx;
+  font-size: 36rpx;
   font-weight: 800;
   line-height: 1;
 }
@@ -230,7 +228,7 @@
   display: block;
   margin-top: 8rpx;
   color: #351b18;
-  font-size: 24rpx;
+  font-size: 22rpx;
   font-weight: 700;
 }
 
@@ -243,23 +241,23 @@
 }
 
 .product-card {
-  margin-bottom: 18rpx;
-  min-height: 168rpx;
-  padding: 22rpx;
+  margin-bottom: 16rpx;
+  min-height: 160rpx;
+  padding: 20rpx;
   display: flex;
   gap: 18rpx;
   align-items: stretch;
   border: 1rpx solid rgba(224, 214, 196, 0.95);
-  border-radius: 32rpx;
+  border-radius: 30rpx;
   background: #f4f2ed;
   box-shadow: none;
 }
 
 .cover {
   position: relative;
-  width: 130rpx;
-  height: 130rpx;
-  border-radius: 30rpx;
+  width: 122rpx;
+  height: 122rpx;
+  border-radius: 28rpx;
   overflow: hidden;
   flex-shrink: 0;
   display: flex;
@@ -290,7 +288,7 @@
 .product-main {
   flex: 1;
   min-width: 0;
-  min-height: 130rpx;
+  min-height: 122rpx;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -298,7 +296,7 @@
 
 .product-title {
   color: #351b18;
-  font-size: 30rpx;
+  font-size: 29rpx;
   font-weight: 600;
   line-height: 1.24;
   white-space: nowrap;
@@ -336,7 +334,7 @@
 
 .price {
   color: #a63127;
-  font-size: 44rpx;
+  font-size: 40rpx;
   font-weight: 800;
   line-height: 1;
 }
@@ -359,12 +357,12 @@
 }
 
 .heart {
-  width: 38rpx;
-  height: 38rpx;
+  width: 46rpx;
+  height: 46rpx;
   color: rgba(165, 149, 133, 0.9);
   text-align: center;
   font-size: 30rpx;
-  line-height: 38rpx;
+  line-height: 46rpx;
   background: transparent;
 }
 
@@ -398,7 +396,7 @@
 }
 
 .record-section {
-  margin-top: 20rpx;
+  margin-top: 18rpx;
 }
 
 .record-head {

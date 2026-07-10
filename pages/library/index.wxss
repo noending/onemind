@@ -1,21 +1,21 @@
 .library-body {
-  padding-top: 26rpx;
+  padding-top: 124rpx;
 }
 
 .library-body .page-title {
-  font-size: 58rpx;
-  line-height: 1.16;
+  font-size: var(--text-display);
+  line-height: var(--lh-tight);
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
 }
 
 .library-body .page-subtitle {
-  margin-top: 8rpx;
-  font-size: 22rpx;
-  line-height: 1.42;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-snug);
 }
 
 .filters {
-  margin: 20rpx 0 24rpx;
+  margin: 18rpx 0 20rpx;
   display: flex;
   gap: 8rpx;
   flex-wrap: nowrap;
@@ -25,22 +25,22 @@
 
 .filter {
   flex-shrink: 0;
-  height: 48rpx;
-  padding: 0 18rpx;
-  border: 1rpx solid #ead8c2;
-  border-radius: 999rpx;
-  color: #80655c;
+  height: var(--btn-h-sm);
+  padding: 0 20rpx;
+  border: 1rpx solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-ink-3);
   background: #f8f5ef;
-  font-size: 21rpx;
+  font-size: var(--text-xs);
   font-weight: 700;
-  line-height: 46rpx;
+  line-height: var(--btn-h-sm);
   transition: all 0.15s ease;
 }
 
 .filter.active {
-  border-color: #a63127;
-  background: #a63127;
-  color: #fff8ed;
+  border-color: var(--color-primary-strong);
+  background: var(--color-primary-strong);
+  color: var(--color-on-primary);
 }
 
 .festival-filters {
@@ -54,21 +54,21 @@
 
 .festival-filter {
   flex-shrink: 0;
-  height: 44rpx;
-  padding: 0 16rpx;
-  border-radius: 999rpx;
+  height: var(--btn-h-sm);
+  padding: 0 18rpx;
+  border-radius: var(--radius-pill);
   background: rgba(242, 172, 62, 0.12);
-  color: #8b5a1e;
-  font-size: 20rpx;
+  color: var(--color-accent-ink);
+  font-size: var(--text-xs);
   font-weight: 700;
-  line-height: 44rpx;
+  line-height: var(--btn-h-sm);
   border: 1rpx solid rgba(241, 154, 54, 0.2);
 }
 
 .festival-filter.active {
-  background: #8b5a1e;
+  background: var(--color-accent-ink);
   color: #fff7eb;
-  border-color: #8b5a1e;
+  border-color: var(--color-accent-ink);
 }
 
 .festival-spotlight {
@@ -107,7 +107,7 @@
 .festival-spotlight-desc {
   display: block;
   margin-top: 8rpx;
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 22rpx;
   line-height: 1.5;
 }
@@ -115,29 +115,29 @@
 .festival-spotlight-meta {
   display: block;
   margin-top: 14rpx;
-  color: #8e7d71;
+  color: var(--color-ink-3);
   font-size: 20rpx;
   line-height: 1.45;
 }
 
 .festival-clear-button {
   flex-shrink: 0;
-  height: 48rpx;
-  padding: 0 18rpx;
-  border-radius: 999rpx;
+  height: var(--btn-h-sm);
+  padding: 0 20rpx;
+  border-radius: var(--radius-pill);
   border: 1rpx solid rgba(166, 49, 39, 0.16);
   background: rgba(255, 250, 242, 0.9);
-  color: #8d2f22;
-  font-size: 21rpx;
+  color: var(--color-primary-strong);
+  font-size: var(--text-xs);
   font-weight: 700;
-  line-height: 48rpx;
+  line-height: var(--btn-h-sm);
 }
 
 .content-card {
   margin-bottom: 14rpx;
-  min-height: 194rpx;
-  padding: 22rpx;
-  border-radius: 36rpx;
+  min-height: 184rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 32rpx;
   background: #f7f4ee;
   border: 1rpx solid rgba(232, 216, 194, 0.9);
   box-shadow: 0 8rpx 20rpx rgba(83, 56, 36, 0.03);
@@ -145,7 +145,7 @@
 
 .series-card {
   margin-bottom: 16rpx;
-  padding: 24rpx;
+  padding: 26rpx;
   border-radius: 34rpx;
   background: linear-gradient(140deg, #7e2a1c, #5c1f14);
   box-shadow: 0 18rpx 40rpx rgba(126, 42, 28, 0.18);
@@ -177,7 +177,7 @@
   display: block;
   margin-top: 12rpx;
   color: #fbe9c8;
-  font-size: 46rpx;
+  font-size: 42rpx;
   font-weight: 700;
   line-height: 1.18;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
@@ -229,9 +229,9 @@
 
 .content-title {
   display: block;
-  margin-top: 14rpx;
+  margin-top: 12rpx;
   color: #351b18;
-  font-size: 31rpx;
+  font-size: 32rpx;
   font-weight: 500;
   line-height: 1.22;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
@@ -239,22 +239,22 @@
 
 .content-body {
   display: block;
-  margin-top: 9rpx;
-  color: #80655c;
+  margin-top: var(--space-2);
+  color: var(--color-ink-3);
   font-size: 22rpx;
   font-weight: 700;
-  line-height: 1.5;
+  line-height: var(--lh-base);
 }
 
 .content-meta {
-  margin-top: 12rpx;
+  margin-top: var(--space-3);
   display: block;
-  color: #8e7d71;
+  color: var(--color-ink-3);
 }
 
 .content-day,
 .content-scene {
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 20rpx;
   font-weight: 700;
   line-height: 1.4;
@@ -277,8 +277,8 @@
 
 .plan-sheet {
   width: 100%;
-  padding: 34rpx 36rpx calc(58rpx + env(safe-area-inset-bottom));
-  border-radius: 42rpx 42rpx 0 0;
+  padding: 30rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  border-radius: 38rpx 38rpx 0 0;
   background: #fffaf2;
   box-shadow: 0 -20rpx 60rpx rgba(53, 27, 24, 0.16);
 }
@@ -292,7 +292,7 @@
 
 .sheet-label {
   display: block;
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 24rpx;
 }
 
@@ -300,7 +300,7 @@
   display: block;
   margin-top: 10rpx;
   color: #351b18;
-  font-size: 40rpx;
+  font-size: 36rpx;
   font-weight: 500;
   line-height: 1.24;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
@@ -324,8 +324,8 @@
 }
 
 .sheet-plan {
-  margin-top: 22rpx;
-  padding: 28rpx 26rpx;
+  margin-top: 20rpx;
+  padding: 24rpx;
   border: 1rpx solid #ead8c2;
   border-radius: 30rpx;
   background: linear-gradient(160deg, #fff0d7, #f7e4cf);
@@ -340,7 +340,7 @@
 
 .metric-num {
   display: block;
-  color: #a63127;
+  color: var(--color-primary-strong);
   font-size: 44rpx;
   font-weight: 500;
 }
@@ -348,19 +348,19 @@
 .metric-label {
   display: block;
   margin-top: 6rpx;
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 22rpx;
 }
 
 .mode-list {
-  margin-top: 24rpx;
+  margin-top: 20rpx;
   display: flex;
   flex-direction: column;
   gap: 16rpx;
 }
 
 .mode-card {
-  padding: 28rpx;
+  padding: 24rpx;
   display: block;
 }
 
@@ -380,22 +380,22 @@
 .mode-desc {
   display: block;
   margin-top: 10rpx;
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 22rpx;
   line-height: 1.5;
 }
 
 .mode-button {
   width: 100%;
-  margin-top: 18rpx;
-  height: 68rpx;
+  margin-top: var(--space-4);
+  height: var(--btn-h-md);
   padding: 0 24rpx;
-  border-radius: 999rpx;
-  background: #a63127;
-  color: #fff8ed;
-  font-size: 24rpx;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-strong);
+  color: var(--color-on-primary);
+  font-size: var(--text-base);
   font-weight: 700;
-  line-height: 68rpx;
+  line-height: var(--btn-h-md);
 }
 
 .mode-button.light {
@@ -406,7 +406,7 @@
 .sheet-back {
   display: block;
   padding-top: 18rpx;
-  color: #80655c;
+  color: var(--color-ink-3);
   text-align: center;
   font-size: 23rpx;
 }

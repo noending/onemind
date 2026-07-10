@@ -3,7 +3,7 @@
     "page": "home",
     "source": "design/src/app/App.tsx#TodayScreen",
     "target": "pages/home/index.(wxml|wxss|js)",
-    "updatedAt": "2026-06-01",
+    "updatedAt": "2026-07-07",
     "designFrame": {
       "widthPx": 390,
       "heightPx": 844
@@ -29,17 +29,17 @@
     "pageTitle": {
       "designPx": 32,
       "miniRpx": 62,
-      "implementedRpx": 64
+      "implementedRpx": 56
     },
     "todayVerse": {
       "designPx": 18,
       "miniRpx": 35,
-      "implementedRpx": 36
+      "implementedRpx": 34
     },
     "reviewTitle": {
       "designPx": 22,
       "miniRpx": 42,
-      "implementedRpx": 44
+      "implementedRpx": 40
     },
     "footerNote": {
       "designPx": 11,
@@ -51,12 +51,12 @@
     "todayCardRadius": {
       "designPx": 26,
       "miniRpx": 50,
-      "implementedRpx": 42
+      "implementedRpx": 38
     },
     "reviewCardRadius": {
       "designPx": 20,
       "miniRpx": 38,
-      "implementedRpx": 36
+      "implementedRpx": 32
     },
     "festivalCardRadius": {
       "designPx": 22,
@@ -68,12 +68,12 @@
     "pageTop": {
       "designPx": 8,
       "miniRpx": 15,
-      "implementedRpx": 28
+      "implementedRpx": 124
     },
     "todayCardTopMargin": {
       "designPx": 24,
       "miniRpx": 46,
-      "implementedRpx": 24
+      "implementedRpx": 20
     },
     "reviewGap": {
       "designPx": 12,
@@ -83,15 +83,15 @@
   },
   "selectorSnapshot": {
     ".home-body": [
-      "padding-top: 28rpx"
+      "padding-top: 124rpx"
     ],
     ".today-card": [
-      "border-radius: 42rpx",
+      "border-radius: 38rpx",
       "background: linear-gradient(140deg, #962f22, #7f271a 65%, #722114)"
     ],
     ".review-card": [
-      "padding: 24rpx",
-      "border-radius: 36rpx"
+      "padding: 22rpx",
+      "border-radius: 32rpx"
     ],
     ".home-note": [
       "text-align: center",

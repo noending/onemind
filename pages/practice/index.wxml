@@ -57,7 +57,7 @@
 
     <view wx:if="{{stepIndex < stepTotal - 1}}" class="segment-head">
       <text class="segment-label">{{mode === 'playful' ? '节奏卡片' : '拆段练习'}} · {{displaySegments.length}} 句</text>
-      <text class="segment-progress">{{method === '拆段跟读' ? '已跟读' : '已揭开'}} {{revealed.length}} / {{displaySegments.length}}</text>
+      <text class="segment-progress">{{method === '拆段跟读' ? '已跟读' : '已揭开'}} {{segmentProgressCount}} / {{displaySegments.length}}</text>
     </view>
 
     <view wx:if="{{stepIndex < stepTotal - 1}}" wx:for="{{displaySegments}}" wx:key="i" class="segment-card {{item.revealed ? 'revealed' : ''}} {{mode === 'playful' ? 'playful' : ''}}" data-index="{{index}}" bindtap="reveal">
@@ -75,11 +75,11 @@
         <text wx:if="{{item.hint}}" class="segment-hint">◉ {{item.hint}}</text>
       </view>
     </view>
+  </view>
 
-    <view wx:if="{{stepIndex < stepTotal - 1}}" class="step-actions">
-      <button class="step-btn ghost" bindtap="prevStep">上一步</button>
-      <button class="step-btn primary" bindtap="nextStep">下一步</button>
-    </view>
+  <view wx:if="{{stepIndex < stepTotal - 1}}" class="step-actions">
+    <button class="step-btn ghost" bindtap="prevStep">上一步</button>
+    <button class="step-btn primary {{allSegmentsReady ? '' : 'needs-review'}}" bindtap="nextStep">{{primaryStepText}}</button>
   </view>
 
   <view wx:if="{{stepIndex === stepTotal - 1}}" class="feedback">

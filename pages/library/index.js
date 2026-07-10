@@ -210,8 +210,8 @@ Page({
           wx.navigateTo({ url: `/pages/practice/index?id=${contentId}&planId=${savedPlan.id}` });
         });
       })
-      .catch(() => {
-        wx.showToast({ title: "创建计划失败", icon: "none" });
+      .catch((error) => {
+        wx.showToast({ title: error.message || "创建计划失败", icon: "none" });
       });
   },
 
@@ -231,8 +231,8 @@ Page({
           });
         });
       })
-      .catch(() => {
-        wx.showToast({ title: "加入读诵失败", icon: "none" });
+      .catch((error) => {
+        wx.showToast({ title: error.message || "加入读诵失败", icon: "none" });
       });
   },
 

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 2,
+  "currentLoop": {
+    "title": "oneMind",
+    "status": "in_progress",
+    "branch": "codex-memory-modes-recitation",
+    "goal": "[@superpowers](plugin://superpowers@openai-curated)  帮我检查本项目还有哪些功能需要改进或者需要完善，小程序端和管理后台",
+    "currentAction": "[@superpowers](plugin://superpowers@openai-curated)  帮我检查本项目还有哪些功能需要改进或者需要完善，小程序端和管理后台",
+    "nextAction": "该 Codex 项目较久未更新；需要继续则复制 init 接入控制塔并恢复开发",
+    "stage": "INTAKE"
+  },
+  "evidence": [],
+  "blockers": [],
+  "updatedAt": "2026-07-10T02:35:26.222Z",
+  "stageProgress": {
+    "current": "INTAKE",
+    "completed": [],
+    "pending": [
+      "ROUTER",
+      "CLARIFY",
+      "SPEC",
+      "VALUE_GATE",
+      "STRATEGY_REVIEW",
+      "PERSIST_CONTEXT",
+      "PLAN",
+      "EXECUTE",
+      "VERIFY",
+      "VISUAL_QA",
+      "APPROVAL_GATE",
+      "FINISH",
+      "LEARN"
+    ]
+  }
+}

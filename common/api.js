@@ -5,6 +5,7 @@ const API_BASE_URL_KEY = "oneMind.api.baseUrl";
 const API_CACHE_KEY = "oneMind.api.contents.cache";
 const API_STATUS_KEY = "oneMind.api.status";
 const AUTH_TOKEN_KEY = "oneMind.auth.token";
+const AUTH_REFRESH_TOKEN_KEY = "oneMind.auth.refreshToken";
 const AUTH_USER_KEY = "oneMind.auth.user";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:8787";
@@ -22,6 +23,21 @@ const LENGTH_LABEL = {
   medium: "长度 中",
   long: "长度 长"
 };
+
+const BUILTIN_CONTENT_ID_MAP = {
+  "six-syllable-mantra": "om-mani",
+  "green-tara-mantra": "green-tara",
+  "diamond-sutra-ending": "diamond-end",
+  "heart-sutra-core": "heart-sutra-core",
+  "great-compassion-opening": "great-compassion-snippet"
+};
+
+function findBuiltinContentFallback(item) {
+  const mappedId = BUILTIN_CONTENT_ID_MAP[item && item.id] || item && item.id;
+  return localContents.find((content) => content.id === mappedId)
+    || localContents.find((content) => content.title === item.title)
+    || null;
+}
 
 function splitBodyToSegments(rawText) {
   const text = String(rawText || "").trim();
@@ -100,6 +116,29 @@ function setApiStatus(status) {
 }
 
 function request(path, options = {}) {
+  return requestOnce(path, options).catch((error) => {
+    if (shouldRefreshAuth(error, options)) {
+      return refreshToken()
+        .then(() => requestOnce(path, {
+          ...options,
+          skipRefresh: true
+        }))
+        .catch((refreshError) => {
+          if (refreshError && refreshError.statusCode === 401 && !options.skipAuth) {
+            clearAuthSession();
+          }
+          throw refreshError;
+        });
+    }
+
+    if (error && error.statusCode === 401 && !options.skipAuth) {
+      clearAuthSession();
+    }
+    throw error;
+  });
+}
+
+function requestOnce(path, options = {}) {
   const authToken = options.skipAuth ? "" : getAuthToken();
   const timeout = Number(options.timeout || 4500);
   return new Promise((resolve, reject) => {
@@ -130,7 +169,11 @@ function request(path, options = {}) {
           settle(resolve, response.data);
           return;
         }
-        settle(reject, new Error(`HTTP ${response.statusCode}`));
+        const responseData = response.data || {};
+        const error = new Error(responseData.message || responseData.error || `HTTP ${response.statusCode}`);
+        error.statusCode = response.statusCode;
+        error.response = responseData;
+        settle(reject, error);
       },
       fail(error) {
         settle(reject, error);
@@ -139,8 +182,22 @@ function request(path, options = {}) {
   });
 }
 
+function shouldRefreshAuth(error, options = {}) {
+  return Boolean(
+    error &&
+    error.statusCode === 401 &&
+    !options.skipAuth &&
+    !options.skipRefresh &&
+    getRefreshToken()
+  );
+}
+
 function getAuthToken() {
   return String(safeGetStorage(AUTH_TOKEN_KEY, "") || "");
+}
+
+function getRefreshToken() {
+  return String(safeGetStorage(AUTH_REFRESH_TOKEN_KEY, "") || "");
 }
 
 function getAuthUser() {
@@ -149,12 +206,16 @@ function getAuthUser() {
 
 function clearAuthSession() {
   safeSetStorage(AUTH_TOKEN_KEY, "");
+  safeSetStorage(AUTH_REFRESH_TOKEN_KEY, "");
   safeSetStorage(AUTH_USER_KEY, null);
 }
 
-function saveAuthSession(token, user) {
+function saveAuthSession(token, user, refreshTokenValue) {
   safeSetStorage(AUTH_TOKEN_KEY, token || "");
   safeSetStorage(AUTH_USER_KEY, user || null);
+  if (refreshTokenValue !== undefined) {
+    safeSetStorage(AUTH_REFRESH_TOKEN_KEY, refreshTokenValue || "");
+  }
 }
 
 function loginWithWechat(userInfo = {}) {
@@ -167,7 +228,7 @@ function loginWithWechat(userInfo = {}) {
           return;
         }
 
-        request("/api/auth/wechat/login", {
+        request("/auth/wechat-login", {
           method: "POST",
           skipAuth: true,
           data: {
@@ -176,15 +237,122 @@ function loginWithWechat(userInfo = {}) {
             userInfo: userInfo || {}
           }
         })
+          .catch((error) => {
+            if (error && error.statusCode === 404) {
+              return request("/api/auth/wechat/login", {
+                method: "POST",
+                skipAuth: true,
+                data: {
+                  code,
+                  platform: "wechat",
+                  userInfo: userInfo || {}
+                }
+              });
+            }
+            throw error;
+          })
           .then((response) => {
             const data = response.data || {};
-            saveAuthSession(data.token || "", data.user || null);
+            saveAuthSession(data.token || "", data.user || null, data.refreshToken || "");
             resolve(data);
           })
           .catch(reject);
       },
       fail: () => reject(new Error("无法调用微信登录接口"))
     });
+  });
+}
+
+function login(userInfo = {}) {
+  return loginWithWechat(userInfo);
+}
+
+function loginWithUserInfo(userInfo = {}) {
+  return loginWithWechat(userInfo);
+}
+
+function refreshToken() {
+  const refreshTokenValue = getRefreshToken();
+  if (!refreshTokenValue) {
+    clearAuthSession();
+    const error = new Error("登录已过期，请重新授权");
+    error.code = "AUTH_REQUIRED";
+    return Promise.reject(error);
+  }
+
+  return request("/auth/refresh-token", {
+    method: "POST",
+    skipAuth: true,
+    skipRefresh: true,
+    data: {
+      refreshToken: refreshTokenValue
+    }
+  }).then((response) => {
+    const data = response.data || {};
+    if (!data.token) {
+      const error = new Error("登录已过期，请重新授权");
+      error.code = "AUTH_REQUIRED";
+      throw error;
+    }
+    saveAuthSession(
+      data.token || "",
+      data.user || getAuthUser(),
+      data.refreshToken || refreshTokenValue
+    );
+    return data;
+  }).catch((error) => {
+    clearAuthSession();
+    throw error;
+  });
+}
+
+function updateAuthProfile(payload = {}) {
+  return request("/auth/profile", {
+    method: "PUT",
+    data: payload
+  }).then((response) => {
+    const user = response.data || null;
+    if (user) {
+      saveAuthSession(getAuthToken(), user);
+    }
+    return user;
+  });
+}
+
+function logout() {
+  const action = getAuthToken()
+    ? request("/auth/logout", {
+      method: "POST",
+      skipRefresh: true
+    })
+    : Promise.resolve(null);
+
+  return action
+    .then(() => {
+      clearAuthSession();
+      return { ok: true };
+    })
+    .catch(() => {
+      clearAuthSession();
+      return { ok: true };
+    });
+}
+
+function isLoggedIn() {
+  return Boolean(getAuthToken() && getAuthUser());
+}
+
+function ensureLogin(options = {}) {
+  if (!getAuthToken()) {
+    const error = new Error(options.message || "请先完成微信授权");
+    error.code = "AUTH_REQUIRED";
+    return Promise.reject(error);
+  }
+  return getCurrentUser().then((session) => {
+    if (session.loggedIn) return session;
+    const error = new Error(options.message || "请先完成微信授权");
+    error.code = "AUTH_REQUIRED";
+    throw error;
   });
 }
 
@@ -198,21 +366,36 @@ function getCurrentUser() {
     });
   }
 
-  return request("/api/auth/me")
+  return request("/auth/me")
+    .catch((error) => {
+      if (error && error.statusCode === 404) {
+        return request("/api/auth/me");
+      }
+      throw error;
+    })
     .then((response) => {
       const user = response.data || null;
       if (!user) {
         clearAuthSession();
         return { loggedIn: false, token: "", user: null };
       }
-      saveAuthSession(token, user);
+      const nextToken = getAuthToken() || token;
+      saveAuthSession(nextToken, user);
       return {
         loggedIn: true,
-        token,
+        token: nextToken,
         user
       };
     })
-    .catch(() => {
+    .catch((error) => {
+      if (error && error.statusCode === 401) {
+        clearAuthSession();
+        return {
+          loggedIn: false,
+          token: "",
+          user: null
+        };
+      }
       const cachedUser = getAuthUser();
       if (cachedUser) {
         return {
@@ -231,14 +414,19 @@ function getCurrentUser() {
 }
 
 function normalizeContent(item) {
-  const category = item.category || TYPE_CATEGORY[item.type] || "经文片段";
+  const builtinContent = findBuiltinContentFallback(item || {});
+  const category = item.category || item.subtitle || TYPE_CATEGORY[item.type] || "经文片段";
   const lengthTier = item.lengthTier || item.length_tier || "short";
-  const planDays = Number(item.planDays || item.plan_days || 1);
-  const segments = Array.isArray(item.segments) && item.segments.length
+  const planDays = Number(item.planDays || item.plan_days || builtinContent && builtinContent.planDays || 1);
+  const segments = Array.isArray(builtinContent && builtinContent.segments) && builtinContent.segments.length
+    ? builtinContent.segments
+    : Array.isArray(item.segments) && item.segments.length
     ? item.segments
     : splitBodyToSegments(item.body || item.preview || "");
   const pinyinSegments = Array.isArray(item.pinyinSegments) && item.pinyinSegments.length
     ? item.pinyinSegments
+    : Array.isArray(builtinContent && builtinContent.pinyinSegments) && builtinContent.pinyinSegments.length
+    ? builtinContent.pinyinSegments
     : [];
 
   return {
@@ -466,10 +654,17 @@ module.exports = {
   getLocalContents,
   healthCheck,
   clearAuthSession,
+  ensureLogin,
   getCurrentUser,
   getAuthToken,
+  getRefreshToken,
   isBackendEnabled,
+  isLoggedIn,
+  login,
   loginWithWechat,
+  loginWithUserInfo,
+  logout,
+  refreshToken,
   listMemoryPlansApi,
   createMemoryPlanApi,
   createNotificationJobApi,
@@ -487,6 +682,7 @@ module.exports = {
   getAuthUser,
   setBackendEnabled,
   setBaseUrl,
+  updateAuthProfile,
   upsertRecitationGoalApi,
   updateNotificationSettingApi
 };

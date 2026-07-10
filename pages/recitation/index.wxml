@@ -28,26 +28,25 @@
           <text class="stat-sub">总句数</text>
         </view>
         <view class="stat-cell with-border">
-          <text class="stat-main">{{totalTimeText}}</text>
-          <text class="stat-sub">单遍</text>
+          <text class="stat-main">{{content.planDays}}天</text>
+          <text class="stat-sub">科学计划</text>
         </view>
         <view class="stat-cell">
-          <text class="stat-main">{{dailyDurationText}}</text>
-          <text class="stat-sub">日修时</text>
+          <text class="stat-main">{{dailySegmentText}}</text>
+          <text class="stat-sub">每日推进</text>
         </view>
       </view>
 
       <view class="segment-head">
         <text class="segment-head-title">全文句段</text>
-        <text class="segment-head-meta">当前 {{activeLine + 1}} / {{content.segments.length}}</text>
+        <text class="segment-head-meta">共 {{content.segments.length}} 句</text>
       </view>
 
       <view class="segment-wrap">
-        <view wx:for="{{content.segments}}" wx:key="index" class="segment-card card {{index === activeLine ? 'active' : ''}}">
+        <view wx:for="{{content.segments}}" wx:key="index" class="segment-card card">
           <text class="segment-index">{{index + 1}}</text>
           <view class="segment-copy">
             <text class="segment-text">{{item}}</text>
-            <text wx:if="{{index === activeLine}}" class="segment-status">{{playing ? '正在唱诵这一句' : '当前位置'}}</text>
           </view>
         </view>
       </view>
@@ -73,24 +72,6 @@
         <button class="round-inline-btn" bindtap="increaseRound">＋</button>
       </view>
     </view>
-
-    <view class="time-row">
-      <text class="time">{{currentTimeText}}</text>
-      <slider class="progress-slider" min="0" max="100" step="1" value="{{progress * 100}}" activeColor="#7E2A1C" backgroundColor="#E8D7B4" block-size="14" bindchanging="onSliderChanging" bindchange="onSliderChange"></slider>
-      <text class="time">{{totalTimeText}}</text>
-    </view>
-
-    <view class="control-row">
-      <button class="control-mini {{looping ? 'active' : ''}}" bindtap="toggleLooping">循</button>
-      <view class="control-main">
-        <button class="control-btn" bindtap="skipBackward">«</button>
-        <button class="control-play" bindtap="togglePlay">{{playing ? '❚❚' : '▶'}}</button>
-        <button class="control-btn" bindtap="skipForward">»</button>
-      </view>
-      <button class="control-mini" bindtap="cycleSpeed">{{speed}}×</button>
-    </view>
-
-    <text class="player-hint">♫ 唱诵示意 · {{looping ? '循环开启' : '单次播放'}}</text>
 
     <button class="complete-button {{completed ? 'done' : ''}}" bindtap="completeRecitation">
       {{completed ? '今日读诵已完成' : '完成今日读诵'}}

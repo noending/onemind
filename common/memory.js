@@ -3,6 +3,7 @@ const {
   completeReviewTaskApi,
   createMemoryPlanApi,
   createRecitationSessionApi,
+  ensureLogin,
   findCachedContent,
   getGrowthOverviewApi,
   isBackendEnabled,
@@ -20,6 +21,7 @@ const REVIEW_SEQUENCE = ["拆段跟读", "首字提示", "遮挡回忆", "填空
 const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
 const REVIEW_TAIL_INTERVAL = 15;
 const GROWTH_STAGES = ["初见", "熟悉", "稳定", "通顺", "已持诵"];
+const AUTH_REQUIRED_MESSAGE = "请先在我的页面完成微信授权";
 
 function formatDate(date) {
   const year = date.getFullYear();
@@ -41,6 +43,18 @@ function addDays(dateStr, dayOffset) {
 function compareDate(a, b) {
   if (a === b) return 0;
   return a > b ? 1 : -1;
+}
+
+function isAuthRequiredError(error) {
+  return Boolean(
+    error &&
+    (error.code === "AUTH_REQUIRED" || error.statusCode === 401)
+  );
+}
+
+function requireBackendSession() {
+  if (!isBackendEnabled()) return Promise.resolve(null);
+  return ensureLogin({ message: AUTH_REQUIRED_MESSAGE });
 }
 
 function shiftDate(dateStr, dayOffset) {
@@ -430,11 +444,12 @@ function completeTask(planId, result, metrics = {}) {
 
   const doneCount = tasks.filter((item) => item.done).length;
   const total = plan.totalDays || tasks.length || 1;
-  const mastered = doneCount >= total || result === "mastered";
+  const mastered = doneCount >= total;
   const scoreDelta = result === "mastered" ? 40 : result === "stronger" ? 24 : -8;
+  const rawNextScore = Math.max(0, Math.min(100, Number(plan.masteryScore || 0) + scoreDelta));
   const nextScore = mastered
     ? 100
-    : Math.max(0, Math.min(100, Number(plan.masteryScore || 0) + scoreDelta));
+    : Math.min(95, rawNextScore);
   const nextPlan = {
     ...plan,
     tasks,
@@ -572,11 +587,12 @@ function createPlanWithFallback(content, mode = "scientific") {
     return Promise.resolve(upsertPlan(createMemoryPlan(content, mode)));
   }
 
-  return createMemoryPlanApi({
-    contentId: content.id,
-    startDate: todayDate(),
-    mode: normalizeMode(mode)
-  })
+  return requireBackendSession()
+    .then(() => createMemoryPlanApi({
+      contentId: content.id,
+      startDate: todayDate(),
+      mode: normalizeMode(mode)
+    }))
     .then((plan) => {
       if (!plan) return upsertPlan(createMemoryPlan(content, mode));
       const mapped = mapRemotePlan(plan);
@@ -599,7 +615,10 @@ function createPlanWithFallback(content, mode = "scientific") {
       };
       return mergePlan(mapped);
     })
-    .catch(() => upsertPlan(createMemoryPlan(content, mode)));
+    .catch((error) => {
+      if (isAuthRequiredError(error)) throw error;
+      return upsertPlan(createMemoryPlan(content, mode));
+    });
 }
 
 function completeTaskWithFallback(planId, result, metrics = {}) {
@@ -613,7 +632,8 @@ function completeTaskWithFallback(planId, result, metrics = {}) {
     return Promise.resolve(currentPlan);
   }
 
-  return completeReviewTaskApi(currentTask.id, mapResultToApi(result), metrics)
+  return requireBackendSession()
+    .then(() => completeReviewTaskApi(currentTask.id, mapResultToApi(result), metrics))
     .then((payload) => {
       const remotePlan = payload && payload.plan;
       if (!remotePlan) return completeTask(planId, result, metrics);
@@ -623,7 +643,10 @@ function completeTaskWithFallback(planId, result, metrics = {}) {
       }
       return mergePlan(mapped);
     })
-    .catch(() => completeTask(planId, result, metrics));
+    .catch((error) => {
+      if (isAuthRequiredError(error)) throw error;
+      return completeTask(planId, result, metrics);
+    });
 }
 
 function listTodayFocusWithFallback() {
@@ -695,18 +718,29 @@ function saveRecitationGoalWithFallback(content, payload = {}) {
   const mergedGoals = existingIndex >= 0
     ? localGoals.map((item, index) => index === existingIndex ? { ...item, ...nextGoal } : item)
     : [nextGoal, ...localGoals];
-  saveRecitationGoals(mergedGoals);
+  const saveLocalGoal = () => {
+    saveRecitationGoals(mergedGoals);
+    return nextGoal;
+  };
 
   if (!isBackendEnabled()) {
-    return Promise.resolve(nextGoal);
+    return Promise.resolve(saveLocalGoal());
   }
 
-  return upsertRecitationGoalApi(content.id, payload)
+  return requireBackendSession()
+    .then(() => upsertRecitationGoalApi(content.id, payload))
     .then((goal) => {
+      const savedGoal = goal || nextGoal;
+      const withoutSameGoal = getRecitationGoals()
+        .filter((item) => !(item.contentId === content.id && item.goalType === savedGoal.goalType));
+      saveRecitationGoals([savedGoal, ...withoutSameGoal]);
       listRecitationGoalsWithFallback();
-      return goal || nextGoal;
+      return savedGoal;
     })
-    .catch(() => nextGoal);
+    .catch((error) => {
+      if (isAuthRequiredError(error)) throw error;
+      return saveLocalGoal();
+    });
 }
 
 function completeRecitationWithFallback(content, payload = {}) {
@@ -720,22 +754,31 @@ function completeRecitationWithFallback(content, payload = {}) {
     completed: true,
     createdAt: new Date().toISOString()
   };
-  saveRecitationSessions([localSession, ...getRecitationSessions()]);
+  const saveLocalSession = () => {
+    saveRecitationSessions([localSession, ...getRecitationSessions()]);
+    return localSession;
+  };
 
   if (!isBackendEnabled()) {
-    return Promise.resolve(localSession);
+    return Promise.resolve(saveLocalSession());
   }
 
-  return createRecitationSessionApi({
-    contentId: content.id,
-    goalId: payload.goalId || null,
-    sessionType: payload.sessionType || "free",
-    period: payload.period || content.recommendedRecitationTime || "morning",
-    roundCount: payload.roundCount || 1,
-    durationSeconds: payload.durationSeconds || 0,
-    completed: true,
-    note: payload.note || ""
-  }).catch(() => localSession);
+  return requireBackendSession()
+    .then(() => createRecitationSessionApi({
+      contentId: content.id,
+      goalId: payload.goalId || null,
+      sessionType: payload.sessionType || "free",
+      period: payload.period || content.recommendedRecitationTime || "morning",
+      roundCount: payload.roundCount || 1,
+      durationSeconds: payload.durationSeconds || 0,
+      completed: true,
+      note: payload.note || ""
+    }))
+    .then((session) => session || localSession)
+    .catch((error) => {
+      if (isAuthRequiredError(error)) throw error;
+      return saveLocalSession();
+    });
 }
 
 function getTodayFocusWithFallback() {

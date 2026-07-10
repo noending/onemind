@@ -1,19 +1,27 @@
 .home-body {
-  padding-top: 28rpx;
+  padding-top: 124rpx;
 }
 
 .top-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 20rpx;
+  flex-wrap: wrap;
+}
+
+.top-copy {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding-right: 170rpx;
 }
 
 .date {
   display: block;
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 26rpx;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .sync-status {
@@ -22,38 +30,44 @@
   color: #a18b7f;
   font-size: 20rpx;
   line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .top-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
   gap: 12rpx;
+  width: 100%;
 }
 
 .page-title {
-  margin-top: 10rpx;
-  font-size: 64rpx;
+  margin-top: 8rpx;
+  font-size: 56rpx;
   line-height: 1.14;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
 }
 
 .pill-button {
-  height: 56rpx;
-  padding: 0 24rpx;
-  font-size: 27rpx;
-  line-height: 56rpx;
+  height: var(--btn-h-sm);
+  padding: 0 22rpx;
+  font-size: var(--text-sm);
+  line-height: var(--btn-h-sm);
 }
 
 .ghost-button {
-  height: 56rpx;
-  padding: 0 22rpx;
-  border-radius: 999rpx;
-  border: 1rpx solid #dcc7ac;
+  height: var(--btn-h-sm);
+  padding: 0 20rpx;
+  border-radius: var(--radius-pill);
+  border: 1rpx solid var(--color-border-strong);
   background: rgba(255, 250, 242, 0.72);
-  color: #7e2a1c;
-  font-size: 24rpx;
+  color: var(--color-primary);
+  font-size: var(--text-sm);
   font-weight: 700;
-  line-height: 54rpx;
+  line-height: var(--btn-h-sm);
 }
 
 .streak-icon {
@@ -63,9 +77,9 @@
 
 .today-card {
   position: relative;
-  margin-top: 24rpx;
-  padding: 32rpx;
-  border-radius: 42rpx;
+  margin-top: 20rpx;
+  padding: 28rpx;
+  border-radius: 38rpx;
   background: linear-gradient(140deg, #962f22, #7f271a 65%, #722114);
   color: #fbe9c8;
   box-shadow: 0 18rpx 42rpx rgba(126, 42, 28, 0.19);
@@ -90,8 +104,8 @@
 
 .today-verse {
   display: block;
-  margin-top: 12rpx;
-  font-size: 36rpx;
+  margin-top: 10rpx;
+  font-size: 34rpx;
   line-height: 1.36;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
 }
@@ -105,9 +119,9 @@
 }
 
 .today-next {
-  margin-top: 18rpx;
-  padding: 18rpx 22rpx;
-  border-radius: 28rpx;
+  margin-top: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 26rpx;
   background: rgba(251, 233, 200, 0.12);
 }
 
@@ -151,14 +165,14 @@
 
 .today-start {
   flex-shrink: 0;
-  height: 54rpx;
+  height: var(--btn-h-sm);
   padding: 0 24rpx;
-  border-radius: 999rpx;
-  background: #fbe9c8;
-  color: #7e2a1c;
-  font-size: 24rpx;
+  border-radius: var(--radius-pill);
+  background: var(--color-on-dark);
+  color: var(--color-primary);
+  font-size: var(--text-sm);
   font-weight: 700;
-  line-height: 54rpx;
+  line-height: var(--btn-h-sm);
 }
 
 .list-head {
@@ -169,15 +183,15 @@
 }
 
 .summary-strip {
-  margin-top: 18rpx;
+  margin-top: 16rpx;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12rpx;
 }
 
 .summary-card {
-  padding: 20rpx 18rpx;
-  border-radius: 28rpx;
+  padding: 18rpx 16rpx;
+  border-radius: 26rpx;
   border: 1rpx solid rgba(232, 216, 194, 0.9);
   background: rgba(255, 250, 242, 0.72);
 }
@@ -206,18 +220,18 @@
 .summary-desc {
   display: block;
   margin-top: 6rpx;
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 20rpx;
 }
 
 .list-title {
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 24rpx;
   letter-spacing: 2rpx;
 }
 
 .list-count {
-  color: #b09f94;
+  color: var(--color-ink-3);
   font-size: 22rpx;
 }
 
@@ -235,21 +249,21 @@
 .empty-desc {
   display: block;
   margin-top: 10rpx;
-  color: #80655c;
+  color: var(--color-ink-3);
   font-size: 24rpx;
   line-height: 1.45;
 }
 
 .empty-button {
   margin-top: 18rpx;
-  width: 168rpx;
-  height: 54rpx;
-  border-radius: 999rpx;
-  background: #a63127;
-  color: #fff8ed;
-  font-size: 24rpx;
+  width: 188rpx;
+  height: var(--btn-h-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-strong);
+  color: var(--color-on-primary);
+  font-size: var(--text-sm);
   font-weight: 700;
-  line-height: 54rpx;
+  line-height: var(--btn-h-sm);
 }
 
 .loading-list {
@@ -315,20 +329,20 @@
 .group-desc {
   display: block;
   margin-top: 6rpx;
-  color: #9a8579;
+  color: var(--color-ink-3);
   font-size: 20rpx;
 }
 
 .group-button {
   flex-shrink: 0;
-  height: 50rpx;
-  padding: 0 20rpx;
-  border-radius: 999rpx;
+  height: var(--btn-h-sm);
+  padding: 0 22rpx;
+  border-radius: var(--radius-pill);
   background: #efe3cb;
-  color: #7e2a1c;
-  font-size: 22rpx;
+  color: var(--color-primary);
+  font-size: var(--text-sm);
   font-weight: 700;
-  line-height: 50rpx;
+  line-height: var(--btn-h-sm);
 }
 
 .ghost-group-button {
@@ -338,8 +352,8 @@
 
 .review-card {
   margin-bottom: 14rpx;
-  padding: 24rpx;
-  border-radius: 36rpx;
+  padding: 22rpx;
+  border-radius: 32rpx;
   background: #f7f4ee;
   border: 1rpx solid rgba(232, 216, 194, 0.85);
   box-shadow: 0 6rpx 18rpx rgba(83, 56, 36, 0.03);
@@ -380,11 +394,11 @@
 
 .tag-secondary {
   background: #efe3cb;
-  color: #8a7860;
+  color: var(--color-ink-3);
 }
 
 .arrow {
-  color: #b09b8e;
+  color: var(--color-ink-faint);
   font-size: 34rpx;
   line-height: 1;
 }
@@ -393,7 +407,7 @@
   display: block;
   margin-top: 12rpx;
   color: #7e2a1c;
-  font-size: 44rpx;
+  font-size: 40rpx;
   font-weight: 500;
   line-height: 1.2;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
@@ -409,7 +423,7 @@
 
 .review-meta {
   display: block;
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 21rpx;
   line-height: 1.35;
 }
@@ -424,14 +438,15 @@
 
 .review-action {
   flex-shrink: 0;
-  height: 50rpx;
-  padding: 0 20rpx;
-  border-radius: 999rpx;
-  background: #a63127;
-  color: #fff8ed;
-  font-size: 22rpx;
+  min-width: 132rpx;
+  height: var(--btn-h-sm);
+  padding: 0 22rpx;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-strong);
+  color: var(--color-on-primary);
+  font-size: var(--text-sm);
   font-weight: 700;
-  line-height: 50rpx;
+  line-height: var(--btn-h-sm);
 }
 
 .group-empty {
@@ -451,21 +466,21 @@
 .group-empty-desc {
   display: block;
   margin-top: 10rpx;
-  color: #8a7860;
+  color: var(--color-ink-3);
   font-size: 22rpx;
   line-height: 1.55;
 }
 
 .group-empty-button {
   margin-top: 18rpx;
-  width: 188rpx;
-  height: 50rpx;
-  border-radius: 999rpx;
+  width: 204rpx;
+  height: var(--btn-h-sm);
+  border-radius: var(--radius-pill);
   background: #efe3cb;
-  color: #7e2a1c;
-  font-size: 22rpx;
+  color: var(--color-primary);
+  font-size: var(--text-sm);
   font-weight: 700;
-  line-height: 50rpx;
+  line-height: var(--btn-h-sm);
 }
 
 .festival-card {
@@ -548,21 +563,21 @@
   margin-top: 14rpx;
   width: fit-content;
   min-width: 0;
-  height: 48rpx;
+  height: var(--btn-h-sm);
   padding: 0 18rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: rgba(255, 250, 242, 0.78);
-  color: #7e2a1c;
-  font-size: 21rpx;
+  color: var(--color-primary);
+  font-size: var(--text-sm);
   font-weight: 700;
-  line-height: 48rpx;
+  line-height: var(--btn-h-sm);
   border: 1rpx solid rgba(139, 51, 34, 0.12);
 }
 
 .home-note {
   display: block;
   margin: 24rpx 4rpx 0;
-  color: #9a8579;
+  color: var(--color-ink-3);
   text-align: center;
   font-size: 21rpx;
   line-height: 1.5;

@@ -1,25 +1,26 @@
 <view class="screen">
   <view class="page-body profile-body">
     <view class="hero-panel">
-      <text class="hero-mark">✦</text>
       <view class="auth-card card">
-        <view class="auth-avatar-wrap">
+        <button class="auth-avatar-button" open-type="chooseAvatar" bindchooseavatar="onChooseWechatAvatar">
           <image wx:if="{{auth.avatarUrl}}" class="auth-avatar" src="{{auth.avatarUrl}}" mode="aspectFill"></image>
           <view wx:else class="auth-avatar auth-avatar-fallback">{{auth.avatarInitial}}</view>
-          <view class="auth-medal">✧</view>
-        </view>
+        </button>
         <view class="auth-copy">
           <view class="auth-name-row">
             <text class="auth-name">{{auth.nickname}}</text>
-            <text class="auth-level">Lv.2 行愿</text>
           </view>
-          <text class="auth-desc">◔ 记忆 {{growthOverview.memorizationStreak}} 天 · 读诵 {{growthOverview.recitationStreak}} 天</text>
+          <view class="auth-stats-row">
+            <text class="auth-level">Lv.2 行愿</text>
+            <view class="auth-metrics">
+              <text class="auth-stat">◔ 记忆 {{growthOverview.memorizationStreak}} 天</text>
+              <text class="auth-stat">读诵 {{growthOverview.recitationStreak}} 天</text>
+            </view>
+          </view>
         </view>
-        <button class="auth-button settings" bindtap="onAuthAction">⋯</button>
       </view>
 
       <view class="daily-card">
-        <text class="daily-mark">✦</text>
         <text class="daily-kicker">今日寄语</text>
         <text class="daily-title">念念相续，无有间断</text>
         <text class="daily-desc">心定则慧生 · 慧生则烦恼断</text>
@@ -210,7 +211,7 @@
             </view>
           </view>
           <view class="settings-action-row">
-            <button class="settings-action primary" bindtap="authorizeWechatLogin">{{auth.loggedIn ? '重新授权' : '微信授权'}}</button>
+            <button class="settings-action primary" bindtap="showWechatProfileSheet">{{auth.loggedIn ? '重新授权' : '微信授权'}}</button>
             <button wx:if="{{auth.loggedIn}}" class="settings-action ghost" bindtap="logoutWechat">退出授权</button>
           </view>
         </view>
@@ -319,4 +320,21 @@
   </view>
 
   <app-tabbar active="profile" />
+
+  <view wx:if="{{authProfileSheetVisible}}" class="auth-profile-mask" catchtap="closeWechatProfileSheet">
+    <view class="auth-profile-panel" catchtap="noop">
+      <text class="auth-profile-kicker">微信授权</text>
+      <text class="auth-profile-title">确认头像和昵称</text>
+      <text class="auth-profile-desc">微信已把头像昵称拆成单独能力，请选择头像并点昵称输入框获取微信昵称。</text>
+      <button class="auth-profile-avatar-button" open-type="chooseAvatar" bindchooseavatar="onChooseWechatAvatar">
+        <image wx:if="{{authDraft.avatarUrl}}" class="auth-profile-avatar" src="{{authDraft.avatarUrl}}" mode="aspectFill"></image>
+        <view wx:else class="auth-profile-avatar auth-profile-avatar-fallback">选头像</view>
+      </button>
+      <input class="auth-nickname-input" type="nickname" placeholder="点击选择微信昵称" value="{{authDraft.nickname}}" bindinput="onWechatNicknameInput" />
+      <view class="auth-profile-actions">
+        <button class="auth-profile-action secondary" bindtap="closeWechatProfileSheet">取消</button>
+        <button class="auth-profile-action primary" loading="{{authDraft.saving}}" disabled="{{authDraft.saving}}" bindtap="confirmWechatLogin">确认授权登录</button>
+      </view>
+    </view>
+  </view>
 </view>

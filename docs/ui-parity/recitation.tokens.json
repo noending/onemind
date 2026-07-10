@@ -3,7 +3,7 @@
     "page": "recitation",
     "source": "design/src/app/App.tsx#FullTextModal",
     "target": "pages/recitation/index.(wxml|wxss|js)",
-    "updatedAt": "2026-06-05",
+    "updatedAt": "2026-07-07",
     "designFrame": {
       "widthPx": 390,
       "heightPx": 844
@@ -28,12 +28,12 @@
     "heroTitle": {
       "designPx": 30,
       "miniRpx": 58,
-      "implementedRpx": 50
+      "implementedRpx": 44
     },
     "lineText": {
       "designPx": 20,
       "miniRpx": 38,
-      "implementedRpx": 34
+      "implementedRpx": 32
     },
     "statNumber": {
       "designPx": 18,
@@ -45,7 +45,7 @@
     "heroRadius": {
       "designPx": 18,
       "miniRpx": 35,
-      "implementedRpx": 36
+      "implementedRpx": 34
     },
     "segmentRadius": {
       "designPx": 16,
@@ -72,7 +72,7 @@
   },
   "selectorSnapshot": {
     ".hero-card": [
-      "border-radius: 36rpx",
+      "border-radius: 34rpx",
       "background: linear-gradient(140deg, #7e2a1c, #8b3322 58%, #4a1810)"
     ],
     ".stats-strip": [
@@ -80,7 +80,7 @@
       "grid-template-columns: repeat(3, 1fr)"
     ],
     ".segment-card": [
-      "padding: 22rpx",
+      "padding: 20rpx 22rpx",
       "border-radius: 30rpx"
     ],
     ".note-card": [
@@ -88,7 +88,7 @@
       "padding: 24rpx"
     ],
     ".complete-button": [
-      "height: 76rpx",
+      "height: 72rpx",
       "border-radius: 999rpx"
     ]
   }

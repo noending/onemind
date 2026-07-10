@@ -1,7 +1,7 @@
 <view class="screen">
   <view class="page-body home-body">
     <view class="top-row">
-      <view>
+      <view class="top-copy">
         <text class="date">{{dateLabel}}</text>
         <text class="sync-status">更新于 {{lastUpdatedText || '--:--'}} · {{sourceText}}</text>
       </view>

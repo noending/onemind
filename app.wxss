@@ -1,7 +1,75 @@
+/* ============================================================
+   一念法藏 · 全局设计令牌 (Design Tokens)
+   所有页面共享。改动请优先改这里，保证全站视觉一致。
+   颜色均按浅底(#f6ecd7)/深红卡(#7e2a1c)做了 WCAG AA 对比度校验。
+   ============================================================ */
 page {
+  /* —— 间距节奏：8rpx 基准栅格 —— */
+  --space-1: 8rpx;
+  --space-2: 12rpx;
+  --space-3: 16rpx;
+  --space-4: 20rpx;
+  --space-5: 24rpx;
+  --space-6: 32rpx;
+  --space-7: 40rpx;
+  --space-8: 48rpx;
+
+  /* —— 字号层级（rpx；375 屏下 1rpx≈0.5px）—— */
+  --text-2xs: 18rpx;   /* 微标注 / 角标 */
+  --text-xs: 20rpx;    /* 辅助文字 */
+  --text-sm: 22rpx;    /* 小正文 */
+  --text-base: 24rpx;  /* 正文 */
+  --text-md: 28rpx;    /* 三级标题 */
+  --text-lg: 32rpx;    /* 二级标题 */
+  --text-xl: 40rpx;    /* 一级标题 */
+  --text-2xl: 48rpx;
+  --text-display: 56rpx; /* 页面大标题 */
+
+  /* —— 行高 —— */
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-base: 1.5;
+  --lh-loose: 1.6;
+
+  /* —— 圆角 —— */
+  --radius-sm: 16rpx;
+  --radius-md: 24rpx;
+  --radius-lg: 32rpx;
+  --radius-xl: 34rpx;
+  --radius-pill: 999rpx;
+
+  /* —— 按钮高度：≥44px 触控下限 = 88rpx —— */
+  --btn-h-sm: 88rpx;   /* 紧凑 / 次级 */
+  --btn-h-md: 96rpx;   /* 标准主操作 */
+  --btn-h-lg: 104rpx;  /* 大型 CTA */
+
+  /* —— 色彩（暖土色系）—— */
+  --color-bg: #f6ecd7;
+  --color-surface: rgba(255, 250, 242, 0.78);
+  --color-surface-solid: #fffaf2;
+  --color-border: rgba(232, 215, 180, 0.6);
+  --color-border-strong: #ead8c2;
+
+  --color-ink: #2d2018;       /* 一级文字，对比 ≈10:1 */
+  --color-ink-2: #5c4838;     /* 二级文字，对比 ≈6:1 */
+  --color-ink-3: #6b5544;     /* 三级/辅助文字，对比 ≈5.9:1 (WCAG AA) */
+  --color-ink-faint: #8a7860; /* 仅用于大号 / 装饰文字 */
+
+  --color-primary: #7e2a1c;       /* 主红，浅底对比 ≈8:1 */
+  --color-primary-strong: #a63127; /* 亮红，浅底对比 ≈5.9:1 */
+  --color-accent: #c58a2e;         /* 金（仅深色面用） */
+  --color-accent-ink: #8b5a1e;     /* 金（浅底文字，对比 ≈5:1） */
+  --color-green: #5e7a4f;          /* 完成态 */
+  --color-on-primary: #fff8ed;     /* 主色面上的文字 */
+  --color-on-dark: #fbe9c8;        /* 深红卡上的文字 */
+
+  /* —— 阴影 —— */
+  --shadow-card: 0 8rpx 20rpx rgba(83, 56, 36, 0.04);
+  --shadow-float: 0 16rpx 36rpx rgba(83, 56, 36, 0.12);
+
   min-height: 100%;
-  color: #351b18;
-  background: #f6ecd7;
+  color: var(--color-ink);
+  background: var(--color-bg);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   text-rendering: optimizeLegibility;
 }
@@ -27,46 +95,46 @@ button::after {
   max-width: 750rpx;
   margin: 0 auto;
   min-height: 100vh;
-  padding-bottom: calc(176rpx + env(safe-area-inset-bottom));
-  background: #f6ecd7;
+  padding-bottom: calc(164rpx + env(safe-area-inset-bottom));
+  background: var(--color-bg);
 }
 
 .page-body {
-  padding: 28rpx 36rpx 48rpx;
+  padding: var(--space-5) var(--space-6) var(--space-7);
 }
 
 .page-title {
   display: block;
-  color: #351b18;
-  font-size: 62rpx;
+  color: var(--color-ink);
+  font-size: var(--text-display);
   font-weight: 500;
-  line-height: 1.2;
+  line-height: var(--lh-tight);
   letter-spacing: 1rpx;
 }
 
 .page-subtitle {
   display: block;
-  margin-top: 10rpx;
-  color: #80655c;
-  font-size: 24rpx;
+  margin-top: var(--space-2);
+  color: var(--color-ink-3);
+  font-size: var(--text-xs);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: var(--lh-snug);
 }
 
 .section-title {
   display: block;
-  margin: 42rpx 0 20rpx;
-  color: #80655c;
-  font-size: 30rpx;
+  margin: var(--space-6) 0 var(--space-3);
+  color: var(--color-ink-3);
+  font-size: var(--text-xs);
   font-weight: 500;
   letter-spacing: 1rpx;
 }
 
 .card {
-  border: 1rpx solid #ead8c2;
-  border-radius: 34rpx;
-  background: rgba(255, 250, 242, 0.7);
-  box-shadow: 0 10rpx 28rpx rgba(83, 56, 36, 0.035);
+  border: 1rpx solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
 }
 
 .tag {
@@ -74,7 +142,7 @@ button::after {
   align-items: center;
   height: 40rpx;
   padding: 0 16rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: #f6e4d1;
   color: #6d4e43;
   font-size: 21rpx;
@@ -83,38 +151,39 @@ button::after {
 
 .tag-strong {
   background: #eda53f;
-  color: #351b18;
+  color: var(--color-ink);
 }
 
+/* 统一按钮系统：高度遵循 --btn-h-*，圆角统一胶囊，保证触摸友好 */
 .pill-button {
-  height: 54rpx;
-  padding: 0 24rpx;
-  border-radius: 999rpx;
+  height: var(--btn-h-sm);
+  padding: 0 30rpx;
+  border-radius: var(--radius-pill);
   background: #f2ac3e;
-  color: #351b18;
-  font-size: 27rpx;
+  color: var(--color-ink);
+  font-size: var(--text-sm);
   font-weight: 800;
-  line-height: 54rpx;
+  line-height: var(--btn-h-sm);
   box-shadow: 0 8rpx 18rpx rgba(242, 172, 62, 0.16);
 }
 
 .red-button {
-  height: 60rpx;
-  padding: 0 28rpx;
-  border-radius: 999rpx;
-  background: #a63127;
-  color: #fff8ed;
-  font-size: 25rpx;
+  height: var(--btn-h-sm);
+  padding: 0 32rpx;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-strong);
+  color: var(--color-on-primary);
+  font-size: var(--text-sm);
   font-weight: 800;
-  line-height: 60rpx;
+  line-height: var(--btn-h-sm);
   box-shadow: 0 10rpx 20rpx rgba(166, 49, 39, 0.16);
 }
 
 .muted {
-  color: #80655c;
+  color: var(--color-ink-3);
 }
 
 .divider {
   height: 1rpx;
-  background: #ead8c2;
+  background: var(--color-border-strong);
 }

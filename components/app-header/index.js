@@ -10,7 +10,7 @@ Component({
         if (typeof wx.getWindowInfo === "function") {
           statusBarHeight = wx.getWindowInfo().statusBarHeight || 0;
         } else {
-          statusBarHeight = wx.getSystemInfoSync().statusBarHeight || 0;
+          statusBarHeight = 0;
         }
       } catch (error) {
         statusBarHeight = 0;

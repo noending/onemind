@@ -21,7 +21,7 @@ function getStatusBarHeight() {
   try {
     const windowInfo = typeof wx.getWindowInfo === "function"
       ? wx.getWindowInfo()
-      : wx.getSystemInfoSync();
+      : {};
     const statusBarHeight = Number(windowInfo.statusBarHeight || 0);
 
     let capsuleTop = 0;
@@ -158,9 +158,21 @@ function makeDisplaySegments(content, method, revealed) {
   });
 }
 
-function calcProgress(content, revealed) {
-  if (!content || !content.segments || !content.segments.length) return 0;
-  return Math.min(100, Math.round((revealed.length / content.segments.length) * 100));
+function buildPracticeView(content, method, revealed) {
+  const displaySegments = makeDisplaySegments(content, method, revealed);
+  const total = displaySegments.length;
+  const segmentProgressCount = method === "拆段跟读"
+    ? total
+    : Math.min(revealed.length, total);
+  const allSegmentsReady = total === 0 || segmentProgressCount >= total;
+
+  return {
+    displaySegments,
+    segmentProgressCount,
+    allSegmentsReady,
+    primaryStepText: allSegmentsReady ? "下一步" : "先揭开核对",
+    progressPct: total ? Math.round((segmentProgressCount / total) * 100) : 0
+  };
 }
 
 function recommendNextContent(currentContent) {
@@ -238,6 +250,9 @@ Page({
     headerTop: 54,
     revealed: [],
     displaySegments: [],
+    segmentProgressCount: 0,
+    allSegmentsReady: true,
+    primaryStepText: "下一步",
     fullTextUnits: [],
     showFullTextStrip: false,
     shortFullTextStrip: false,
@@ -272,6 +287,7 @@ Page({
       const mode = plan ? (plan.mode || "scientific") : "scientific";
       const showFullTextStrip = content.lengthTier === "short" || content.lengthLevel === "short";
       const shortFullTextStrip = showFullTextStrip && shouldUseShortFullText(content);
+      const practiceView = buildPracticeView(content, method, []);
       const headerTop = getStatusBarHeight() + 16;
       const copy = buildModeCopy(mode, plan, task);
       const riskTitle = mode === "scientific" && plan && plan.state === "at_risk" ? "遗忘风险偏高" : "";
@@ -291,8 +307,11 @@ Page({
         planState: plan ? plan.state || "reviewing" : "reviewing",
         headerTop,
         growthStage: growthStageFromScore(plan ? plan.masteryScore : 0),
-        progressPct: calcProgress(content, []),
-        displaySegments: makeDisplaySegments(content, method, []),
+        progressPct: practiceView.progressPct,
+        displaySegments: practiceView.displaySegments,
+        segmentProgressCount: practiceView.segmentProgressCount,
+        allSegmentsReady: practiceView.allSegmentsReady,
+        primaryStepText: practiceView.primaryStepText,
         fullTextUnits: showFullTextStrip ? makeFullTextUnits(content) : [],
         showFullTextStrip,
         shortFullTextStrip,
@@ -311,10 +330,14 @@ Page({
     const index = Number(event.currentTarget.dataset.index);
     if (this.data.revealed.includes(index)) return;
     const revealed = [...this.data.revealed, index];
+    const practiceView = buildPracticeView(this.data.content, this.data.method, revealed);
     this.setData({
       revealed,
-      progressPct: calcProgress(this.data.content, revealed),
-      displaySegments: makeDisplaySegments(this.data.content, this.data.method, revealed)
+      progressPct: practiceView.progressPct,
+      displaySegments: practiceView.displaySegments,
+      segmentProgressCount: practiceView.segmentProgressCount,
+      allSegmentsReady: practiceView.allSegmentsReady,
+      primaryStepText: practiceView.primaryStepText
     });
   },
 
@@ -328,20 +351,28 @@ Page({
   },
 
   nextStep() {
+    if (this.data.stepIndex < TRAINING_STEPS.length - 1 && !this.data.allSegmentsReady) {
+      wx.showToast({ title: "先逐句揭开核对", icon: "none" });
+      return;
+    }
     this.switchStep(Math.min(TRAINING_STEPS.length - 1, this.data.stepIndex + 1));
   },
 
   switchStep(stepIndex) {
     const step = TRAINING_STEPS[stepIndex];
     if (!step) return;
-    const revealed = stepIndex === 0 ? [] : this.data.revealed;
+    const revealed = [];
+    const practiceView = buildPracticeView(this.data.content, step.method, revealed);
     this.setData({
       stepIndex,
       stepTitle: step.title,
       method: step.method,
       revealed,
-      displaySegments: makeDisplaySegments(this.data.content, step.method, revealed),
-      progressPct: calcProgress(this.data.content, revealed)
+      displaySegments: practiceView.displaySegments,
+      segmentProgressCount: practiceView.segmentProgressCount,
+      allSegmentsReady: practiceView.allSegmentsReady,
+      primaryStepText: practiceView.primaryStepText,
+      progressPct: practiceView.progressPct
     });
   },
 
@@ -414,7 +445,9 @@ Page({
 
     completeTaskWithFallback(this.data.planId, result, metrics)
       .then((nextPlan) => handleFinish(nextPlan))
-      .catch(() => handleFinish(null));
+      .catch((error) => {
+        wx.showToast({ title: error.message || "记录失败", icon: "none" });
+      });
   },
 
   startRecommendation() {
@@ -425,8 +458,8 @@ Page({
           url: `/pages/practice/index?id=${this.data.recommendation.id}&planId=${savedPlan.id}`
         });
       })
-      .catch(() => {
-        wx.showToast({ title: "创建计划失败", icon: "none" });
+      .catch((error) => {
+        wx.showToast({ title: error.message || "创建计划失败", icon: "none" });
       });
   }
 });
