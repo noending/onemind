@@ -231,6 +231,49 @@ test('assessment completion persists answers and is idempotent per user and comp
   assert.equal(first.assessment.familiarityLevel, 'familiar');
 });
 
+test('completed assessment only allows its original completion key to retry', () => {
+  const firstAssessment = createAssessment();
+  const secondAssessment = createAssessment();
+  const originalKey = uniqueKey('assessment-original-completion');
+  const newKey = uniqueKey('assessment-new-completion');
+  const answersFor = (assessment, result = 'complete') => assessment.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result
+  }));
+  const firstResponse = memoryStore.recommendMemoryPlan({
+    assessmentId: firstAssessment.id,
+    userId: firstAssessment.userId,
+    idempotencyKey: originalKey,
+    answers: answersFor(firstAssessment)
+  });
+
+  assert.throws(() => memoryStore.recommendMemoryPlan({
+    assessmentId: firstAssessment.id,
+    userId: firstAssessment.userId,
+    idempotencyKey: newKey,
+    answers: answersFor(firstAssessment, 'cannot')
+  }), {
+    code: 'IDEMPOTENCY_KEY_CONFLICT',
+    statusCode: 409
+  });
+
+  const originalRetry = memoryStore.recommendMemoryPlan({
+    assessmentId: firstAssessment.id,
+    userId: firstAssessment.userId,
+    idempotencyKey: originalKey,
+    answers: answersFor(firstAssessment, 'cannot')
+  });
+  const secondResponse = memoryStore.recommendMemoryPlan({
+    assessmentId: secondAssessment.id,
+    userId: secondAssessment.userId,
+    idempotencyKey: newKey,
+    answers: answersFor(secondAssessment)
+  });
+
+  assert.deepEqual(originalRetry, firstResponse);
+  assert.equal(secondResponse.assessment.id, secondAssessment.id);
+});
+
 test('assessment completion rejects unknown missing and duplicate sampled unit answers', () => {
   const invalidAnswers = {
     unknown(assessment, answers) {
@@ -432,6 +475,52 @@ test('postgres completion key cannot return a response from another assessment',
     code: 'IDEMPOTENCY_KEY_CONFLICT',
     statusCode: 409
   });
+});
+
+test('completed postgres assessment only allows its original completion key to retry', {
+  skip: process.env.RUN_POSTGRES_ASSESSMENT_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const firstAssessment = createPostgresAssessment(postgresStore);
+  const secondAssessment = createPostgresAssessment(postgresStore);
+  const originalKey = uniqueKey('postgres-original-completion');
+  const newKey = uniqueKey('postgres-new-completion');
+  const answersFor = (assessment, result = 'complete') => assessment.items.map((item) => ({
+    memoryUnitId: item.memoryUnitId,
+    result
+  }));
+  const firstResponse = postgresStore.recommendMemoryPlan({
+    assessmentId: firstAssessment.id,
+    userId: firstAssessment.userId,
+    idempotencyKey: originalKey,
+    answers: answersFor(firstAssessment)
+  });
+
+  assert.throws(() => postgresStore.recommendMemoryPlan({
+    assessmentId: firstAssessment.id,
+    userId: firstAssessment.userId,
+    idempotencyKey: newKey,
+    answers: answersFor(firstAssessment, 'cannot')
+  }), {
+    code: 'IDEMPOTENCY_KEY_CONFLICT',
+    statusCode: 409
+  });
+
+  const originalRetry = postgresStore.recommendMemoryPlan({
+    assessmentId: firstAssessment.id,
+    userId: firstAssessment.userId,
+    idempotencyKey: originalKey,
+    answers: answersFor(firstAssessment, 'cannot')
+  });
+  const secondResponse = postgresStore.recommendMemoryPlan({
+    assessmentId: secondAssessment.id,
+    userId: secondAssessment.userId,
+    idempotencyKey: newKey,
+    answers: answersFor(secondAssessment)
+  });
+
+  assert.deepEqual(originalRetry, firstResponse);
+  assert.equal(secondResponse.assessment.id, secondAssessment.id);
 });
 
 const postgresInvalidAnswerMutations = {

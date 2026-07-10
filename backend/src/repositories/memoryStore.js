@@ -554,7 +554,12 @@ function recommendMemoryPlan(payload = {}) {
 
   const assessment = state.memoryAssessments.find((item) => item.id === assessmentId && item.userId === userId);
   if (!assessment) throw assessmentError('ASSESSMENT_NOT_FOUND', 404);
-  if (assessment.completionResponse) return cloneJson(assessment.completionResponse);
+  if (assessment.completionResponse) {
+    if (assessment.completionIdempotencyKey !== idempotencyKey) {
+      throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(assessment.completionResponse);
+  }
 
   const answers = normalizeAssessmentAnswers(payload.answers, assessment.items);
   const recommendation = buildAssessmentRecommendation(payload, answers, assessment.unitCount);

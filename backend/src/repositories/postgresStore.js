@@ -1217,6 +1217,9 @@ function recommendMemoryPlan(payload = {}) {
     return existingResponse.responsePayload;
   }
   if (assessment.completionIdempotencyKey) {
+    if (assessment.completionIdempotencyKey !== idempotencyKey) {
+      throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
     const completedResponse = getAssessmentCompletionResponse(
       normalizedUserId,
       assessment.completionIdempotencyKey
