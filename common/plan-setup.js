@@ -54,8 +54,26 @@ function resolveRecommendedTargetDays(recommendation, context) {
   return recommendPlan(context).targetDays;
 }
 
+function requireUnitCount(recommendation = {}) {
+  const unitCount = Number(recommendation.unitCount);
+  if (!Number.isFinite(unitCount) || unitCount <= 0) {
+    throw new Error('UNIT_COUNT_REQUIRED');
+  }
+  return Math.floor(unitCount);
+}
+
+function normalizeCustomTargetDays(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return null;
+  const targetDays = normalizeTargetDays(digits);
+  return {
+    displayValue: String(targetDays),
+    targetDays
+  };
+}
+
 function buildRecommendationCards(recommendation = {}) {
-  const totalUnits = Math.max(1, Number(recommendation.unitCount || recommendation.totalUnits || 1));
+  const totalUnits = requireUnitCount(recommendation);
   const dailyMinutes = recommendation.dailyMinutes;
   const familiarityLevel = recommendation.familiarityLevel;
   const context = { unitCount: totalUnits, dailyMinutes, familiarityLevel };
@@ -88,5 +106,6 @@ function buildRecommendationCards(recommendation = {}) {
 
 module.exports = {
   buildScopeOptions,
-  buildRecommendationCards
+  buildRecommendationCards,
+  normalizeCustomTargetDays
 };

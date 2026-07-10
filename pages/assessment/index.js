@@ -1,5 +1,6 @@
 const {
   createMemoryAssessmentApi,
+  ensureLogin,
   getContentStructureApi,
   recommendMemoryPlanApi
 } = require("../../common/api");
@@ -18,6 +19,14 @@ function safeStorageSet(key, value) {
 
 function stableKey(prefix, parts) {
   return `${prefix}-${parts.map((part) => String(part || "none")).join("-")}`.slice(0, 180);
+}
+
+function createAttemptId() {
+  return `attempt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function isAuthRequired(error) {
+  return Boolean(error && (error.code === "AUTH_REQUIRED" || error.statusCode === 401));
 }
 
 function makeUnitMap(structure) {
@@ -43,11 +52,15 @@ Page({
   data: {
     contentId: "",
     versionId: "",
+    attemptId: "",
     loading: true,
     error: "",
     errorStage: "structure",
+    authRequired: false,
     structure: null,
     scopeOptions: [],
+    totalUnitCount: 0,
+    isEmpty: false,
     selectedScopeIndex: 0,
     phase: "scope",
     assessment: null,
@@ -57,7 +70,8 @@ Page({
     currentRevealed: false,
     elapsedSeconds: 0,
     remainingSeconds: QUIZ_SECONDS,
-    isSubmitting: false
+    isSubmitting: false,
+    pendingTimedOut: null
   },
 
   onLoad(options = {}) {
@@ -67,7 +81,7 @@ Page({
       this.setData({ loading: false, error: "缺少内容或版本信息", errorStage: "structure" });
       return;
     }
-    this.setData({ contentId, versionId });
+    this.setData({ contentId, versionId, attemptId: createAttemptId() });
     this.loadStructure();
   },
 
@@ -78,13 +92,23 @@ Page({
   loadStructure() {
     const { contentId, versionId } = this.data;
     this.stopTimer();
-    this.setData({ loading: true, error: "", errorStage: "structure", phase: "scope" });
+    this.setData({
+      loading: true,
+      error: "",
+      errorStage: "structure",
+      authRequired: false,
+      phase: "scope",
+      pendingTimedOut: null
+    });
     getContentStructureApi(contentId, versionId)
       .then((structure) => {
         const scopeOptions = buildScopeOptions(structure);
+        const totalUnitCount = Number(scopeOptions[0] && scopeOptions[0].unitCount || 0);
         this.setData({
           structure,
           scopeOptions,
+          totalUnitCount,
+          isEmpty: totalUnitCount <= 0,
           selectedScopeIndex: 0,
           loading: false
         });
@@ -103,22 +127,28 @@ Page({
     this.setData({ selectedScopeIndex: Number(event.currentTarget.dataset.index || 0) });
   },
 
+  getSelectedScope() {
+    return buildScopeOptions(this.data.structure)[this.data.selectedScopeIndex] || null;
+  },
+
   startAssessment() {
-    const scope = this.data.scopeOptions[this.data.selectedScopeIndex];
-    if (!scope || !scope.unitCount) {
+    const scope = this.getSelectedScope();
+    if (!scope || Number(scope.unitCount) <= 0) {
       this.setData({ error: "所选范围暂无可测验句段", errorStage: "start" });
       return;
     }
-    const { contentId, versionId } = this.data;
-    const idempotencyKey = stableKey("assessment-start", [contentId, versionId, scope.scopeType, scope.scopeId]);
-    this.setData({ isSubmitting: true, error: "", errorStage: "start" });
-    createMemoryAssessmentApi({
-      contentId,
-      contentVersionId: versionId,
-      scopeType: scope.scopeType,
-      scopeId: scope.scopeId,
-      idempotencyKey
-    }).then((assessment) => {
+    const { attemptId, contentId, versionId } = this.data;
+    const idempotencyKey = stableKey("assessment-start", [attemptId, contentId, versionId, scope.scopeType, scope.scopeId]);
+    this.setData({ isSubmitting: true, error: "", errorStage: "start", authRequired: false });
+    ensureLogin({ message: "请先在我的页面完成微信授权，再开始测验" })
+      .then(() => createMemoryAssessmentApi({
+        contentId,
+        contentVersionId: versionId,
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        idempotencyKey
+      }))
+      .then((assessment) => {
       const unitMap = makeUnitMap(this.data.structure);
       const quizItems = (assessment.items || []).map((item) => displayItem(item, unitMap[item.memoryUnitId]));
       if (!quizItems.length) throw new Error("当前范围没有可测验题目");
@@ -131,14 +161,16 @@ Page({
         currentRevealed: false,
         elapsedSeconds: 0,
         remainingSeconds: QUIZ_SECONDS,
-        isSubmitting: false
+        isSubmitting: false,
+        pendingTimedOut: null
       });
       this.startTimer();
     }).catch((error) => {
       this.setData({
         isSubmitting: false,
         error: error.message || "测验启动失败，请重试",
-        errorStage: "start"
+        errorStage: "start",
+        authRequired: isAuthRequired(error)
       });
     });
   },
@@ -193,6 +225,9 @@ Page({
   finishAssessment(timedOut) {
     if (this.data.isSubmitting || !this.data.assessment) return;
     this.stopTimer();
+    const pendingTimedOut = this.data.pendingTimedOut === null
+      ? Boolean(timedOut)
+      : this.data.pendingTimedOut;
     const answeredIds = new Set(this.data.answers.map((answer) => answer.memoryUnitId));
     const answers = [
       ...this.data.answers,
@@ -206,11 +241,18 @@ Page({
         }))
     ];
     const assessmentId = this.data.assessment.id;
-    const idempotencyKey = stableKey("assessment-complete", [assessmentId]);
-    this.setData({ isSubmitting: true, answers, error: "", errorStage: "submit" });
+    const idempotencyKey = stableKey("assessment-complete", [this.data.attemptId, assessmentId]);
+    this.setData({
+      isSubmitting: true,
+      answers,
+      error: "",
+      errorStage: "submit",
+      authRequired: false,
+      pendingTimedOut
+    });
     recommendMemoryPlanApi({ assessmentId, answers, idempotencyKey })
       .then((recommendation) => {
-        const scope = this.data.scopeOptions[this.data.selectedScopeIndex] || {};
+        const scope = this.getSelectedScope() || {};
         safeStorageSet(RECOMMENDATION_STORAGE_KEY, {
           recommendation,
           assessmentContext: {
@@ -219,7 +261,8 @@ Page({
             versionId: this.data.versionId,
             scopeType: scope.scopeType || "full",
             scopeId: scope.scopeId || null,
-            timedOut: Boolean(timedOut)
+            unitCount: Number(scope.unitCount || 0),
+            timedOut: pendingTimedOut
           }
         });
         const query = [
@@ -235,15 +278,21 @@ Page({
         this.setData({
           isSubmitting: false,
           error: error.message || "测验结果提交失败，请重试",
-          errorStage: "submit"
+          errorStage: "submit",
+          authRequired: isAuthRequired(error)
         });
       });
   },
 
   retry() {
+    if (this.data.authRequired) return;
     if (this.data.errorStage === "start") return this.startAssessment();
-    if (this.data.errorStage === "submit") return this.finishAssessment(false);
+    if (this.data.errorStage === "submit") return this.finishAssessment();
     return this.loadStructure();
+  },
+
+  openAuthorization() {
+    wx.navigateTo({ url: "/pages/profile/index" });
   },
 
   goBack() {

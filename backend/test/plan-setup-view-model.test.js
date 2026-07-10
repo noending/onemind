@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 
 const {
   buildScopeOptions,
-  buildRecommendationCards
+  buildRecommendationCards,
+  normalizeCustomTargetDays
 } = require('../../common/plan-setup');
 
 test('scope options put full text before every reviewed section', () => {
@@ -40,6 +41,17 @@ test('scope options exclude explicitly unreviewed sections without changing stru
 
   assert.deepEqual(result.map((item) => item.scopeId), [null, 'reviewed']);
   assert.deepEqual(structure, before);
+});
+
+test('scope options calculate full and section unit counts from the reviewed structure', () => {
+  const options = buildScopeOptions({
+    sections: [
+      { id: 'first', title: '第一会', units: Array.from({ length: 42 }, (_, index) => ({ id: `a-${index}` })) },
+      { id: 'second', title: '第二会', units: Array.from({ length: 42 }, (_, index) => ({ id: `b-${index}` })) }
+    ]
+  });
+
+  assert.deepEqual(options.map((item) => item.unitCount), [84, 42, 42]);
 });
 
 test('recommendation cards use the shared 84 unit 14 day workload calculation', () => {
@@ -82,6 +94,24 @@ test('custom recommendation is an entry point without a numeric target day', () 
   assert.equal(custom.estimatedReviewUnits, null);
   assert.equal(custom.estimatedMinutes, null);
   assert.equal(custom.intensity, null);
+});
+
+test('recommendation cards reject missing or non-positive scope unit counts', () => {
+  assert.throws(() => buildRecommendationCards({ unitCount: 0 }), /UNIT_COUNT_REQUIRED/);
+  assert.throws(() => buildRecommendationCards({}), /UNIT_COUNT_REQUIRED/);
+});
+
+test('recommendation cards preserve real full and section workloads', () => {
+  const full = buildRecommendationCards({ unitCount: 84, targetDays: 14 });
+  const section = buildRecommendationCards({ unitCount: 14, targetDays: 14 });
+
+  assert.equal(full.find((card) => card.targetDays === 14).newUnitsPerDay, 6);
+  assert.equal(section.find((card) => card.targetDays === 14).newUnitsPerDay, 1);
+});
+
+test('custom target input clamps both visible and submitted values at supported boundaries', () => {
+  assert.deepEqual(normalizeCustomTargetDays('1'), { displayValue: '3', targetDays: 3 });
+  assert.deepEqual(normalizeCustomTargetDays('120'), { displayValue: '84', targetDays: 84 });
 });
 
 test('recommendation input is not mutated', () => {

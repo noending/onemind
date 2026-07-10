@@ -9,13 +9,13 @@
       <text class="state-title">正在整理推荐</text>
     </view>
 
-    <view wx:if="{{error}}" class="state-panel error-panel">
+    <view wx:if="{{fatalContextError}}" class="state-panel error-panel">
       <text class="state-title">暂时无法创建计划</text>
-      <text class="state-copy">{{error}}</text>
+      <text class="state-copy">{{fatalContextError}}</text>
       <button class="secondary-button" bindtap="retryAssessment">重新测验</button>
     </view>
 
-    <block wx:if="{{!loading && !error && workload}}">
+    <block wx:if="{{!loading && !fatalContextError && workload}}">
       <text class="section-label">首轮天数</text>
       <view class="day-segmented">
         <button wx:for="{{cards}}" wx:key="targetDays" wx:if="{{item.targetDays !== 'custom'}}" class="day-option {{targetDays === item.targetDays ? 'active' : ''}}" data-days="{{item.targetDays}}" bindtap="setTargetDays" disabled="{{isSubmitting}}">
@@ -25,7 +25,7 @@
       </view>
       <view class="custom-row">
         <text>自定义</text>
-        <input type="number" value="{{customDays}}" maxlength="2" placeholder="3-84" bindinput="setCustomDays" bindblur="normalizeCustomDays" disabled="{{isSubmitting}}" />
+        <input type="number" value="{{customDays}}" maxlength="3" placeholder="3-84" bindinput="setCustomDays" bindblur="normalizeCustomDays" disabled="{{isSubmitting}}" />
         <text>天</text>
       </view>
 
@@ -42,6 +42,13 @@
         </view>
         <text class="intensity">强度：{{workload.intensity === 'high' ? '较高' : workload.intensity === 'standard' ? '标准' : '平稳'}}</text>
         <text class="long-term-note">完成首轮学习，之后继续长期复习</text>
+      </view>
+
+      <view wx:if="{{submitError}}" class="submit-error">
+        <text>{{submitError}}</text>
+        <button wx:if="{{authRequired}}" class="secondary-button inline-button" bindtap="openAuthorization">前往微信授权</button>
+        <button wx:else class="secondary-button inline-button" bindtap="createPlan" disabled="{{isSubmitting}}">重试创建</button>
+        <button class="link-button" bindtap="retryAssessment">重新测验</button>
       </view>
 
       <button class="primary-button" bindtap="createPlan" disabled="{{isSubmitting}}">{{isSubmitting ? '正在创建计划' : '确认并开始练习'}}</button>

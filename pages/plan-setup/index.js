@@ -1,5 +1,5 @@
-const { createMemoryPlanApi } = require("../../common/api");
-const { buildRecommendationCards } = require("../../common/plan-setup");
+const { createMemoryPlanApi, ensureLogin } = require("../../common/api");
+const { buildRecommendationCards, normalizeCustomTargetDays } = require("../../common/plan-setup");
 const { normalizeTargetDays, recommendPlan } = require("../../common/adaptive-memory");
 
 const RECOMMENDATION_STORAGE_KEY = "oneMind.memoryAssessmentRecommendation";
@@ -17,10 +17,18 @@ function readStoredContext() {
   }
 }
 
+function isAuthRequired(error) {
+  return Boolean(error && (error.code === "AUTH_REQUIRED" || error.statusCode === 401));
+}
+
 Page({
   data: {
     loading: true,
-    error: "",
+    fatalContextError: "",
+    submitError: "",
+    authRequired: false,
+    routeContentId: "",
+    routeVersionId: "",
     recommendation: null,
     assessmentContext: null,
     cards: [],
@@ -33,17 +41,21 @@ Page({
   },
 
   onLoad(options = {}) {
+    const routeContentId = String(options.contentId || "");
+    const routeVersionId = String(options.versionId || "");
+    this.setData({ routeContentId, routeVersionId });
     const stored = readStoredContext();
     const context = stored && stored.assessmentContext;
+    const unitCount = Number(context && context.unitCount);
     const matches = context
       && String(context.assessmentId) === String(options.assessmentId || "")
       && String(context.contentId) === String(options.contentId || "")
       && String(context.versionId) === String(options.versionId || "");
-    if (!stored || !stored.recommendation || !matches) {
-      this.setData({ loading: false, error: "测验推荐已失效，请重新完成测验。" });
+    if (!stored || !stored.recommendation || !matches || !Number.isFinite(unitCount) || unitCount <= 0) {
+      this.setData({ loading: false, fatalContextError: "测验推荐或范围信息已失效，请重新完成测验。" });
       return;
     }
-    const recommendation = stored.recommendation;
+    const recommendation = { ...stored.recommendation, unitCount };
     const dailyMinutes = Number(recommendation.dailyMinutes || 15);
     const targetDays = normalizeTargetDays(recommendation.recommendedTargetDays || recommendation.targetDays || 14);
     this.setData({
@@ -58,8 +70,9 @@ Page({
   },
 
   buildWorkload(recommendation, targetDays, dailyMinutes) {
+    const unitCount = Number(this.data.assessmentContext && this.data.assessmentContext.unitCount);
     const plan = recommendPlan({
-      unitCount: recommendation.unitCount || recommendation.totalUnits,
+      unitCount,
       familiarityLevel: recommendation.familiarityLevel,
       targetDays,
       dailyMinutes
@@ -67,7 +80,7 @@ Page({
     return {
       ...plan,
       estimatedReviewUnits: Math.min(
-        Math.max(1, Number(recommendation.unitCount || recommendation.totalUnits || 1)),
+        unitCount,
         plan.newUnitsPerDay * 2
       )
     };
@@ -85,9 +98,9 @@ Page({
 
   setCustomDays(event) {
     if (this.data.isSubmitting) return;
-    const customDays = String(event.detail.value || "").replace(/\D/g, "").slice(0, 2);
-    const numeric = Number(customDays);
-    const targetDays = numeric ? normalizeTargetDays(numeric) : this.data.targetDays;
+    const normalized = normalizeCustomTargetDays(event.detail.value);
+    const customDays = normalized ? normalized.displayValue : "";
+    const targetDays = normalized ? normalized.targetDays : this.data.targetDays;
     this.setData({
       customDays,
       targetDays,
@@ -97,12 +110,7 @@ Page({
 
   normalizeCustomDays() {
     if (this.data.isSubmitting || !this.data.customDays) return;
-    const targetDays = normalizeTargetDays(this.data.customDays);
-    this.setData({
-      customDays: String(targetDays),
-      targetDays,
-      workload: this.buildWorkload(this.data.recommendation, targetDays, this.data.dailyMinutes)
-    });
+    this.setCustomDays({ detail: { value: this.data.customDays } });
   },
 
   chooseDailyMinutes(event) {
@@ -117,31 +125,48 @@ Page({
 
   createPlan() {
     const { assessmentContext, recommendation, targetDays, dailyMinutes } = this.data;
-    if (this.data.isSubmitting || !assessmentContext || !recommendation) return;
+    if (this.data.isSubmitting || !assessmentContext || !recommendation || this.data.fatalContextError) return;
     const idempotencyKey = stableKey("adaptive-plan", [assessmentContext.assessmentId, targetDays, dailyMinutes]);
-    this.setData({ isSubmitting: true, error: "" });
-    createMemoryPlanApi({
-      contentId: assessmentContext.contentId,
-      contentVersionId: assessmentContext.versionId,
-      scopeType: assessmentContext.scopeType,
-      scopeId: assessmentContext.scopeId,
-      targetDays,
-      dailyMinutes,
-      familiarityLevel: recommendation.familiarityLevel,
-      strategy: "assessment",
-      idempotencyKey
-    }).then((plan) => {
+    this.setData({ isSubmitting: true, submitError: "", authRequired: false });
+    ensureLogin({ message: "请先在我的页面完成微信授权，再创建计划" })
+      .then(() => createMemoryPlanApi({
+        contentId: assessmentContext.contentId,
+        contentVersionId: assessmentContext.versionId,
+        scopeType: assessmentContext.scopeType,
+        scopeId: assessmentContext.scopeId,
+        targetDays,
+        dailyMinutes,
+        familiarityLevel: recommendation.familiarityLevel,
+        strategy: "assessment",
+        idempotencyKey
+      }))
+      .then((plan) => {
       if (!plan || !plan.id) throw new Error("计划创建结果无效");
       wx.redirectTo({
         url: `/pages/practice/index?id=${encodeURIComponent(assessmentContext.contentId)}&planId=${encodeURIComponent(plan.id)}`
       });
     }).catch((error) => {
-      this.setData({ isSubmitting: false, error: error.message || "计划创建失败，请重试" });
+      this.setData({
+        isSubmitting: false,
+        submitError: error.message || "计划创建失败，请重试",
+        authRequired: isAuthRequired(error)
+      });
     });
   },
 
   retryAssessment() {
-    wx.navigateBack();
+    const context = this.data.assessmentContext || {
+      contentId: this.data.routeContentId,
+      versionId: this.data.routeVersionId
+    };
+    if (!context.contentId || !context.versionId) return;
+    wx.redirectTo({
+      url: `/pages/assessment/index?contentId=${encodeURIComponent(context.contentId)}&versionId=${encodeURIComponent(context.versionId)}`
+    });
+  },
+
+  openAuthorization() {
+    wx.navigateTo({ url: "/pages/profile/index" });
   },
 
   goBack() {

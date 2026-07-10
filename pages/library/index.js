@@ -6,6 +6,14 @@ const {
   syncPlansFromBackend
 } = require("../../common/memory");
 
+const CANONICAL_CONTENT_IDS = {
+  "great-compassion-snippet": "great-compassion-opening"
+};
+
+function toCanonicalContentId(contentId) {
+  return CANONICAL_CONTENT_IDS[contentId] || contentId;
+}
+
 function buildModeCards(content) {
   const supported = Array.isArray(content.supportedModes) && content.supportedModes.length
     ? content.supportedModes
@@ -211,7 +219,8 @@ Page({
     const mode = event.currentTarget.dataset.mode || "scientific";
     const picked = this.data.picked;
     if (picked.lengthTier === "long" && mode === "scientific") {
-      const contentId = encodeURIComponent(picked.id);
+      const canonicalContentId = toCanonicalContentId(picked.id);
+      const contentId = encodeURIComponent(canonicalContentId);
       const versionId = encodeURIComponent(picked.publishedVersionId || "");
       if (!picked.publishedVersionId) {
         wx.showToast({ title: "该内容暂无可测验版本", icon: "none" });

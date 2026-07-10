@@ -13,10 +13,11 @@
     <view wx:if="{{error}}" class="state-panel error-panel">
       <text class="state-title">暂时无法继续</text>
       <text class="state-copy">{{error}}</text>
-      <button class="primary-button" bindtap="retry" disabled="{{isSubmitting}}">重新尝试</button>
+      <button wx:if="{{authRequired}}" class="primary-button" bindtap="openAuthorization">前往微信授权</button>
+      <button wx:else class="primary-button" bindtap="retry" disabled="{{isSubmitting}}">重新尝试</button>
     </view>
 
-    <block wx:if="{{!loading && !error && phase === 'scope'}}">
+    <block wx:if="{{!loading && !error && phase === 'scope' && !isEmpty}}">
       <view class="scope-head">
         <text class="section-label">选择范围</text>
         <text class="scope-hint">先选全文或一会，再开始抽题。</text>
@@ -27,12 +28,13 @@
           <text class="scope-meta">{{item.unitCount}} 句</text>
         </button>
       </view>
-      <view wx:if="{{!scopeOptions.length}}" class="state-panel">
-        <text class="state-title">暂无可测验范围</text>
-        <text class="state-copy">该已审核版本尚未提供记忆句段。</text>
-      </view>
-      <button class="primary-button bottom-action" bindtap="startAssessment" disabled="{{isSubmitting || !scopeOptions.length}}">{{isSubmitting ? '正在准备' : '开始 60 秒测验'}}</button>
+      <button class="primary-button bottom-action" bindtap="startAssessment" disabled="{{isSubmitting || totalUnitCount <= 0}}">{{isSubmitting ? '正在准备' : '开始 60 秒测验'}}</button>
     </block>
+
+    <view wx:if="{{!loading && !error && isEmpty}}" class="state-panel">
+      <text class="state-title">暂无可测验范围</text>
+      <text class="state-copy">该已审核版本尚未提供记忆句段。</text>
+    </view>
 
     <block wx:if="{{!loading && !error && phase === 'quiz'}}">
       <view class="quiz-status">
