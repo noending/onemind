@@ -1,0 +1,57 @@
+<view class="screen assessment-screen">
+  <app-header />
+  <view class="page-body assessment-body">
+    <text class="back-link" bindtap="goBack">返回内容库</text>
+    <text class="page-title">长咒记忆测验</text>
+    <text class="page-subtitle">60 秒内按首字提示判断当前记忆基础。</text>
+
+    <view wx:if="{{loading}}" class="state-panel">
+      <text class="state-title">正在载入已审核结构</text>
+      <text class="state-copy">请稍候。</text>
+    </view>
+
+    <view wx:if="{{error}}" class="state-panel error-panel">
+      <text class="state-title">暂时无法继续</text>
+      <text class="state-copy">{{error}}</text>
+      <button class="primary-button" bindtap="retry" disabled="{{isSubmitting}}">重新尝试</button>
+    </view>
+
+    <block wx:if="{{!loading && !error && phase === 'scope'}}">
+      <view class="scope-head">
+        <text class="section-label">选择范围</text>
+        <text class="scope-hint">先选全文或一会，再开始抽题。</text>
+      </view>
+      <view class="scope-list">
+        <button wx:for="{{scopeOptions}}" wx:key="index" class="scope-option {{selectedScopeIndex === index ? 'active' : ''}}" data-index="{{index}}" bindtap="chooseScope" disabled="{{isSubmitting || !item.unitCount}}">
+          <text class="scope-title">{{item.title}}</text>
+          <text class="scope-meta">{{item.unitCount}} 句</text>
+        </button>
+      </view>
+      <view wx:if="{{!scopeOptions.length}}" class="state-panel">
+        <text class="state-title">暂无可测验范围</text>
+        <text class="state-copy">该已审核版本尚未提供记忆句段。</text>
+      </view>
+      <button class="primary-button bottom-action" bindtap="startAssessment" disabled="{{isSubmitting || !scopeOptions.length}}">{{isSubmitting ? '正在准备' : '开始 60 秒测验'}}</button>
+    </block>
+
+    <block wx:if="{{!loading && !error && phase === 'quiz'}}">
+      <view class="quiz-status">
+        <text>第 {{currentIndex + 1}} / {{quizItems.length}} 题</text>
+        <text>{{remainingSeconds}} 秒</text>
+      </view>
+      <view class="progress-track"><view class="progress-value" style="width: {{quizItems.length ? (currentIndex / quizItems.length) * 100 : 0}}%;"></view></view>
+      <view class="cue-panel">
+        <text class="cue-label">首字提示</text>
+        <text class="cue-character">{{quizItems[currentIndex].cue}}</text>
+        <text wx:if="{{currentRevealed}}" class="full-text">{{quizItems[currentIndex].fullText}}</text>
+        <button wx:else class="reveal-button" bindtap="revealCurrent" disabled="{{isSubmitting}}">揭示正文核对</button>
+      </view>
+      <view class="answer-list">
+        <button class="answer-button cannot" data-result="cannot" bindtap="answerCurrent" disabled="{{isSubmitting}}">不会</button>
+        <button class="answer-button partial" data-result="partial" bindtap="answerCurrent" disabled="{{isSubmitting}}">部分记得</button>
+        <button class="answer-button complete" data-result="complete" bindtap="answerCurrent" disabled="{{isSubmitting}}">完整复现</button>
+      </view>
+      <text class="elapsed-note">已用 {{elapsedSeconds}} 秒，时间到会按未答题目提交。</text>
+    </block>
+  </view>
+</view>

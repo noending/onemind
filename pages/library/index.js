@@ -53,7 +53,8 @@ Page({
     festivalOptions: [],
     festivalFilterId: "",
     festivalSource: "",
-    activeFestival: null
+    activeFestival: null,
+    loadError: ""
   },
 
   onLoad(options = {}) {
@@ -68,7 +69,7 @@ Page({
   },
 
   loadContents() {
-    this.setData({ loading: true });
+    this.setData({ loading: true, loadError: "" });
     Promise.all([listContents(), listFestivals()]).then(([contentResult, festivalResult]) => {
       const enhanced = this.attachPlanState(contentResult.contents || []);
       const festivalOptions = festivalResult.festivals || [];
@@ -83,6 +84,11 @@ Page({
         activeFestival,
         festivalSource: this.data.festivalSource || festivalResult.source || "",
         loading: false
+      });
+    }).catch((error) => {
+      this.setData({
+        loading: false,
+        loadError: error.message || "内容载入失败，请重试"
       });
     });
   },
@@ -203,6 +209,21 @@ Page({
   acceptPlan(event) {
     if (!this.data.picked) return;
     const mode = event.currentTarget.dataset.mode || "scientific";
+    const picked = this.data.picked;
+    if (picked.lengthTier === "long" && mode === "scientific") {
+      const contentId = encodeURIComponent(picked.id);
+      const versionId = encodeURIComponent(picked.publishedVersionId || "");
+      if (!picked.publishedVersionId) {
+        wx.showToast({ title: "该内容暂无可测验版本", icon: "none" });
+        return;
+      }
+      this.closeSheet(() => {
+        wx.navigateTo({
+          url: `/pages/assessment/index?contentId=${contentId}&versionId=${versionId}`
+        });
+      });
+      return;
+    }
     createPlanWithFallback(this.data.picked, mode)
       .then((savedPlan) => {
         const contentId = this.data.picked.id;

@@ -44,6 +44,17 @@
       <text class="content-body">请稍候，系统正在准备可修持内容。</text>
     </view>
 
+    <view wx:if="{{loadError}}" class="content-card card">
+      <text class="content-title">内容暂未载入</text>
+      <text class="content-body">{{loadError}}</text>
+      <button class="mode-button" bindtap="loadContents">重新载入</button>
+    </view>
+
+    <view wx:if="{{!loading && !loadError && !filteredContents.length}}" class="content-card card">
+      <text class="content-title">暂无匹配内容</text>
+      <text class="content-body">调整筛选条件后再试。</text>
+    </view>
+
     <view wx:for="{{filteredContents}}" wx:key="id" class="content-card card" data-id="{{item.id}}" bindtap="pickContent">
       <view class="tag-row">
         <text class="tag">{{item.category}}</text>

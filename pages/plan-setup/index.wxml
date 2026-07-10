@@ -1,0 +1,50 @@
+<view class="screen setup-screen">
+  <app-header />
+  <view class="page-body setup-body">
+    <text class="back-link" bindtap="goBack">返回测验</text>
+    <text class="page-title">安排首轮学习</text>
+    <text class="page-subtitle">根据刚才的记忆情况，选择一个能持续执行的节奏。</text>
+
+    <view wx:if="{{loading}}" class="state-panel">
+      <text class="state-title">正在整理推荐</text>
+    </view>
+
+    <view wx:if="{{error}}" class="state-panel error-panel">
+      <text class="state-title">暂时无法创建计划</text>
+      <text class="state-copy">{{error}}</text>
+      <button class="secondary-button" bindtap="retryAssessment">重新测验</button>
+    </view>
+
+    <block wx:if="{{!loading && !error && workload}}">
+      <text class="section-label">首轮天数</text>
+      <view class="day-segmented">
+        <button wx:for="{{cards}}" wx:key="targetDays" wx:if="{{item.targetDays !== 'custom'}}" class="day-option {{targetDays === item.targetDays ? 'active' : ''}}" data-days="{{item.targetDays}}" bindtap="setTargetDays" disabled="{{isSubmitting}}">
+          <text>{{item.targetDays}} 天</text>
+          <text wx:if="{{item.isRecommended}}" class="recommend-mark">推荐</text>
+        </button>
+      </view>
+      <view class="custom-row">
+        <text>自定义</text>
+        <input type="number" value="{{customDays}}" maxlength="2" placeholder="3-84" bindinput="setCustomDays" bindblur="normalizeCustomDays" disabled="{{isSubmitting}}" />
+        <text>天</text>
+      </view>
+
+      <text class="section-label minutes-label">每日时长</text>
+      <view class="minute-options">
+        <button wx:for="{{dailyMinutesOptions}}" wx:key="*this" class="minute-option {{dailyMinutes === item ? 'active' : ''}}" data-minutes="{{item}}" bindtap="chooseDailyMinutes" disabled="{{isSubmitting}}">{{item}} 分钟</button>
+      </view>
+
+      <view class="workload-panel">
+        <view class="workload-row">
+          <view><text class="metric-value">{{workload.newUnitsPerDay}}</text><text class="metric-label">新句/天</text></view>
+          <view><text class="metric-value">{{workload.estimatedReviewUnits}}</text><text class="metric-label">预计复习</text></view>
+          <view><text class="metric-value">{{workload.estimatedMinutes}}</text><text class="metric-label">预计分钟</text></view>
+        </view>
+        <text class="intensity">强度：{{workload.intensity === 'high' ? '较高' : workload.intensity === 'standard' ? '标准' : '平稳'}}</text>
+        <text class="long-term-note">完成首轮学习，之后继续长期复习</text>
+      </view>
+
+      <button class="primary-button" bindtap="createPlan" disabled="{{isSubmitting}}">{{isSubmitting ? '正在创建计划' : '确认并开始练习'}}</button>
+    </block>
+  </view>
+</view>

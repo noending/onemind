@@ -1,0 +1,32 @@
+.assessment-screen { min-height: 100vh; background: #fffaf2; }
+.assessment-body { padding-top: 30rpx; padding-bottom: calc(48rpx + env(safe-area-inset-bottom)); }
+.back-link { display: block; color: #80655c; font-size: 24rpx; font-weight: 600; }
+.assessment-body .page-title { margin-top: 20rpx; color: #351b18; font-family: "Songti SC", "STSong", serif; font-size: 48rpx; line-height: 1.2; }
+.assessment-body .page-subtitle { margin-top: 10rpx; color: #80655c; font-size: 24rpx; line-height: 1.5; }
+.state-panel, .cue-panel { margin-top: 28rpx; padding: 24rpx; border: 1rpx solid #ead8c2; border-radius: 16rpx; background: #f7f4ee; }
+.error-panel { border-color: rgba(166, 49, 39, 0.3); background: #fff4ef; }
+.state-title, .scope-title { display: block; color: #351b18; font-size: 30rpx; font-weight: 700; }
+.state-copy, .scope-hint { display: block; margin-top: 8rpx; color: #80655c; font-size: 23rpx; line-height: 1.5; }
+.scope-head { margin-top: 30rpx; }
+.section-label, .cue-label { color: #a63127; font-size: 22rpx; font-weight: 700; letter-spacing: 2rpx; }
+.scope-list { margin-top: 16rpx; display: grid; gap: 12rpx; }
+.scope-option { width: 100%; min-height: 94rpx; padding: 16rpx 20rpx; border: 1rpx solid #ead8c2; border-radius: 16rpx; background: #f7f4ee; text-align: left; }
+.scope-option.active { border-color: #a63127; background: #fff2e9; }
+.scope-option[disabled] { opacity: 0.5; }
+.scope-meta { display: block; margin-top: 4rpx; color: #80655c; font-size: 22rpx; }
+.primary-button { width: 100%; min-height: 82rpx; padding: 0 20rpx; border-radius: 16rpx; background: #a63127; color: #fffaf2; font-size: 28rpx; font-weight: 700; line-height: 82rpx; }
+.primary-button[disabled], .answer-button[disabled], .reveal-button[disabled] { opacity: 0.55; }
+.bottom-action { margin-top: 26rpx; }
+.quiz-status { margin-top: 30rpx; display: flex; justify-content: space-between; color: #80655c; font-size: 24rpx; font-weight: 700; }
+.progress-track { height: 8rpx; margin-top: 12rpx; overflow: hidden; border-radius: 8rpx; background: #ead8c2; }
+.progress-value { height: 100%; border-radius: 8rpx; background: #a63127; }
+.cue-panel { min-height: 310rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.cue-character { display: block; margin-top: 24rpx; color: #7e2a1c; font-family: "Songti SC", "STSong", serif; font-size: 112rpx; line-height: 1; }
+.full-text { display: block; width: 100%; margin-top: 28rpx; color: #351b18; font-size: 32rpx; line-height: 1.55; word-break: break-all; }
+.reveal-button { margin-top: 30rpx; min-height: 64rpx; padding: 0 22rpx; border: 1rpx solid #a63127; border-radius: 16rpx; background: transparent; color: #a63127; font-size: 24rpx; line-height: 62rpx; }
+.answer-list { margin-top: 18rpx; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10rpx; }
+.answer-button { min-height: 78rpx; padding: 0 8rpx; border-radius: 16rpx; font-size: 24rpx; font-weight: 700; line-height: 1.2; }
+.cannot { background: #f0e3d7; color: #6d4e43; }
+.partial { background: #f6dfbd; color: #8b5a1e; }
+.complete { background: #a63127; color: #fffaf2; }
+.elapsed-note { display: block; margin-top: 16rpx; color: #80655c; font-size: 21rpx; line-height: 1.45; text-align: center; }
