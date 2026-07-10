@@ -1,5 +1,10 @@
 const crypto = require('crypto');
-const { recommendPlan } = require('../../../common/adaptive-memory');
+const {
+  recommendPlan,
+  allocateDailyUnits,
+  applyReviewGrade,
+  isInitialComplete
+} = require('../../../common/adaptive-memory');
 
 const {
   contents,
@@ -36,6 +41,9 @@ const state = {
   notificationJobs: [],
   memoryAssessments: [],
   assessmentCompletionResponses: {},
+  adaptivePlans: [],
+  adaptiveDailyTasks: [],
+  adaptiveIdempotencyResponses: {},
   organizations: [...organizations],
   organizationMembers: [...organizationMembers],
   assets: [...assets],
@@ -1058,6 +1066,243 @@ function listAuditLogs(filters = {}) {
     .slice(0, Number(filters.limit || 50));
 }
 
+function createAdaptivePlan(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const contentId = String(payload.contentId || '').trim();
+  const contentVersionId = String(payload.contentVersionId || '').trim();
+  const scopeType = String(payload.scopeType || 'full').trim() || 'full';
+  const scopeId = payload.scopeId ? String(payload.scopeId).trim() : null;
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+  const cached = state.adaptiveIdempotencyResponses[`${userId}:${idempotencyKey}`];
+
+  if (!userId) throw adaptivePlanError('ADAPTIVE_PLAN_USER_REQUIRED', 400);
+  if (!contentId) throw adaptivePlanError('ADAPTIVE_PLAN_CONTENT_REQUIRED', 400);
+  if (!contentVersionId) throw adaptivePlanError('ADAPTIVE_PLAN_CONTENT_VERSION_REQUIRED', 400);
+  if (cached) return cloneJson(cached.response);
+
+  const startDate = String(payload.date || payload.startDate || todayDate()).slice(0, 10);
+  const structure = getContentStructure(contentId, contentVersionId);
+  const units = getAssessmentScopeUnits(structure, scopeType, scopeId);
+  const recommendation = recommendPlan({
+    unitCount: units.length,
+    familiarityLevel: payload.familiarityLevel,
+    dailyMinutes: payload.dailyMinutes,
+    targetDays: payload.targetDays
+  });
+  const strategy = normalizeAdaptiveStrategy(payload.strategy, recommendation.targetDays);
+
+  ensureAdaptiveUser(userId);
+  const plan = {
+    id: createId('adaptive_plan'),
+    userId,
+    contentId,
+    contentVersionId,
+    scopeType,
+    scopeId,
+    targetDays: recommendation.targetDays,
+    dailyMinutes: recommendation.dailyMinutes,
+    familiarityLevel: payload.familiarityLevel || 'new',
+    strategy,
+    startDate,
+    expectedFinishDate: addDays(startDate, recommendation.targetDays - 1),
+    adaptiveStatus: 'active',
+    itemStates: units.map((unit) => ({
+      memoryUnitId: unit.id,
+      phase: 'new',
+      dueAt: null,
+      lastGrade: null,
+      lastReviewedAt: null,
+      successfulRecallCount: 0,
+      crossDaySuccessCount: 0,
+      lapseCount: 0,
+      needsSameSessionRetry: false
+    })),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  state.adaptivePlans.push(plan);
+  const task = createAdaptiveDailyTask(plan, startDate);
+  const response = { ...toAdaptivePlan(plan), task: toAdaptiveDailyTask(task) };
+  state.adaptiveIdempotencyResponses[`${userId}:${idempotencyKey}`] = {
+    itemId: null,
+    response: cloneJson(response)
+  };
+  return response;
+}
+
+function getTodayStudyTask(userId, planId, date = todayDate()) {
+  const plan = state.adaptivePlans.find((item) => item.id === planId && item.userId === userId);
+  if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
+
+  const taskDate = String(date || todayDate()).slice(0, 10);
+  let task = state.adaptiveDailyTasks.find((item) => item.planId === plan.id && item.taskDate === taskDate);
+  if (!task) task = createAdaptiveDailyTask(plan, taskDate);
+  return toAdaptiveDailyTask(task);
+}
+
+function completeStudyTaskItem(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const itemId = String(payload.itemId || '').trim();
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+  const responseKey = `${userId}:${idempotencyKey}`;
+  const cached = state.adaptiveIdempotencyResponses[responseKey];
+
+  if (cached) {
+    if (cached.itemId !== itemId) throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    return cloneJson(cached.response);
+  }
+
+  const grade = String(payload.grade || '').trim();
+  if (!['again', 'good', 'easy'].includes(grade)) {
+    throw adaptivePlanError('REVIEW_GRADE_INVALID', 400);
+  }
+
+  const task = state.adaptiveDailyTasks.find((candidate) => (
+    candidate.userId === userId && candidate.items.some((item) => item.id === itemId)
+  ));
+  if (!task) throw adaptivePlanError('STUDY_TASK_ITEM_NOT_FOUND', 404);
+  const item = task.items.find((candidate) => candidate.id === itemId);
+  const plan = state.adaptivePlans.find((candidate) => candidate.id === task.planId && candidate.userId === userId);
+  if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
+  const stateItem = plan.itemStates.find((candidate) => candidate.memoryUnitId === item.memoryUnitId);
+  if (!stateItem) throw adaptivePlanError('STUDY_TASK_ITEM_NOT_FOUND', 404);
+
+  if (item.status === 'pending') {
+    const reviewedAt = payload.reviewedAt || `${task.taskDate}T00:00:00.000Z`;
+    const reviewState = item.taskType === 'new' && stateItem.phase === 'new'
+      ? { ...stateItem, phase: 'learning' }
+      : stateItem;
+    const nextState = applyReviewGrade(reviewState, { grade, reviewedAt });
+    Object.assign(stateItem, nextState);
+    item.status = 'completed';
+    item.result = grade;
+    item.completedAt = reviewedAt;
+
+    if (grade === 'again') appendWeakRetry(task, item.memoryUnitId);
+
+    task.status = task.items.some((candidate) => candidate.status === 'pending') ? 'pending' : 'completed';
+    task.updatedAt = new Date().toISOString();
+    plan.adaptiveStatus = isInitialComplete(plan.itemStates) ? 'initial_complete' : 'active';
+    plan.updatedAt = new Date().toISOString();
+  }
+
+  const response = {
+    plan: toAdaptivePlan(plan),
+    task: toAdaptiveDailyTask(task),
+    item: cloneJson(item),
+    state: cloneJson(stateItem)
+  };
+  state.adaptiveIdempotencyResponses[responseKey] = { itemId, response: cloneJson(response) };
+  return response;
+}
+
+function createAdaptiveDailyTask(plan, taskDate) {
+  const pendingUnitIds = new Set(
+    state.adaptiveDailyTasks
+      .filter((task) => task.planId === plan.id)
+      .flatMap((task) => task.items)
+      .filter((item) => item.status === 'pending')
+      .map((item) => item.memoryUnitId)
+  );
+  const allocation = allocateDailyUnits({
+    states: plan.itemStates.filter((stateItem) => !pendingUnitIds.has(stateItem.memoryUnitId)),
+    date: taskDate,
+    dailyMinutes: plan.dailyMinutes,
+    targetDays: plan.targetDays
+  });
+  const task = {
+    id: createId('study_task'),
+    planId: plan.id,
+    userId: plan.userId,
+    taskDate,
+    status: allocation.items.length ? 'pending' : 'completed',
+    estimatedMinutes: allocation.estimatedMinutes,
+    newUnitCount: allocation.newUnitCount,
+    reviewUnitCount: allocation.reviewUnitCount,
+    weakUnitCount: allocation.weakUnitCount,
+    sequenceRangeLabel: createSequenceRangeLabel(allocation.items),
+    items: allocation.items.map((stateItem, index) => ({
+      id: createId('study_task_item'),
+      taskId: '',
+      memoryUnitId: stateItem.memoryUnitId,
+      taskType: stateItem.taskType,
+      sortOrder: index + 1,
+      status: 'pending',
+      result: null,
+      completedAt: null
+    })),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  task.items.forEach((item) => { item.taskId = task.id; });
+  state.adaptiveDailyTasks.push(task);
+  return task;
+}
+
+function appendWeakRetry(task, memoryUnitId) {
+  const existing = task.items.find((item) => (
+    item.memoryUnitId === memoryUnitId && item.taskType === 'weak_review' && item.status === 'pending'
+  ));
+  if (existing) return existing;
+
+  const retry = {
+    id: createId('study_task_item'),
+    taskId: task.id,
+    memoryUnitId,
+    taskType: 'weak_review',
+    sortOrder: task.items.length + 1,
+    status: 'pending',
+    result: null,
+    completedAt: null
+  };
+  task.items.push(retry);
+  task.weakUnitCount += 1;
+  task.estimatedMinutes = Math.ceil(task.estimatedMinutes + 0.5);
+  return retry;
+}
+
+function createSequenceRangeLabel(items) {
+  if (!items.length) return '';
+  const unitIds = items.map((item) => String(item.memoryUnitId));
+  return unitIds.length === 1 ? unitIds[0] : `${unitIds[0]} - ${unitIds[unitIds.length - 1]}`;
+}
+
+function ensureAdaptiveUser(userId) {
+  if (state.users.some((user) => user.id === userId)) return;
+  state.users.push({ id: userId, nickname: '未命名用户', platform: 'wechat', status: 'active' });
+}
+
+function normalizeAdaptiveIdempotencyKey(value) {
+  const key = String(value || '').trim();
+  if (!key) throw adaptivePlanError('IDEMPOTENCY_KEY_REQUIRED', 400);
+  if (key.length > MAX_IDEMPOTENCY_KEY_LENGTH) throw adaptivePlanError('IDEMPOTENCY_KEY_INVALID', 400);
+  return key;
+}
+
+function normalizeAdaptiveStrategy(value, targetDays) {
+  const strategy = String(value || '').trim();
+  if (['accelerated', 'standard', 'steady'].includes(strategy)) return strategy;
+  if (targetDays <= 7) return 'accelerated';
+  if (targetDays <= 14) return 'standard';
+  return 'steady';
+}
+
+function toAdaptivePlan(plan) {
+  return cloneJson(plan);
+}
+
+function toAdaptiveDailyTask(task) {
+  return cloneJson(task);
+}
+
+function adaptivePlanError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
 function createPlan({ userId = 'demo-user', contentId, startDate = todayDate(), mode = 'scientific' }) {
   const content = contents.find((item) => item.id === contentId);
   if (!content) {
@@ -1935,6 +2180,7 @@ module.exports = {
   listAdminContents,
   listAdminFestivals,
   createNotificationJob,
+  createAdaptivePlan,
   createMemoryAssessment,
   dispatchNotificationJobs,
   createRecitationSession,
@@ -1949,8 +2195,10 @@ module.exports = {
   createAsset,
   createContent,
   completeTask,
+  completeStudyTaskItem,
   getContent,
   getContentStructure,
+  getTodayStudyTask,
   recommendMemoryPlan,
   listContentVersions,
   listAuditLogs,
