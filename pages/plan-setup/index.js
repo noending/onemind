@@ -4,6 +4,7 @@ const { normalizeTargetDays, recommendPlan } = require("../../common/adaptive-me
 
 const RECOMMENDATION_STORAGE_KEY = "oneMind.memoryAssessmentRecommendation";
 const DAILY_MINUTES = [10, 15, 20, 30];
+const FIXED_TARGET_DAYS = [7, 14, 28];
 
 function stableKey(prefix, parts) {
   return `${prefix}-${parts.map((part) => String(part || "none")).join("-")}`.slice(0, 180);
@@ -19,6 +20,11 @@ function readStoredContext() {
 
 function isAuthRequired(error) {
   return Boolean(error && (error.code === "AUTH_REQUIRED" || error.statusCode === 401));
+}
+
+function getRecommendedFixedTargetDays(recommendation = {}) {
+  const value = Number(recommendation.recommendedTargetDays ?? recommendation.targetDays);
+  return FIXED_TARGET_DAYS.includes(value) ? value : 14;
 }
 
 Page({
@@ -103,6 +109,15 @@ Page({
   setCustomDays(event) {
     if (this.data.isSubmitting) return;
     const customDays = String(event.detail.value || "").replace(/\D/g, "").slice(0, 3);
+    if (!customDays) {
+      const targetDays = getRecommendedFixedTargetDays(this.data.recommendation);
+      this.setData({
+        customDays: "",
+        targetDays,
+        workload: this.buildWorkload(this.data.assessmentContext, targetDays, this.data.dailyMinutes)
+      });
+      return;
+    }
     this.setData({ customDays });
   },
 

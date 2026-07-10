@@ -21,12 +21,12 @@ function mountPage(definition) {
   return page;
 }
 
-function planStorage(unitCount = 84) {
+function planStorage(unitCount = 84, recommendedTargetDays = 14) {
   return {
     recommendation: {
       unitCount,
       dailyMinutes: 15,
-      recommendedTargetDays: 14,
+      ...(recommendedTargetDays === undefined ? {} : { recommendedTargetDays }),
       familiarityLevel: 'partial'
     },
     assessmentContext: {
@@ -81,6 +81,55 @@ test('plan setup preserves temporary custom input and normalizes it on blur', ()
   page.normalizeCustomDays();
   assert.equal(page.data.customDays, '84');
   assert.equal(page.data.targetDays, 84);
+});
+
+test('clearing a custom schedule restores a valid recommended fixed period before creation', async () => {
+  const api = require('../../common/api');
+  const originalEnsureLogin = api.ensureLogin;
+  const originalCreatePlan = api.createMemoryPlanApi;
+  const cases = [
+    { recommendedTargetDays: 7, expectedTargetDays: 7 },
+    { recommendedTargetDays: undefined, expectedTargetDays: 14 }
+  ];
+
+  try {
+    api.ensureLogin = () => Promise.resolve({ loggedIn: true });
+    for (const item of cases) {
+      let payload;
+      api.createMemoryPlanApi = (nextPayload) => {
+        payload = nextPayload;
+        return Promise.resolve({ id: `plan-${item.expectedTargetDays}` });
+      };
+      global.wx = {
+        getStorageSync(key) {
+          return key === PLAN_STORAGE_KEY ? planStorage(84, item.recommendedTargetDays) : null;
+        },
+        redirectTo() {}
+      };
+      const page = mountPage(loadPage('../../pages/plan-setup/index.js'));
+      page.onLoad({
+        assessmentId: 'assessment-84',
+        contentId: 'great-compassion-opening',
+        versionId: 'great-compassion-v1'
+      });
+
+      page.setCustomDays({ detail: { value: '21' } });
+      page.normalizeCustomDays();
+      assert.equal(page.data.targetDays, 21);
+      page.setCustomDays({ detail: { value: '' } });
+      assert.equal(page.data.customDays, '');
+      assert.equal(page.data.targetDays, item.expectedTargetDays);
+      assert.equal(page.data.workload.newUnitsPerDay, Math.ceil(84 / item.expectedTargetDays));
+      assert.equal(page.data.targetDays, page.data.cards.find((card) => card.targetDays === item.expectedTargetDays).targetDays);
+
+      page.createPlan();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(payload.targetDays, item.expectedTargetDays);
+    }
+  } finally {
+    api.ensureLogin = originalEnsureLogin;
+    api.createMemoryPlanApi = originalCreatePlan;
+  }
 });
 
 test('assessment resumes the interrupted action after authorization returns', async () => {
