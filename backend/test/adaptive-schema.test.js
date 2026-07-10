@@ -1,6 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { ensureAdaptiveSchema } = require('../src/repositories/adaptiveSchema');
+
+function collectStatements() {
+  const statements = [];
+  ensureAdaptiveSchema((sql) => statements.push(sql));
+  return statements;
+}
+
+function normalizeSql(sql) {
+  return sql.replace(/\s+/g, ' ').trim().toLowerCase();
+}
 
 test('adaptive schema creates every required table and plan column', () => {
   const statements = [];
@@ -60,5 +72,48 @@ test('adaptive schema includes the controller-supplemented state, task, and idem
     'on daily_study_task_items(task_id, sort_order)'
   ]) {
     assert.match(joined, new RegExp(contract.replace(/[()]/g, '\\$&')));
+  }
+});
+
+test('adaptive runtime migrations are mirrored in the declarative schema', () => {
+  const schemaSql = normalizeSql(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
+
+  for (const statement of collectStatements()) {
+    assert.ok(
+      schemaSql.includes(normalizeSql(statement)),
+      `schema.sql is missing runtime migration: ${normalizeSql(statement)}`
+    );
+  }
+});
+
+test('postgres store imports and runs the adaptive schema during feature initialization', () => {
+  const postgresStore = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'postgresStore.js'),
+    'utf8'
+  );
+  const featureSchemaStart = postgresStore.indexOf('function ensureFeatureSchema()');
+  const featureSchemaEnd = postgresStore.indexOf('\n}\n\nfunction todayDate', featureSchemaStart);
+
+  assert.match(
+    postgresStore,
+    /const \{ ensureAdaptiveSchema \} = require\('\.\/adaptiveSchema'\);/
+  );
+  assert.ok(featureSchemaStart >= 0, 'ensureFeatureSchema must exist');
+  assert.ok(featureSchemaEnd > featureSchemaStart, 'ensureFeatureSchema must have a bounded body');
+  assert.match(
+    postgresStore.slice(featureSchemaStart, featureSchemaEnd),
+    /ensureAdaptiveSchema\(queryScalar\);/
+  );
+});
+
+test('adaptive migrations are repeatable idempotent DDL statements', () => {
+  const firstRun = collectStatements();
+  const secondRun = collectStatements();
+
+  assert.deepEqual(secondRun, firstRun);
+  for (const statement of firstRun) {
+    const normalized = normalizeSql(statement);
+    assert.match(normalized, /^(?:alter table|create table|create index)\b/);
+    assert.match(normalized, /\bif not exists\b/);
   }
 });
