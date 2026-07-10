@@ -1,6 +1,7 @@
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
+const { ensureAdaptiveSchema } = require('./adaptiveSchema');
 
 const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空复现', '整段复诵', '抽查巩固'];
 const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
@@ -285,6 +286,7 @@ function ensureFeatureSchema() {
       created_at timestamptz not null default now()
     )
   `);
+  ensureAdaptiveSchema(queryScalar);
 }
 
 function todayDate() {
