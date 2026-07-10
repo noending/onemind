@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { recommendPlan } = require('../../../common/adaptive-memory');
 
 const {
   contents,
@@ -32,6 +33,8 @@ const state = {
   contentVersions: [],
   notificationSettings: [],
   notificationJobs: [],
+  memoryAssessments: [],
+  assessmentCompletionResponses: {},
   organizations: [...organizations],
   organizationMembers: [...organizationMembers],
   assets: [...assets],
@@ -481,6 +484,172 @@ function getContentStructure(contentId, versionId) {
     versionNote: publishedVersion.versionNote || '',
     sections
   };
+}
+
+function createMemoryAssessment(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const contentId = String(payload.contentId || '').trim();
+  const contentVersionId = String(payload.contentVersionId || '').trim();
+  const scopeType = String(payload.scopeType || 'full').trim() || 'full';
+  const scopeId = payload.scopeId ? String(payload.scopeId).trim() : null;
+  const idempotencyKey = String(payload.idempotencyKey || '').trim() || createId('direct-assessment');
+
+  if (!userId) throw assessmentError('ASSESSMENT_USER_REQUIRED', 400);
+  if (!contentId) throw assessmentError('ASSESSMENT_CONTENT_REQUIRED', 400);
+  if (!contentVersionId) throw assessmentError('ASSESSMENT_CONTENT_VERSION_REQUIRED', 400);
+
+  const existing = state.memoryAssessments.find((assessment) => (
+    assessment.userId === userId && assessment.startIdempotencyKey === idempotencyKey
+  ));
+  if (existing) return toMemoryAssessment(existing);
+
+  const structure = getContentStructure(contentId, contentVersionId);
+  const units = getAssessmentScopeUnits(structure, scopeType, scopeId);
+  const assessment = {
+    id: createId('memory_assessment'),
+    userId,
+    contentId,
+    contentVersionId,
+    scopeType,
+    scopeId,
+    items: sampleAssessmentItems(units),
+    answers: null,
+    familiarityLevel: null,
+    status: 'started',
+    startIdempotencyKey: idempotencyKey,
+    completionIdempotencyKey: null,
+    unitCount: units.length,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+    completionResponse: null
+  };
+  state.memoryAssessments.push(assessment);
+  return toMemoryAssessment(assessment);
+}
+
+function recommendMemoryPlan(payload = {}) {
+  const answers = Array.isArray(payload.answers) ? payload.answers.map((answer) => ({ ...answer })) : [];
+  const averageScore = calculateAssessmentAverage(answers);
+  const familiarityLevel = averageScore < 0.75 ? 'new' : averageScore < 1.5 ? 'partial' : 'familiar';
+  const recommendation = {
+    familiarityLevel,
+    averageScore,
+    ...recommendPlan({
+      unitCount: payload.unitCount,
+      familiarityLevel,
+      dailyMinutes: payload.dailyMinutes,
+      targetDays: payload.targetDays
+    })
+  };
+
+  const assessmentId = String(payload.assessmentId || '').trim();
+  const userId = String(payload.userId || '').trim();
+  const idempotencyKey = String(payload.idempotencyKey || '').trim();
+  if (!assessmentId || !userId || !idempotencyKey) return recommendation;
+
+  const responseKey = `${userId}:${idempotencyKey}`;
+  if (state.assessmentCompletionResponses[responseKey]) {
+    return cloneJson(state.assessmentCompletionResponses[responseKey]);
+  }
+
+  const assessment = state.memoryAssessments.find((item) => item.id === assessmentId && item.userId === userId);
+  if (!assessment) throw assessmentError('ASSESSMENT_NOT_FOUND', 404);
+  if (assessment.completionResponse) return cloneJson(assessment.completionResponse);
+
+  const completedRecommendation = {
+    ...recommendation,
+    ...recommendPlan({
+      unitCount: assessment.unitCount,
+      familiarityLevel,
+      dailyMinutes: payload.dailyMinutes,
+      targetDays: payload.targetDays
+    })
+  };
+  assessment.answers = answers;
+  assessment.familiarityLevel = familiarityLevel;
+  assessment.status = 'completed';
+  assessment.completionIdempotencyKey = idempotencyKey;
+  assessment.completedAt = new Date().toISOString();
+  const response = {
+    ...completedRecommendation,
+    assessment: toMemoryAssessment(assessment)
+  };
+  assessment.completionResponse = cloneJson(response);
+  state.assessmentCompletionResponses[responseKey] = cloneJson(response);
+  return response;
+}
+
+function getAssessmentScopeUnits(structure, scopeType, scopeId) {
+  if (scopeType === 'full') return structure.sections.flatMap((section) => section.units || []);
+  if (scopeType === 'section') {
+    const section = structure.sections.find((item) => item.id === scopeId);
+    if (section) return section.units || [];
+  }
+  throw assessmentError('ASSESSMENT_SCOPE_NOT_FOUND', 404);
+}
+
+function sampleAssessmentItems(units) {
+  const count = units.length;
+  const indexes = count <= 8
+    ? Array.from({ length: count }, (_, index) => index)
+    : Array.from({ length: 8 }, (_, index) => Math.round(index * (count - 1) / 7));
+
+  return indexes.map((unitIndex) => {
+    const unit = units[unitIndex];
+    return {
+      memoryUnitId: unit.id,
+      firstCharacterCue: unit.firstCharacterCue || Array.from(String(unit.text || ''))[0] || '',
+      sortOrder: Number(unit.sortOrder),
+      positionBand: assessmentPositionBand(unitIndex, count)
+    };
+  });
+}
+
+function assessmentPositionBand(index, count) {
+  if (count <= 1 || index === 0) return 'start';
+  if (index === count - 1) return 'end';
+  const ratio = index / (count - 1);
+  if (ratio < 1 / 3) return 'start';
+  if (ratio < 2 / 3) return 'middle';
+  return 'end';
+}
+
+function calculateAssessmentAverage(answers) {
+  if (!answers.length) return 0;
+  const scores = { cannot: 0, partial: 1, complete: 2 };
+  const total = answers.reduce((sum, answer) => {
+    const base = scores[answer.result] ?? 0;
+    return sum + Math.max(0, base - (answer.revealed ? 1 : 0));
+  }, 0);
+  return total / answers.length;
+}
+
+function toMemoryAssessment(assessment) {
+  return cloneJson({
+    id: assessment.id,
+    userId: assessment.userId,
+    contentId: assessment.contentId,
+    contentVersionId: assessment.contentVersionId,
+    scopeType: assessment.scopeType,
+    scopeId: assessment.scopeId,
+    items: assessment.items,
+    answers: assessment.answers,
+    familiarityLevel: assessment.familiarityLevel,
+    status: assessment.status,
+    createdAt: assessment.createdAt,
+    completedAt: assessment.completedAt
+  });
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function assessmentError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
 }
 
 function normalizeFestivalContentIds(value) {
@@ -1716,6 +1885,7 @@ module.exports = {
   listAdminContents,
   listAdminFestivals,
   createNotificationJob,
+  createMemoryAssessment,
   dispatchNotificationJobs,
   createRecitationSession,
   getUserById,
@@ -1731,6 +1901,7 @@ module.exports = {
   completeTask,
   getContent,
   getContentStructure,
+  recommendMemoryPlan,
   listContentVersions,
   listAuditLogs,
   listContents,

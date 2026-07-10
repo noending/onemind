@@ -321,6 +321,28 @@ create table if not exists idempotency_records (
   unique (user_id, idempotency_key)
 );
 
+create table if not exists memory_assessments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id),
+  content_id uuid not null references contents(id),
+  content_version_id uuid not null references content_versions(id),
+  scope_type varchar(24) not null default 'full',
+  scope_id varchar(180),
+  sampled_items jsonb not null default '[]'::jsonb,
+  answers jsonb,
+  familiarity_level varchar(24),
+  status varchar(24) not null default 'started',
+  start_idempotency_key varchar(180) not null,
+  completion_idempotency_key varchar(180),
+  created_at timestamptz not null default now(),
+  completed_at timestamptz,
+  unique (user_id, start_idempotency_key)
+);
+
+create unique index if not exists memory_assessments_completion_key_uidx
+  on memory_assessments(user_id, completion_idempotency_key)
+  where completion_idempotency_key is not null;
+
 create index if not exists idx_memory_item_states_plan_due on memory_item_states(plan_id, due_at);
 create index if not exists idx_daily_study_tasks_plan_date on daily_study_tasks(plan_id, task_date);
 create index if not exists idx_daily_study_task_items_task_sort on daily_study_task_items(task_id, sort_order);

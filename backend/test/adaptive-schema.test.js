@@ -25,7 +25,8 @@ test('adaptive schema creates every required table and plan column', () => {
     'memory_item_states',
     'daily_study_tasks',
     'daily_study_task_items',
-    'idempotency_records'
+    'idempotency_records',
+    'memory_assessments'
   ]) {
     assert.match(joined, new RegExp(`create table if not exists ${table}`));
   }
@@ -69,7 +70,10 @@ test('adaptive schema includes the controller-supplemented state, task, and idem
     'unique (user_id, idempotency_key)',
     'on memory_item_states(plan_id, due_at)',
     'on daily_study_tasks(plan_id, task_date)',
-    'on daily_study_task_items(task_id, sort_order)'
+    'on daily_study_task_items(task_id, sort_order)',
+    'unique (user_id, start_idempotency_key)',
+    'on memory_assessments(user_id, completion_idempotency_key)',
+    'where completion_idempotency_key is not null'
   ]) {
     assert.match(joined, new RegExp(contract.replace(/[()]/g, '\\$&')));
   }
@@ -113,7 +117,7 @@ test('adaptive migrations are repeatable idempotent DDL statements', () => {
   assert.deepEqual(secondRun, firstRun);
   for (const statement of firstRun) {
     const normalized = normalizeSql(statement);
-    assert.match(normalized, /^(?:alter table|create table|create index)\b/);
+    assert.match(normalized, /^(?:alter table|create table|create(?: unique)? index)\b/);
     assert.match(normalized, /\bif not exists\b/);
   }
 });
