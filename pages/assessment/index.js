@@ -89,6 +89,28 @@ Page({
     this.stopTimer();
   },
 
+  onShow() {
+    if (!this.data.authRequired || this.authRecoveryInFlight) return Promise.resolve();
+    this.authRecoveryInFlight = true;
+    return ensureLogin({ message: "请先在我的页面完成微信授权" })
+      .then(() => {
+        if (!this.data.authRequired) return;
+        const { errorStage, pendingTimedOut } = this.data;
+        this.setData({ error: "", authRequired: false });
+        if (errorStage === "start") this.startAssessment();
+        if (errorStage === "submit") this.finishAssessment(pendingTimedOut);
+      })
+      .catch((error) => {
+        this.setData({
+          error: error.message || "微信授权尚未完成",
+          authRequired: isAuthRequired(error)
+        });
+      })
+      .finally(() => {
+        this.authRecoveryInFlight = false;
+      });
+  },
+
   loadStructure() {
     const { contentId, versionId } = this.data;
     this.stopTimer();

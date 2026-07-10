@@ -29,6 +29,7 @@ test('assessment page uses approved structure, stable keys, answers, and a compa
   assert.match(source, /latencyMs/);
   assert.match(source, /idempotencyKey/);
   assert.match(source, /ensureLogin/);
+  assert.match(source, /onShow/);
   assert.match(source, /attemptId/);
   assert.match(source, /pendingTimedOut/);
   assert.match(source, /unitCount/);
@@ -53,7 +54,8 @@ test('plan setup reads recommendation context, renders workload controls, and cr
   assert.match(source, /isSubmitting/);
   assert.match(source, /fatalContextError/);
   assert.match(source, /submitError/);
-  assert.match(source, /assessmentContext\.unitCount/);
+  assert.match(source, /context\.unitCount/);
+  assert.match(source, /buildWorkload\(context, targetDays, dailyMinutes\)/);
   assert.match(source, /redirectTo\(\{[\s\S]*pages\/assessment\/index/);
   assert.match(source, /planId=/);
   assert.match(markup, /day-segmented/);

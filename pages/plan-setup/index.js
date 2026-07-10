@@ -56,24 +56,28 @@ Page({
       return;
     }
     const recommendation = { ...stored.recommendation, unitCount };
+    const workloadContext = {
+      ...context,
+      familiarityLevel: recommendation.familiarityLevel
+    };
     const dailyMinutes = Number(recommendation.dailyMinutes || 15);
     const targetDays = normalizeTargetDays(recommendation.recommendedTargetDays || recommendation.targetDays || 14);
     this.setData({
       loading: false,
       recommendation,
-      assessmentContext: context,
+      assessmentContext: workloadContext,
       cards: buildRecommendationCards({ ...recommendation, dailyMinutes }),
       dailyMinutes,
       targetDays,
-      workload: this.buildWorkload(recommendation, targetDays, dailyMinutes)
+      workload: this.buildWorkload(workloadContext, targetDays, dailyMinutes)
     });
   },
 
-  buildWorkload(recommendation, targetDays, dailyMinutes) {
-    const unitCount = Number(this.data.assessmentContext && this.data.assessmentContext.unitCount);
+  buildWorkload(context, targetDays, dailyMinutes) {
+    const unitCount = Number(context && context.unitCount);
     const plan = recommendPlan({
       unitCount,
-      familiarityLevel: recommendation.familiarityLevel,
+      familiarityLevel: context && context.familiarityLevel,
       targetDays,
       dailyMinutes
     });
@@ -92,25 +96,26 @@ Page({
     this.setData({
       targetDays,
       customDays: "",
-      workload: this.buildWorkload(this.data.recommendation, targetDays, this.data.dailyMinutes)
+      workload: this.buildWorkload(this.data.assessmentContext, targetDays, this.data.dailyMinutes)
     });
   },
 
   setCustomDays(event) {
     if (this.data.isSubmitting) return;
-    const normalized = normalizeCustomTargetDays(event.detail.value);
-    const customDays = normalized ? normalized.displayValue : "";
-    const targetDays = normalized ? normalized.targetDays : this.data.targetDays;
-    this.setData({
-      customDays,
-      targetDays,
-      workload: this.buildWorkload(this.data.recommendation, targetDays, this.data.dailyMinutes)
-    });
+    const customDays = String(event.detail.value || "").replace(/\D/g, "").slice(0, 3);
+    this.setData({ customDays });
   },
 
   normalizeCustomDays() {
-    if (this.data.isSubmitting || !this.data.customDays) return;
-    this.setCustomDays({ detail: { value: this.data.customDays } });
+    if (this.data.isSubmitting || !this.data.customDays) return null;
+    const normalized = normalizeCustomTargetDays(this.data.customDays);
+    if (!normalized) return null;
+    this.setData({
+      customDays: normalized.displayValue,
+      targetDays: normalized.targetDays,
+      workload: this.buildWorkload(this.data.assessmentContext, normalized.targetDays, this.data.dailyMinutes)
+    });
+    return normalized.targetDays;
   },
 
   chooseDailyMinutes(event) {
@@ -119,13 +124,14 @@ Page({
     this.setData({
       dailyMinutes,
       cards: buildRecommendationCards({ ...this.data.recommendation, dailyMinutes }),
-      workload: this.buildWorkload(this.data.recommendation, this.data.targetDays, dailyMinutes)
+      workload: this.buildWorkload(this.data.assessmentContext, this.data.targetDays, dailyMinutes)
     });
   },
 
   createPlan() {
-    const { assessmentContext, recommendation, targetDays, dailyMinutes } = this.data;
+    const { assessmentContext, recommendation, dailyMinutes } = this.data;
     if (this.data.isSubmitting || !assessmentContext || !recommendation || this.data.fatalContextError) return;
+    const targetDays = this.normalizeCustomDays() || this.data.targetDays;
     const idempotencyKey = stableKey("adaptive-plan", [assessmentContext.assessmentId, targetDays, dailyMinutes]);
     this.setData({ isSubmitting: true, submitError: "", authRequired: false });
     ensureLogin({ message: "请先在我的页面完成微信授权，再创建计划" })

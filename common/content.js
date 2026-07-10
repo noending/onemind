@@ -292,8 +292,13 @@ const progressItems = {
   mastered: []
 };
 
+const CONTENT_ID_ALIASES = {
+  "great-compassion-opening": "great-compassion-snippet"
+};
+
 function findContent(id) {
-  return contents.find((item) => item.id === id);
+  const canonicalId = CONTENT_ID_ALIASES[id] || id;
+  return contents.find((item) => item.id === canonicalId);
 }
 
 function recommendNext(currentId) {

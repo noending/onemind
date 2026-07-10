@@ -9,10 +9,11 @@
 
 ## 验证
 
-- `node --test test/long-flow-pages.test.js`：5/5 通过。
-- `npm test`：85 项，68 通过、17 跳过、0 失败。
-- `node --check`：assessment、plan-setup、library、practice 与 common/plan-setup 均通过。
-- `git diff --check`：通过。
+- 初始交付聚焦静态契约：`node --test test/long-flow-pages.test.js` 为 5/5 通过。
+- 首次审查修复后聚焦验证：16/16 通过。
+- 本次再修复后聚焦验证：20/20 通过。
+- 本次再修复后 `npm test`：93 项，76 通过、17 跳过、0 失败。
+- 本次再修复后 `node --check`：common/content、assessment、plan-setup、library 与 practice 均通过；`git diff --check` 通过。
 
 ## 顾虑
 
