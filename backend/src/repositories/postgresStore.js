@@ -1880,10 +1880,14 @@ function completeStudyTaskItem(payload = {}) {
 
   if (item.status === 'pending') {
     const reviewedAt = payload.reviewedAt || `${task.taskDate}T00:00:00.000Z`;
+    const metrics = normalizeAdaptiveMetrics(payload);
     const reviewState = item.taskType === 'new' && state.phase === 'new'
       ? { ...state, phase: 'learning' }
       : state;
-    const nextState = applyReviewGrade(reviewState, { grade, reviewedAt });
+    const nextState = {
+      ...applyReviewGrade(reviewState, { grade, reviewedAt, ...metrics }),
+      ...metrics
+    };
     mutateAdaptiveCompletion({
       item,
       plan,
@@ -1935,7 +1939,13 @@ function mutateAdaptiveCompletion(context) {
       update daily_study_task_items source_item
       set
         status = 'completed',
-        result = ${sqlJson({ grade, completedAt: reviewedAt })}::jsonb,
+        result = ${sqlJson({
+          grade,
+          completedAt: reviewedAt,
+          latencyMs: state.lastLatencyMs,
+          mistakeCount: state.mistakeCount,
+          hintCount: state.hintCount
+        })}::jsonb,
         updated_at = ${sqlValue(now)}::timestamptz
       where source_item.id = ${sqlValue(item.id)}
         and source_item.status = 'pending'
@@ -1948,6 +1958,9 @@ function mutateAdaptiveCompletion(context) {
         last_grade = ${sqlValue(state.lastGrade)},
         last_reviewed_at = ${sqlValue(state.lastReviewedAt)}::timestamptz,
         due_at = ${sqlValue(state.dueAt)}::date,
+        last_latency_ms = ${Number(state.lastLatencyMs)},
+        mistake_count = ${Number(state.mistakeCount)},
+        hint_count = ${Number(state.hintCount)},
         successful_recall_count = ${Number(state.successfulRecallCount)},
         cross_day_success_count = ${Number(state.crossDaySuccessCount)},
         lapse_count = ${Number(state.lapseCount)},
@@ -2150,6 +2163,9 @@ function getAdaptivePlanById(planId, userId) {
       mis.due_at as "dueAt",
       mis.last_grade as "lastGrade",
       mis.last_reviewed_at as "lastReviewedAt",
+      mis.last_latency_ms as "lastLatencyMs",
+      mis.mistake_count as "mistakeCount",
+      mis.hint_count as "hintCount",
       mis.successful_recall_count as "successfulRecallCount",
       mis.cross_day_success_count as "crossDaySuccessCount",
       mis.lapse_count as "lapseCount",
@@ -2206,18 +2222,22 @@ function getAdaptiveDailyTask(planId, taskDate) {
   if (!row) return null;
   const items = queryRows(`
     select
-      id::text as "id",
-      task_id::text as "taskId",
-      memory_unit_id::text as "memoryUnitId",
-      task_type as "taskType",
-      sort_order as "sortOrder",
-      status,
-      result,
-      created_at as "createdAt",
-      updated_at as "updatedAt"
-    from daily_study_task_items
-    where task_id = ${sqlValue(row.id)}
-    order by sort_order asc
+      item.id::text as "id",
+      item.task_id::text as "taskId",
+      item.memory_unit_id::text as "memoryUnitId",
+      item.task_type as "taskType",
+      item.sort_order as "sortOrder",
+      item.status,
+      item.result,
+      unit.id::text as "unitId",
+      unit.text as "unitText",
+      unit.first_character_cue as "unitFirstCharacterCue",
+      item.created_at as "createdAt",
+      item.updated_at as "updatedAt"
+    from daily_study_task_items item
+    join memory_units unit on unit.id = item.memory_unit_id
+    where item.task_id = ${sqlValue(row.id)}
+    order by item.sort_order asc
   `).map(toAdaptiveTaskItem);
   return {
     id: row.id,
@@ -2313,6 +2333,9 @@ function toAdaptiveItemState(row) {
     dueAt: row.dueAt ? String(row.dueAt).slice(0, 10) : null,
     lastGrade: row.lastGrade || null,
     lastReviewedAt: row.lastReviewedAt ? new Date(row.lastReviewedAt).toISOString() : null,
+    lastLatencyMs: Number(row.lastLatencyMs || 0),
+    mistakeCount: Number(row.mistakeCount || 0),
+    hintCount: Number(row.hintCount || 0),
     successfulRecallCount: Number(row.successfulRecallCount),
     crossDaySuccessCount: Number(row.crossDaySuccessCount),
     lapseCount: Number(row.lapseCount),
@@ -2330,7 +2353,25 @@ function toAdaptiveTaskItem(row) {
     sortOrder: Number(row.sortOrder),
     status: row.status,
     result: result?.grade || row.result || null,
-    completedAt: result?.completedAt || null
+    completedAt: result?.completedAt || null,
+    unit: {
+      id: row.unitId,
+      text: row.unitText,
+      firstCharacterCue: row.unitFirstCharacterCue || Array.from(String(row.unitText || ''))[0] || ''
+    }
+  };
+}
+
+function normalizeAdaptiveMetric(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+}
+
+function normalizeAdaptiveMetrics(payload = {}) {
+  return {
+    lastLatencyMs: normalizeAdaptiveMetric(payload.latencyMs),
+    mistakeCount: normalizeAdaptiveMetric(payload.mistakeCount),
+    hintCount: normalizeAdaptiveMetric(payload.hintCount)
   };
 }
 

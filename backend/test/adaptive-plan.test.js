@@ -7,6 +7,7 @@ const { execFileSync, spawn } = require('node:child_process');
 
 const store = require('../src/repositories/memoryStore');
 const { contents } = require('../src/data/seed');
+const { createPracticeSession } = require('../../common/practice-session');
 
 const POSTGRES_CONTENT_ID = '33333333-3333-4333-8333-000000000005';
 
@@ -542,8 +543,20 @@ test('postgres generates later daily tasks lazily and enforces plan ownership', 
   const postgresStore = getGatedPostgresStore();
   const plan = createPostgresAdaptivePlan(postgresStore);
   const later = postgresStore.getTodayStudyTask(plan.userId, plan.id, '2026-07-11');
+  const session = createPracticeSession(later, { startAt: 1000 });
+  const expectedUnit = postgresStore
+    .getContentStructure('great-compassion-opening', 'great-compassion-v1')
+    .sections
+    .flatMap((section) => section.units)
+    .find((unit) => unit.id === later.items[0].memoryUnitId);
 
   assert.equal(later.taskDate, '2026-07-11');
+  assert.deepEqual(later.items[0].unit, {
+    id: expectedUnit.id,
+    text: expectedUnit.text,
+    firstCharacterCue: expectedUnit.firstCharacterCue
+  });
+  assert.equal(session.activeUnit.text, later.items[0].unit.text);
   assert.equal(
     later.items.some((item) => plan.task.items.some((first) => first.memoryUnitId === item.memoryUnitId)),
     false
@@ -566,7 +579,10 @@ test('postgres item completion is idempotent and binds keys to one item', {
     userId: plan.userId,
     grade: 'good',
     idempotencyKey,
-    reviewedAt: '2026-07-10T08:00:00.000Z'
+    reviewedAt: '2026-07-10T08:00:00.000Z',
+    latencyMs: -100,
+    mistakeCount: 2.8,
+    hintCount: 'invalid'
   });
   const repeated = postgresStore.completeStudyTaskItem({
     itemId: firstItem.id,
@@ -578,6 +594,9 @@ test('postgres item completion is idempotent and binds keys to one item', {
 
   assert.deepEqual(repeated, first);
   assert.equal(first.state.successfulRecallCount, 1);
+  assert.equal(first.state.lastLatencyMs, 0);
+  assert.equal(first.state.mistakeCount, 2);
+  assert.equal(first.state.hintCount, 0);
   assert.throws(() => postgresStore.completeStudyTaskItem({
     itemId: secondItem.id,
     userId: plan.userId,
@@ -615,8 +634,10 @@ test('postgres again leaves exactly one pending weak retry and duplicate complet
     && item.taskType === 'weak_review'
     && item.status === 'pending'
   ));
+  const completedSource = first.task.items.find((item) => item.id === sourceItem.id);
 
   assert.equal(pendingRetries.length, 1);
+  assert.deepEqual(pendingRetries[0].unit, completedSource.unit);
   assert.equal(first.task.status, 'pending');
   assert.equal(first.plan.adaptiveStatus, 'active');
   assert.equal(duplicate.state.lapseCount, 1);

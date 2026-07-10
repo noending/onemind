@@ -1127,6 +1127,9 @@ function createAdaptivePlan(payload = {}) {
       dueAt: null,
       lastGrade: null,
       lastReviewedAt: null,
+      lastLatencyMs: 0,
+      mistakeCount: 0,
+      hintCount: 0,
       successfulRecallCount: 0,
       crossDaySuccessCount: 0,
       lapseCount: 0,
@@ -1192,13 +1195,17 @@ function completeStudyTaskItem(payload = {}) {
 
   if (item.status === 'pending') {
     const reviewedAt = payload.reviewedAt || `${task.taskDate}T00:00:00.000Z`;
+    const metrics = normalizeAdaptiveMetrics(payload);
     const reviewState = item.taskType === 'new' && stateItem.phase === 'new'
       ? { ...stateItem, phase: 'learning' }
       : stateItem;
-    const nextState = applyReviewGrade(reviewState, { grade, reviewedAt });
+    const nextState = {
+      ...applyReviewGrade(reviewState, { grade, reviewedAt, ...metrics }),
+      ...metrics
+    };
     Object.assign(stateItem, nextState);
     item.status = 'completed';
-    item.result = grade;
+    item.result = { grade, reviewedAt, ...metrics };
     item.completedAt = reviewedAt;
 
     if (grade === 'again') appendWeakRetry(task, item.memoryUnitId);
@@ -1319,7 +1326,39 @@ function toAdaptivePlan(plan) {
 }
 
 function toAdaptiveDailyTask(task) {
-  return cloneJson(task);
+  const plan = state.adaptivePlans.find((candidate) => candidate.id === task.planId);
+  const unitsById = new Map();
+  if (plan) {
+    const structure = getContentStructure(plan.contentId, plan.contentVersionId);
+    getAssessmentScopeUnits(structure, plan.scopeType, plan.scopeId).forEach((unit) => {
+      unitsById.set(unit.id, {
+        id: unit.id,
+        text: unit.text,
+        firstCharacterCue: unit.firstCharacterCue || Array.from(String(unit.text || ''))[0] || ''
+      });
+    });
+  }
+
+  return cloneJson({
+    ...task,
+    items: task.items.map((item) => ({
+      ...item,
+      unit: unitsById.get(item.memoryUnitId) || null
+    }))
+  });
+}
+
+function normalizeAdaptiveMetric(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+}
+
+function normalizeAdaptiveMetrics(payload = {}) {
+  return {
+    lastLatencyMs: normalizeAdaptiveMetric(payload.latencyMs),
+    mistakeCount: normalizeAdaptiveMetric(payload.mistakeCount),
+    hintCount: normalizeAdaptiveMetric(payload.hintCount)
+  };
 }
 
 function adaptivePlanError(code, statusCode) {

@@ -9,14 +9,16 @@ function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
 }
 
-test('adaptive practice fetches the signed-in daily task and retains the legacy path', () => {
+test('adaptive practice detects an adaptive plan before requesting the signed-in daily task', () => {
   const source = read('pages/practice/index.js');
 
   assert.match(source, /ensureLogin/);
   assert.match(source, /getTodayStudyTaskApi/);
   assert.match(source, /completeStudyTaskItemApi/);
   assert.match(source, /status\s*===\s*["']pending["']/);
-  assert.match(source, /statusCode\s*===\s*404/);
+  assert.match(source, /isBackendEnabled/);
+  assert.match(source, /isAdaptivePlan\(localPlan\)/);
+  assert.match(source, /syncPlansFromBackend/);
   assert.match(source, /setupLegacyPractice/);
 });
 
@@ -35,6 +37,8 @@ test('adaptive practice has the approved session controls and grades only', () =
   assert.match(markup, /需加强/);
   assert.match(markup, /基本记得/);
   assert.match(markup, /流畅复现/);
+  assert.match(markup, /adaptiveSession\.step === 'first_character' \|\| adaptiveSession\.step === 'free_recall'/);
+  assert.match(source, /!\["first_character", "free_recall"\]\.includes\(session\.step\)/);
   const adaptiveMarkup = markup.slice(
     markup.indexOf('<block wx:if="{{adaptiveMode}}">'),
     markup.indexOf('<block wx:else>')

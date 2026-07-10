@@ -89,7 +89,7 @@
         </view>
       </block>
       <block wx:else>
-        <button wx:if="{{!adaptiveSession.activeMetrics.usedReveal && adaptiveSession.step !== 'study'}}" class="step-btn ghost" disabled="{{adaptiveSubmitting}}" bindtap="revealAdaptiveAnswer">显示答案</button>
+        <button wx:if="{{!adaptiveSession.activeMetrics.usedReveal && (adaptiveSession.step === 'first_character' || adaptiveSession.step === 'free_recall')}}" class="step-btn ghost" disabled="{{adaptiveSubmitting}}" bindtap="revealAdaptiveAnswer">显示答案</button>
         <button wx:if="{{adaptiveSession.step === 'check'}}" class="step-btn ghost" disabled="{{adaptiveSubmitting}}" bindtap="markAdaptiveMistake">标记一处错误</button>
         <button class="step-btn primary" disabled="{{adaptiveSubmitting}}" bindtap="advanceAdaptiveStep">{{adaptiveSession.step === 'study' ? '完成学习' : (adaptiveSession.step === 'first_character' ? '进入自由回忆' : (adaptiveSession.step === 'free_recall' ? '开始核对' : '给本次评分'))}}</button>
       </block>

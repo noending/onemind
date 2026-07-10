@@ -551,6 +551,9 @@ async function handleRequest(req, res, body) {
         userId: userSession.id,
         grade: payload.grade,
         reviewedAt: payload.reviewedAt || new Date().toISOString(),
+        latencyMs: payload.latencyMs,
+        mistakeCount: payload.mistakeCount,
+        hintCount: payload.hintCount,
         idempotencyKey
       })
     });

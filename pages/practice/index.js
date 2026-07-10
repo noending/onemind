@@ -4,7 +4,8 @@ const {
   ensureLogin,
   getCachedContents,
   getLocalContents,
-  getTodayStudyTaskApi
+  getTodayStudyTaskApi,
+  isBackendEnabled
 } = require("../../common/api");
 const { createPracticeSession, advancePracticeStep } = require("../../common/practice-session");
 const {
@@ -39,8 +40,8 @@ function todayDate() {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-function isLegacyDailyTaskError(error) {
-  return Boolean(error && (error.statusCode === 404 || error.code === "STUDY_TASK_NOT_FOUND"));
+function isAdaptivePlan(plan) {
+  return Boolean(plan && plan.contentVersionId && plan.adaptiveStatus);
 }
 
 function pendingTask(task) {
@@ -346,57 +347,66 @@ Page({
   },
 
   loadPractice(options) {
-    syncPlansFromBackend().finally(() => {
+    const planId = String(options.planId || "");
+    const localPlan = planId ? getPlan(planId) : null;
+    if (localPlan || !planId || !isBackendEnabled()) {
       this.setupLegacyPractice(options);
-      if (options.planId) this.loadAdaptivePractice(options.planId);
+      if (isAdaptivePlan(localPlan)) this.loadAdaptivePractice(planId);
+      return;
+    }
+
+    syncPlansFromBackend().finally(() => {
+      const syncedPlan = getPlan(planId);
+      this.setupLegacyPractice(options);
+      if (isAdaptivePlan(syncedPlan)) this.loadAdaptivePractice(planId);
     });
   },
 
   setupLegacyPractice(options = {}) {
-      const plan = options.planId ? getPlan(options.planId) : null;
-      const content = resolvePracticeContent(options.id, plan);
-      const task = firstOpenTask(plan);
-      const rawMethod = task ? task.method : this.data.method;
-      const stepIndex = this.findStepIndex(rawMethod);
-      const method = TRAINING_STEPS[stepIndex].method;
-      const mode = plan ? (plan.mode || "scientific") : "scientific";
-      const showFullTextStrip = content.lengthTier === "short" || content.lengthLevel === "short";
-      const shortFullTextStrip = showFullTextStrip && shouldUseShortFullText(content);
-      const practiceView = buildPracticeView(content, method, []);
-      const headerTop = getStatusBarHeight() + 16;
-      const copy = buildModeCopy(mode, plan, task);
-      const riskTitle = mode === "scientific" && plan && plan.state === "at_risk" ? "遗忘风险偏高" : "";
-      const riskBody = riskTitle
-        ? (plan.lastPracticeMetrics && Number(plan.lastPracticeMetrics.mistakeCount || 0) > 0
-          ? `上一轮记录了 ${plan.lastPracticeMetrics.mistakeCount} 处卡顿，建议先完整回看，再逐句揭开核对。`
-          : "建议先放慢节奏完成一轮稳固训练，再判断是否继续推进。")
-        : "";
-      this.setData({
-        content,
-        method,
-        mode,
-        scene: content.scene || "",
-        currentDay: task ? task.dayIndex + 1 : 1,
-        totalDays: plan ? plan.totalDays : content.planDays,
-        planId: plan ? plan.id : "",
-        planState: plan ? plan.state || "reviewing" : "reviewing",
-        headerTop,
-        growthStage: growthStageFromScore(plan ? plan.masteryScore : 0),
-        progressPct: practiceView.progressPct,
-        displaySegments: practiceView.displaySegments,
-        segmentProgressCount: practiceView.segmentProgressCount,
-        allSegmentsReady: practiceView.allSegmentsReady,
-        primaryStepText: practiceView.primaryStepText,
-        fullTextUnits: showFullTextStrip ? makeFullTextUnits(content) : [],
-        showFullTextStrip,
-        shortFullTextStrip,
-        stepIndex,
-        stepTotal: TRAINING_STEPS.length,
-        stepTitle: TRAINING_STEPS[stepIndex].title,
-        riskTitle,
-        riskBody,
-        ...copy
-      });
+    const plan = options.planId ? getPlan(options.planId) : null;
+    const content = resolvePracticeContent(options.id, plan);
+    const task = firstOpenTask(plan);
+    const rawMethod = task ? task.method : this.data.method;
+    const stepIndex = this.findStepIndex(rawMethod);
+    const method = TRAINING_STEPS[stepIndex].method;
+    const mode = plan ? (plan.mode || "scientific") : "scientific";
+    const showFullTextStrip = content.lengthTier === "short" || content.lengthLevel === "short";
+    const shortFullTextStrip = showFullTextStrip && shouldUseShortFullText(content);
+    const practiceView = buildPracticeView(content, method, []);
+    const headerTop = getStatusBarHeight() + 16;
+    const copy = buildModeCopy(mode, plan, task);
+    const riskTitle = mode === "scientific" && plan && plan.state === "at_risk" ? "遗忘风险偏高" : "";
+    const riskBody = riskTitle
+      ? (plan.lastPracticeMetrics && Number(plan.lastPracticeMetrics.mistakeCount || 0) > 0
+        ? `上一轮记录了 ${plan.lastPracticeMetrics.mistakeCount} 处卡顿，建议先完整回看，再逐句揭开核对。`
+        : "建议先放慢节奏完成一轮稳固训练，再判断是否继续推进。")
+      : "";
+    this.setData({
+      content,
+      method,
+      mode,
+      scene: content.scene || "",
+      currentDay: task ? task.dayIndex + 1 : 1,
+      totalDays: plan ? plan.totalDays : content.planDays,
+      planId: plan ? plan.id : "",
+      planState: plan ? plan.state || "reviewing" : "reviewing",
+      headerTop,
+      growthStage: growthStageFromScore(plan ? plan.masteryScore : 0),
+      progressPct: practiceView.progressPct,
+      displaySegments: practiceView.displaySegments,
+      segmentProgressCount: practiceView.segmentProgressCount,
+      allSegmentsReady: practiceView.allSegmentsReady,
+      primaryStepText: practiceView.primaryStepText,
+      fullTextUnits: showFullTextStrip ? makeFullTextUnits(content) : [],
+      showFullTextStrip,
+      shortFullTextStrip,
+      stepIndex,
+      stepTotal: TRAINING_STEPS.length,
+      stepTitle: TRAINING_STEPS[stepIndex].title,
+      riskTitle,
+      riskBody,
+      ...copy
+    });
   },
 
   loadAdaptivePractice(planId) {
@@ -414,10 +424,6 @@ Page({
         this.startAdaptiveSession(task);
       })
       .catch((error) => {
-        if (isLegacyDailyTaskError(error)) {
-          this.setData({ adaptiveMode: false, adaptiveLoading: false, adaptiveError: "" });
-          return;
-        }
         this.setData({
           adaptiveLoading: false,
           adaptiveError: error.message || "今日任务加载失败，请重试"
@@ -485,7 +491,7 @@ Page({
 
   revealAdaptiveAnswer() {
     const session = this.data.adaptiveSession;
-    if (!session || this.data.adaptiveSubmitting) return;
+    if (!session || this.data.adaptiveSubmitting || !["first_character", "free_recall"].includes(session.step)) return;
     const next = advancePracticeStep(session, { type: "reveal", at: Date.now() });
     this.updateAdaptiveSession(next, this.data.adaptiveTask);
   },
