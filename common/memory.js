@@ -500,7 +500,7 @@ function mapRemoteTask(task) {
 
 function mapRemotePlan(plan) {
   const snapshot = findCachedContent(plan.contentId) || findContent(plan.contentId) || null;
-  return {
+  const mapped = {
     id: plan.id,
     userId: plan.userId,
     contentId: plan.contentId,
@@ -551,6 +551,31 @@ function mapRemotePlan(plan) {
     createdAt: plan.createdAt || "",
     updatedAt: plan.updatedAt || ""
   };
+
+  if (!isAdaptiveRemotePlan(plan)) return mapped;
+
+  return {
+    ...mapped,
+    contentVersionId: plan.contentVersionId,
+    scopeType: plan.scopeType || "full",
+    scopeId: plan.scopeId || null,
+    targetDays: Number(plan.targetDays || 1),
+    dailyMinutes: Number(plan.dailyMinutes || 0),
+    familiarityLevel: plan.familiarityLevel || "new",
+    strategy: plan.strategy || "",
+    expectedFinishDate: plan.expectedFinishDate || "",
+    adaptiveStatus: plan.adaptiveStatus || "active",
+    itemStates: Array.isArray(plan.itemStates) ? plan.itemStates : [],
+    tasks: []
+  };
+}
+
+function isAdaptiveRemotePlan(plan = {}) {
+  return Boolean(
+    plan.contentVersionId ||
+    plan.adaptiveStatus ||
+    Array.isArray(plan.itemStates)
+  );
 }
 
 function mergePlan(plan) {

@@ -10,6 +10,7 @@ const {
   createContent,
   createFestival,
   copyContentAsNewVersion,
+  createAdaptivePlan,
   createPlan,
   dispatchNotificationJobs,
   completeTask,
@@ -19,6 +20,7 @@ const {
   getContentStructure,
   getDashboard,
   getGrowthOverview,
+  getTodayStudyTask,
   getNotificationSettings,
   getStoreMode,
   getUserById,
@@ -42,7 +44,8 @@ const {
   updateAsset,
   updateContent,
   updateFestival,
-  updateAssetAccess
+  updateAssetAccess,
+  completeStudyTaskItem
 } = require('./repositories/store');
 
 const fs = require('fs');
@@ -492,6 +495,24 @@ async function handleRequest(req, res, body) {
   if (req.method === 'POST' && pathname === '/api/memory-plans') {
     if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     const payload = parseJsonBody(body);
+    if (isAdaptivePlanRequest(payload)) {
+      const idempotencyKey = getIdempotencyKey(req);
+      return sendJson(res, 201, {
+        data: createAdaptivePlan({
+          contentId: payload.contentId,
+          contentVersionId: payload.contentVersionId,
+          scopeType: payload.scopeType,
+          scopeId: payload.scopeId,
+          targetDays: payload.targetDays,
+          dailyMinutes: payload.dailyMinutes,
+          familiarityLevel: payload.familiarityLevel,
+          strategy: payload.strategy,
+          date: payload.date || payload.startDate,
+          userId: userSession.id,
+          idempotencyKey
+        })
+      });
+    }
     const result = createPlan({
       userId: userSession.id,
       contentId: payload.contentId,
@@ -503,6 +524,35 @@ async function handleRequest(req, res, body) {
       meta: {
         isNew: result.isNew
       }
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/study-tasks/today') {
+    if (!userSession) return sendJson(res, 401, { error: 'AUTH_REQUIRED' });
+    const planId = String(requestUrl.searchParams.get('planId') || '').trim();
+    if (!planId) return sendJson(res, 400, { error: 'PLAN_ID_REQUIRED' });
+    return sendJson(res, 200, {
+      data: getTodayStudyTask(
+        userSession.id,
+        planId,
+        requestUrl.searchParams.get('date') || undefined
+      )
+    });
+  }
+
+  if (req.method === 'POST' && pathname.startsWith('/api/study-task-items/') && pathname.endsWith('/complete')) {
+    if (!userSession) return sendJson(res, 401, { error: 'AUTH_REQUIRED' });
+    const itemId = decodeURIComponent(pathname.replace('/api/study-task-items/', '').replace('/complete', ''));
+    const idempotencyKey = getIdempotencyKey(req);
+    const payload = parseJsonBody(body);
+    return sendJson(res, 200, {
+      data: completeStudyTaskItem({
+        itemId,
+        userId: userSession.id,
+        grade: payload.grade,
+        reviewedAt: payload.reviewedAt || new Date().toISOString(),
+        idempotencyKey
+      })
     });
   }
 
@@ -665,6 +715,36 @@ function parseJsonBody(body) {
     error.message = 'Invalid JSON body';
     throw error;
   }
+}
+
+function isAdaptivePlanRequest(payload = {}) {
+  return [
+    'contentVersionId',
+    'scopeType',
+    'scopeId',
+    'targetDays',
+    'dailyMinutes',
+    'familiarityLevel',
+    'strategy',
+    'date'
+  ].some((field) => Object.prototype.hasOwnProperty.call(payload, field));
+}
+
+function getIdempotencyKey(req) {
+  const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
+  if (!idempotencyKey) {
+    return adaptiveRouteError('IDEMPOTENCY_KEY_REQUIRED', 400);
+  }
+  if (idempotencyKey.length > 180) {
+    return adaptiveRouteError('IDEMPOTENCY_KEY_INVALID', 400);
+  }
+  return idempotencyKey;
+}
+
+function adaptiveRouteError(code, statusCode) {
+  const error = new Error(code);
+  error.statusCode = statusCode;
+  throw error;
 }
 
 function sendJson(res, statusCode, payload) {

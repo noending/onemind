@@ -586,9 +586,27 @@ function listMemoryPlansApi(userId) {
 }
 
 function createMemoryPlanApi(payload = {}) {
+  const { idempotencyKey, ...data } = payload;
   return request("/api/memory-plans", {
     method: "POST",
-    data: payload
+    header: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+    data
+  }).then((response) => response.data || null);
+}
+
+function getTodayStudyTaskApi(planId, date) {
+  const query = [`planId=${encodeURIComponent(planId)}`];
+  if (date) query.push(`date=${encodeURIComponent(date)}`);
+  return request(`/api/study-tasks/today?${query.join("&")}`)
+    .then((response) => response.data || null);
+}
+
+function completeStudyTaskItemApi(itemId, payload = {}) {
+  const { idempotencyKey, ...data } = payload;
+  return request(`/api/study-task-items/${encodeURIComponent(itemId)}/complete`, {
+    method: "POST",
+    header: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+    data
   }).then((response) => response.data || null);
 }
 
@@ -704,10 +722,12 @@ module.exports = {
   listMemoryPlansApi,
   createMemoryAssessmentApi,
   createMemoryPlanApi,
+  completeStudyTaskItemApi,
   createNotificationJobApi,
   createRecitationSessionApi,
   completeReviewTaskApi,
   getGrowthOverviewApi,
+  getTodayStudyTaskApi,
   getContentStructureApi,
   getNotificationSettingsApi,
   listNotificationJobsApi,
