@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 
 const store = require('../src/repositories/memoryStore');
 const { contents } = require('../src/data/seed');
@@ -19,6 +20,31 @@ function createAdaptivePlan(overrides = {}) {
     familiarityLevel: 'partial',
     date: '2026-07-10',
     idempotencyKey: uniqueKey('adaptive-plan'),
+    ...overrides
+  });
+}
+
+let gatedPostgresStore = null;
+
+function getGatedPostgresStore() {
+  if (!gatedPostgresStore) {
+    gatedPostgresStore = require('../src/repositories/postgresStore');
+    gatedPostgresStore.initializeDatabase();
+  }
+  return gatedPostgresStore;
+}
+
+function createPostgresAdaptivePlan(postgresStore, overrides = {}) {
+  return postgresStore.createAdaptivePlan({
+    userId: 'demo-user',
+    contentId: 'great-compassion-opening',
+    contentVersionId: 'great-compassion-v1',
+    scopeType: 'full',
+    targetDays: 14,
+    dailyMinutes: 15,
+    familiarityLevel: 'partial',
+    date: '2026-07-10',
+    idempotencyKey: uniqueKey('postgres-adaptive-plan'),
     ...overrides
   });
 }
@@ -218,4 +244,120 @@ test('a final-unit again leaves one weak retry and blocks initial completion unt
   } finally {
     contents.splice(contents.indexOf(content), 1);
   }
+});
+
+test('postgres full and section plans persist scoped states and creation idempotency', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const fullKey = uniqueKey('postgres-full-plan');
+  const fullPlan = createPostgresAdaptivePlan(postgresStore, { idempotencyKey: fullKey });
+  const repeated = createPostgresAdaptivePlan(postgresStore, {
+    idempotencyKey: fullKey,
+    scopeType: 'section',
+    scopeId: 'great-compassion-section-2'
+  });
+  const sectionPlan = createPostgresAdaptivePlan(postgresStore, {
+    idempotencyKey: uniqueKey('postgres-section-plan'),
+    scopeType: 'section',
+    scopeId: 'great-compassion-section-2'
+  });
+
+  assert.deepEqual(repeated, fullPlan);
+  assert.equal(fullPlan.itemStates.length, 84);
+  assert.equal(sectionPlan.itemStates.length, 14);
+  assert.equal(fullPlan.contentId, 'great-compassion-opening');
+  assert.equal(fullPlan.contentVersionId, 'great-compassion-v1');
+  assert.equal(sectionPlan.scopeId, 'great-compassion-section-2');
+  assert.equal(fullPlan.startDate, '2026-07-10');
+  assert.equal(fullPlan.expectedFinishDate, '2026-07-23');
+  assert.equal(fullPlan.task.newUnitCount, 6);
+  assert.equal(fullPlan.task.items.filter((item) => item.taskType === 'new').length, 6);
+});
+
+test('postgres generates later daily tasks lazily and enforces plan ownership', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const plan = createPostgresAdaptivePlan(postgresStore);
+  const later = postgresStore.getTodayStudyTask(plan.userId, plan.id, '2026-07-11');
+
+  assert.equal(later.taskDate, '2026-07-11');
+  assert.equal(
+    later.items.some((item) => plan.task.items.some((first) => first.memoryUnitId === item.memoryUnitId)),
+    false
+  );
+  assert.throws(() => postgresStore.getTodayStudyTask(crypto.randomUUID(), plan.id, '2026-07-11'), {
+    code: 'STUDY_TASK_NOT_FOUND',
+    statusCode: 404
+  });
+});
+
+test('postgres item completion is idempotent and binds keys to one item', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const plan = createPostgresAdaptivePlan(postgresStore);
+  const [firstItem, secondItem] = plan.task.items;
+  const idempotencyKey = uniqueKey('postgres-item-completion');
+  const first = postgresStore.completeStudyTaskItem({
+    itemId: firstItem.id,
+    userId: plan.userId,
+    grade: 'good',
+    idempotencyKey,
+    reviewedAt: '2026-07-10T08:00:00.000Z'
+  });
+  const repeated = postgresStore.completeStudyTaskItem({
+    itemId: firstItem.id,
+    userId: plan.userId,
+    grade: 'easy',
+    idempotencyKey,
+    reviewedAt: '2026-07-10T09:00:00.000Z'
+  });
+
+  assert.deepEqual(repeated, first);
+  assert.equal(first.state.successfulRecallCount, 1);
+  assert.throws(() => postgresStore.completeStudyTaskItem({
+    itemId: secondItem.id,
+    userId: plan.userId,
+    grade: 'good',
+    idempotencyKey,
+    reviewedAt: '2026-07-10T08:00:00.000Z'
+  }), {
+    code: 'IDEMPOTENCY_KEY_CONFLICT',
+    statusCode: 409
+  });
+});
+
+test('postgres again leaves exactly one pending weak retry and duplicate completion is inert', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const plan = createPostgresAdaptivePlan(postgresStore);
+  const sourceItem = plan.task.items[0];
+  const first = postgresStore.completeStudyTaskItem({
+    itemId: sourceItem.id,
+    userId: plan.userId,
+    grade: 'again',
+    idempotencyKey: uniqueKey('postgres-again-source'),
+    reviewedAt: '2026-07-10T08:00:00.000Z'
+  });
+  const duplicate = postgresStore.completeStudyTaskItem({
+    itemId: sourceItem.id,
+    userId: plan.userId,
+    grade: 'again',
+    idempotencyKey: uniqueKey('postgres-again-duplicate'),
+    reviewedAt: '2026-07-10T08:01:00.000Z'
+  });
+  const pendingRetries = first.task.items.filter((item) => (
+    item.memoryUnitId === sourceItem.memoryUnitId
+    && item.taskType === 'weak_review'
+    && item.status === 'pending'
+  ));
+
+  assert.equal(pendingRetries.length, 1);
+  assert.equal(first.task.status, 'pending');
+  assert.equal(first.plan.adaptiveStatus, 'active');
+  assert.equal(duplicate.state.lapseCount, 1);
+  assert.equal(duplicate.task.items.filter((item) => item.taskType === 'weak_review').length, 1);
 });

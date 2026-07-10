@@ -1,7 +1,12 @@
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
-const { recommendPlan } = require('../../../common/adaptive-memory');
+const {
+  allocateDailyUnits,
+  applyReviewGrade,
+  isInitialComplete,
+  recommendPlan
+} = require('../../../common/adaptive-memory');
 const { ensureAdaptiveSchema } = require('./adaptiveSchema');
 
 const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空复现', '整段复诵', '抽查巩固'];
@@ -1521,6 +1526,690 @@ function publicContentVersionId(assessment) {
     && Number(alias.versionNo) === Number(assessment.contentVersionNo)
   ));
   return match?.[0] || assessment.contentVersionId;
+}
+
+function createAdaptivePlan(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const contentId = String(payload.contentId || '').trim();
+  const contentVersionId = String(payload.contentVersionId || '').trim();
+  const scopeType = String(payload.scopeType || 'full').trim() || 'full';
+  const scopeId = payload.scopeId ? String(payload.scopeId).trim() : null;
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+
+  if (!userId) throw adaptivePlanError('ADAPTIVE_PLAN_USER_REQUIRED', 400);
+  if (!contentId) throw adaptivePlanError('ADAPTIVE_PLAN_CONTENT_REQUIRED', 400);
+  if (!contentVersionId) throw adaptivePlanError('ADAPTIVE_PLAN_CONTENT_VERSION_REQUIRED', 400);
+
+  const normalizedUserId = ensureUser(userId);
+  const existing = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
+  if (existing) {
+    if (existing.operationType !== 'adaptive_plan_creation') {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return existing.responsePayload;
+  }
+
+  const startDate = String(payload.date || payload.startDate || todayDate()).slice(0, 10);
+  const structure = getContentStructure(contentId, contentVersionId);
+  const units = getAssessmentScopeUnits(structure, scopeType, scopeId);
+  const version = resolveAssessmentContentVersion(contentId, contentVersionId);
+  const recommendation = recommendPlan({
+    unitCount: units.length,
+    familiarityLevel: payload.familiarityLevel,
+    dailyMinutes: payload.dailyMinutes,
+    targetDays: payload.targetDays
+  });
+  const strategy = normalizeAdaptiveStrategy(payload.strategy, recommendation.targetDays);
+  const internalScopeId = resolveAdaptiveScopeId(structure, scopeType, scopeId);
+  const now = new Date().toISOString();
+  const planId = crypto.randomUUID();
+  const taskId = crypto.randomUUID();
+  const itemStates = units.map((unit) => ({
+    memoryUnitId: unit.id,
+    phase: 'new',
+    dueAt: null,
+    lastGrade: null,
+    lastReviewedAt: null,
+    successfulRecallCount: 0,
+    crossDaySuccessCount: 0,
+    lapseCount: 0,
+    needsSameSessionRetry: false
+  }));
+  const allocation = allocateDailyUnits({
+    states: itemStates,
+    date: startDate,
+    dailyMinutes: recommendation.dailyMinutes,
+    targetDays: recommendation.targetDays
+  });
+  const taskItems = allocation.items.map((item, index) => ({
+    id: crypto.randomUUID(),
+    taskId,
+    memoryUnitId: item.memoryUnitId,
+    taskType: item.taskType,
+    sortOrder: index + 1,
+    status: 'pending',
+    result: null,
+    completedAt: null
+  }));
+  const task = {
+    id: taskId,
+    planId,
+    userId: publicAdaptiveUserId(normalizedUserId),
+    taskDate: startDate,
+    status: taskItems.length ? 'pending' : 'completed',
+    estimatedMinutes: allocation.estimatedMinutes,
+    newUnitCount: allocation.newUnitCount,
+    reviewUnitCount: allocation.reviewUnitCount,
+    weakUnitCount: allocation.weakUnitCount,
+    sequenceRangeLabel: createAdaptiveSequenceRangeLabel(taskItems),
+    items: taskItems,
+    createdAt: now,
+    updatedAt: now
+  };
+  const plan = {
+    id: planId,
+    userId: publicAdaptiveUserId(normalizedUserId),
+    contentId: String(contentId),
+    contentVersionId: String(contentVersionId),
+    scopeType,
+    scopeId,
+    targetDays: recommendation.targetDays,
+    dailyMinutes: recommendation.dailyMinutes,
+    familiarityLevel: payload.familiarityLevel || 'new',
+    strategy,
+    startDate,
+    expectedFinishDate: addDays(startDate, recommendation.targetDays - 1),
+    adaptiveStatus: 'active',
+    itemStates,
+    createdAt: now,
+    updatedAt: now
+  };
+  const response = { ...plan, task };
+  const stateValues = itemStates.map((state) => `(
+    ${sqlValue(normalizedUserId)},
+    ${sqlValue(planId)},
+    ${sqlValue(state.memoryUnitId)},
+    'new',
+    ${sqlValue(now)}::timestamptz,
+    ${sqlValue(now)}::timestamptz
+  )`).join(',');
+  const itemValues = taskItems.map((item) => `(
+    ${sqlValue(item.id)},
+    ${sqlValue(taskId)},
+    ${sqlValue(item.memoryUnitId)},
+    ${sqlValue(item.taskType)},
+    ${item.sortOrder},
+    'pending',
+    ${sqlValue(now)}::timestamptz,
+    ${sqlValue(now)}::timestamptz
+  )`).join(',');
+  const title = String(getContent(contentId)?.title || '自适应记忆计划');
+  const persistedJson = queryScalar(`
+    with inserted_plan as (
+      insert into memory_plans (
+        id, user_id, content_id, content_version_id, mode, title, start_date,
+        total_days, current_day, state, scope_type, scope_id, target_days,
+        daily_minutes, familiarity_level, strategy, expected_finish_date,
+        adaptive_status, created_at, updated_at
+      ) values (
+        ${sqlValue(planId)}, ${sqlValue(normalizedUserId)}, ${sqlValue(version.contentId)},
+        ${sqlValue(version.id)}, 'scientific', ${sqlValue(title)}, ${sqlValue(startDate)}::date,
+        ${recommendation.targetDays}, 1, 'reviewing', ${sqlValue(scopeType)},
+        ${sqlValue(internalScopeId)}, ${recommendation.targetDays}, ${recommendation.dailyMinutes},
+        ${sqlValue(plan.familiarityLevel)}, ${sqlValue(strategy)},
+        ${sqlValue(plan.expectedFinishDate)}::date, 'active',
+        ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz
+      )
+      returning id
+    ), inserted_states as (
+      insert into memory_item_states (
+        user_id, plan_id, memory_unit_id, phase, created_at, updated_at
+      ) values ${stateValues}
+      returning plan_id
+    ), inserted_task as (
+      insert into daily_study_tasks (
+        id, plan_id, task_date, status, estimated_minutes, new_unit_count,
+        review_unit_count, weak_unit_count, sequence_range_label,
+        generated_at, created_at, updated_at
+      )
+      select
+        ${sqlValue(taskId)}, inserted_plan.id, ${sqlValue(startDate)}::date,
+        ${sqlValue(task.status)}, ${task.estimatedMinutes}, ${task.newUnitCount},
+        ${task.reviewUnitCount}, ${task.weakUnitCount}, ${sqlValue(task.sequenceRangeLabel)},
+        ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz,
+        ${sqlValue(now)}::timestamptz
+      from inserted_plan
+      where exists (select 1 from inserted_states)
+      returning id
+    ), inserted_items as (
+      insert into daily_study_task_items (
+        id, task_id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
+      ) values ${itemValues}
+      returning task_id
+    ), recorded as (
+      insert into idempotency_records (
+        user_id, idempotency_key, operation_type, entity_id, request_payload, response_payload
+      )
+      select
+        ${sqlValue(normalizedUserId)}, ${sqlValue(idempotencyKey)},
+        'adaptive_plan_creation', inserted_plan.id::text,
+        ${sqlJson(payload)}::jsonb, ${sqlJson(response)}::jsonb
+      from inserted_plan
+      where exists (select 1 from inserted_task)
+        and exists (select 1 from inserted_items)
+      on conflict (user_id, idempotency_key) do nothing
+      returning operation_type as "operationType", entity_id as "entityId",
+        response_payload as "responsePayload"
+    )
+    select row_to_json(recorded) from recorded
+  `);
+  const persisted = persistedJson ? JSON.parse(persistedJson) : null;
+
+  if (persisted) return persisted.responsePayload;
+  const concurrent = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
+  if (concurrent?.operationType === 'adaptive_plan_creation') return concurrent.responsePayload;
+  throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+}
+
+function getTodayStudyTask(userId, planId, date = todayDate()) {
+  const normalizedUserId = normalizeUserId(userId);
+  const plan = getAdaptivePlanById(planId, normalizedUserId);
+  if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
+
+  const taskDate = String(date || todayDate()).slice(0, 10);
+  const existing = getAdaptiveDailyTask(plan.id, taskDate);
+  if (existing) return existing;
+
+  const pendingUnitIds = new Set(queryRows(`
+    select distinct item.memory_unit_id::text as "memoryUnitId"
+    from daily_study_task_items item
+    join daily_study_tasks task on task.id = item.task_id
+    where task.plan_id = ${sqlValue(plan.id)}
+      and item.status = 'pending'
+  `).map((item) => item.memoryUnitId));
+  const allocation = allocateDailyUnits({
+    states: plan.itemStates.filter((state) => !pendingUnitIds.has(state.memoryUnitId)),
+    date: taskDate,
+    dailyMinutes: plan.dailyMinutes,
+    targetDays: plan.targetDays
+  });
+  const taskId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const items = allocation.items.map((item, index) => ({
+    id: crypto.randomUUID(),
+    taskId,
+    memoryUnitId: item.memoryUnitId,
+    taskType: item.taskType,
+    sortOrder: index + 1,
+    status: 'pending',
+    result: null,
+    completedAt: null
+  }));
+  const itemValues = items.map((item) => `(
+    ${sqlValue(item.id)}, ${sqlValue(taskId)}, ${sqlValue(item.memoryUnitId)},
+    ${sqlValue(item.taskType)}, ${item.sortOrder}, 'pending',
+    ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz
+  )`).join(',');
+  const status = items.length ? 'pending' : 'completed';
+  const sequenceRangeLabel = createAdaptiveSequenceRangeLabel(items);
+  queryScalar(`
+    with inserted_task as (
+      insert into daily_study_tasks (
+        id, plan_id, task_date, status, estimated_minutes, new_unit_count,
+        review_unit_count, weak_unit_count, sequence_range_label,
+        generated_at, created_at, updated_at
+      ) values (
+        ${sqlValue(taskId)}, ${sqlValue(plan.id)}, ${sqlValue(taskDate)}::date,
+        ${sqlValue(status)}, ${allocation.estimatedMinutes}, ${allocation.newUnitCount},
+        ${allocation.reviewUnitCount}, ${allocation.weakUnitCount},
+        ${sqlValue(sequenceRangeLabel)}, ${sqlValue(now)}::timestamptz,
+        ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz
+      )
+      on conflict (plan_id, task_date) do nothing
+      returning id
+    )${items.length ? `, inserted_items as (
+      insert into daily_study_task_items (
+        id, task_id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
+      )
+      select
+        values_row.id::uuid,
+        values_row.task_id::uuid,
+        values_row.memory_unit_id::uuid,
+        values_row.task_type,
+        values_row.sort_order,
+        values_row.status,
+        values_row.created_at,
+        values_row.updated_at
+      from (values ${itemValues}) values_row(
+        id, task_id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
+      )
+      where exists (select 1 from inserted_task)
+      returning task_id
+    )` : ''}
+    select id::text from inserted_task
+  `);
+  return getAdaptiveDailyTask(plan.id, taskDate);
+}
+
+function completeStudyTaskItem(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const itemId = String(payload.itemId || '').trim();
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+  const normalizedUserId = normalizeUserId(userId);
+  const existing = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
+  if (existing) {
+    if (existing.operationType !== 'adaptive_task_item_completion' || existing.entityId !== itemId) {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return existing.responsePayload;
+  }
+
+  const grade = String(payload.grade || '').trim();
+  if (!['again', 'good', 'easy'].includes(grade)) {
+    throw adaptivePlanError('REVIEW_GRADE_INVALID', 400);
+  }
+  const source = getAdaptiveTaskItem(itemId, normalizedUserId);
+  if (!source) throw adaptivePlanError('STUDY_TASK_ITEM_NOT_FOUND', 404);
+  const plan = getAdaptivePlanById(source.planId, normalizedUserId);
+  if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
+  const task = getAdaptiveDailyTask(plan.id, source.taskDate);
+  const item = task.items.find((candidate) => candidate.id === itemId);
+  const state = plan.itemStates.find((candidate) => candidate.memoryUnitId === item.memoryUnitId);
+  if (!state) throw adaptivePlanError('STUDY_TASK_ITEM_NOT_FOUND', 404);
+
+  if (item.status === 'pending') {
+    const reviewedAt = payload.reviewedAt || `${task.taskDate}T00:00:00.000Z`;
+    const reviewState = item.taskType === 'new' && state.phase === 'new'
+      ? { ...state, phase: 'learning' }
+      : state;
+    Object.assign(state, applyReviewGrade(reviewState, { grade, reviewedAt }));
+    item.status = 'completed';
+    item.result = grade;
+    item.completedAt = reviewedAt;
+
+    let retry = null;
+    if (grade === 'again') {
+      retry = task.items.find((candidate) => (
+        candidate.memoryUnitId === item.memoryUnitId
+        && candidate.taskType === 'weak_review'
+        && candidate.status === 'pending'
+      ));
+      if (!retry) {
+        retry = {
+          id: crypto.randomUUID(),
+          taskId: task.id,
+          memoryUnitId: item.memoryUnitId,
+          taskType: 'weak_review',
+          sortOrder: task.items.length + 1,
+          status: 'pending',
+          result: null,
+          completedAt: null
+        };
+        task.items.push(retry);
+        task.weakUnitCount += 1;
+        task.estimatedMinutes = Math.ceil(task.estimatedMinutes + 0.5);
+      }
+    }
+    const now = new Date().toISOString();
+    task.status = task.items.some((candidate) => candidate.status === 'pending') ? 'pending' : 'completed';
+    task.updatedAt = now;
+    plan.adaptiveStatus = isInitialComplete(plan.itemStates) ? 'initial_complete' : 'active';
+    plan.updatedAt = now;
+    const response = { plan, task, item, state };
+    const persisted = persistAdaptiveCompletion({
+      normalizedUserId,
+      idempotencyKey,
+      payload,
+      response,
+      item,
+      state,
+      task,
+      plan,
+      retry,
+      reviewedAt,
+      now
+    });
+    if (persisted) return persisted;
+  } else {
+    const response = { plan, task, item, state };
+    const recorded = recordAdaptiveCompletion(normalizedUserId, idempotencyKey, itemId, payload, response);
+    if (recorded) return recorded;
+  }
+
+  const concurrent = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
+  if (concurrent?.operationType === 'adaptive_task_item_completion' && concurrent.entityId === itemId) {
+    return concurrent.responsePayload;
+  }
+  throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+}
+
+function persistAdaptiveCompletion(context) {
+  const {
+    normalizedUserId, idempotencyKey, payload, response, item, state,
+    task, plan, retry, reviewedAt, now
+  } = context;
+  const persistedJson = queryScalar(`
+    with updated_state as (
+      update memory_item_states
+      set
+        phase = ${sqlValue(state.phase)},
+        last_grade = ${sqlValue(state.lastGrade)},
+        last_reviewed_at = ${sqlValue(state.lastReviewedAt)}::timestamptz,
+        due_at = ${sqlValue(state.dueAt)}::date,
+        successful_recall_count = ${Number(state.successfulRecallCount)},
+        cross_day_success_count = ${Number(state.crossDaySuccessCount)},
+        lapse_count = ${Number(state.lapseCount)},
+        updated_at = ${sqlValue(now)}::timestamptz
+      where plan_id = ${sqlValue(plan.id)}
+        and memory_unit_id = ${sqlValue(state.memoryUnitId)}
+        and exists (
+          select 1
+          from daily_study_task_items source_item
+          where source_item.id = ${sqlValue(item.id)}
+            and source_item.status = 'pending'
+        )
+      returning plan_id
+    ), updated_item as (
+      update daily_study_task_items
+      set
+        status = 'completed',
+        result = ${sqlJson({ grade: item.result, completedAt: reviewedAt })}::jsonb,
+        updated_at = ${sqlValue(now)}::timestamptz
+      where id = ${sqlValue(item.id)}
+        and status = 'pending'
+        and exists (select 1 from updated_state)
+      returning task_id
+    )${retry ? `, inserted_retry as (
+      insert into daily_study_task_items (
+        id, task_id, memory_unit_id, task_type, sort_order, status, created_at, updated_at
+      )
+      select
+        ${sqlValue(retry.id)}, ${sqlValue(task.id)}, ${sqlValue(retry.memoryUnitId)},
+        'weak_review', ${retry.sortOrder}, 'pending',
+        ${sqlValue(now)}::timestamptz, ${sqlValue(now)}::timestamptz
+      where exists (select 1 from updated_item)
+        and not exists (
+          select 1 from daily_study_task_items
+          where task_id = ${sqlValue(task.id)}
+            and memory_unit_id = ${sqlValue(retry.memoryUnitId)}
+            and task_type = 'weak_review'
+            and status = 'pending'
+        )
+      returning task_id
+    )` : ''}, updated_task as (
+      update daily_study_tasks
+      set
+        status = ${sqlValue(task.status)},
+        estimated_minutes = ${task.estimatedMinutes},
+        weak_unit_count = ${task.weakUnitCount},
+        updated_at = ${sqlValue(now)}::timestamptz
+      where id = ${sqlValue(task.id)}
+        and exists (select 1 from updated_item)
+      returning plan_id
+    ), updated_plan as (
+      update memory_plans
+      set adaptive_status = ${sqlValue(plan.adaptiveStatus)}, updated_at = ${sqlValue(now)}::timestamptz
+      where id = ${sqlValue(plan.id)}
+        and exists (select 1 from updated_task)
+      returning id
+    ), recorded as (
+      insert into idempotency_records (
+        user_id, idempotency_key, operation_type, entity_id, request_payload, response_payload
+      )
+      select
+        ${sqlValue(normalizedUserId)}, ${sqlValue(idempotencyKey)},
+        'adaptive_task_item_completion', ${sqlValue(item.id)},
+        ${sqlJson(payload)}::jsonb, ${sqlJson(response)}::jsonb
+      from updated_plan
+      on conflict (user_id, idempotency_key) do nothing
+      returning response_payload as "responsePayload"
+    )
+    select row_to_json(recorded) from recorded
+  `);
+  const row = persistedJson ? JSON.parse(persistedJson) : null;
+  return row?.responsePayload || null;
+}
+
+function recordAdaptiveCompletion(userId, idempotencyKey, itemId, payload, response) {
+  const row = queryReturningOne(`
+    insert into idempotency_records (
+      user_id, idempotency_key, operation_type, entity_id, request_payload, response_payload
+    ) values (
+      ${sqlValue(userId)}, ${sqlValue(idempotencyKey)},
+      'adaptive_task_item_completion', ${sqlValue(itemId)},
+      ${sqlJson(payload)}::jsonb, ${sqlJson(response)}::jsonb
+    )
+    on conflict (user_id, idempotency_key) do nothing
+    returning response_payload as "responsePayload"
+  `);
+  return row?.responsePayload || null;
+}
+
+function getAdaptivePlanById(planId, userId) {
+  if (!isUuid(planId)) return null;
+  const row = queryOne(`
+    select
+      mp.id::text as "id",
+      mp.user_id::text as "userId",
+      mp.content_id::text as "contentId",
+      mp.content_version_id::text as "contentVersionId",
+      cv.version_no as "contentVersionNo",
+      mp.scope_type as "scopeType",
+      mp.scope_id::text as "scopeId",
+      cs.sort_order as "scopeSectionSortOrder",
+      mp.target_days as "targetDays",
+      mp.daily_minutes as "dailyMinutes",
+      mp.familiarity_level as "familiarityLevel",
+      mp.strategy,
+      mp.start_date as "startDate",
+      mp.expected_finish_date as "expectedFinishDate",
+      mp.adaptive_status as "adaptiveStatus",
+      mp.created_at as "createdAt",
+      mp.updated_at as "updatedAt"
+    from memory_plans mp
+    join content_versions cv on cv.id = mp.content_version_id
+    left join content_sections cs on cs.id = mp.scope_id
+    where mp.id = ${sqlValue(planId)}
+      and mp.user_id = ${sqlValue(userId)}
+      and mp.adaptive_status is not null
+      and mp.deleted_at is null
+    limit 1
+  `);
+  if (!row) return null;
+  const states = queryRows(`
+    select
+      mis.memory_unit_id::text as "memoryUnitId",
+      mis.phase,
+      mis.due_at as "dueAt",
+      mis.last_grade as "lastGrade",
+      mis.last_reviewed_at as "lastReviewedAt",
+      mis.successful_recall_count as "successfulRecallCount",
+      mis.cross_day_success_count as "crossDaySuccessCount",
+      mis.lapse_count as "lapseCount",
+      mu.sort_order as "sortOrder"
+    from memory_item_states mis
+    join memory_units mu on mu.id = mis.memory_unit_id
+    where mis.plan_id = ${sqlValue(planId)}
+    order by mu.sort_order asc
+  `).map(toAdaptiveItemState);
+  const publicContent = publicContentId(row.contentId);
+  return {
+    id: row.id,
+    userId: publicAdaptiveUserId(row.userId),
+    contentId: publicContent,
+    contentVersionId: publicContentVersionId(row),
+    scopeType: row.scopeType,
+    scopeId: row.scopeType === 'section' && publicContent === 'great-compassion-opening'
+      ? `great-compassion-section-${row.scopeSectionSortOrder}`
+      : row.scopeId,
+    targetDays: Number(row.targetDays),
+    dailyMinutes: Number(row.dailyMinutes),
+    familiarityLevel: row.familiarityLevel,
+    strategy: row.strategy,
+    startDate: String(row.startDate).slice(0, 10),
+    expectedFinishDate: String(row.expectedFinishDate).slice(0, 10),
+    adaptiveStatus: row.adaptiveStatus,
+    itemStates: states,
+    createdAt: new Date(row.createdAt).toISOString(),
+    updatedAt: new Date(row.updatedAt).toISOString()
+  };
+}
+
+function getAdaptiveDailyTask(planId, taskDate) {
+  const row = queryOne(`
+    select
+      task.id::text as "id",
+      task.plan_id::text as "planId",
+      mp.user_id::text as "userId",
+      task.task_date as "taskDate",
+      task.status,
+      task.estimated_minutes as "estimatedMinutes",
+      task.new_unit_count as "newUnitCount",
+      task.review_unit_count as "reviewUnitCount",
+      task.weak_unit_count as "weakUnitCount",
+      coalesce(task.sequence_range_label, '') as "sequenceRangeLabel",
+      task.created_at as "createdAt",
+      task.updated_at as "updatedAt"
+    from daily_study_tasks task
+    join memory_plans mp on mp.id = task.plan_id
+    where task.plan_id = ${sqlValue(planId)}
+      and task.task_date = ${sqlValue(taskDate)}::date
+    limit 1
+  `);
+  if (!row) return null;
+  const items = queryRows(`
+    select
+      id::text as "id",
+      task_id::text as "taskId",
+      memory_unit_id::text as "memoryUnitId",
+      task_type as "taskType",
+      sort_order as "sortOrder",
+      status,
+      result,
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from daily_study_task_items
+    where task_id = ${sqlValue(row.id)}
+    order by sort_order asc
+  `).map(toAdaptiveTaskItem);
+  return {
+    id: row.id,
+    planId: row.planId,
+    userId: publicAdaptiveUserId(row.userId),
+    taskDate: String(row.taskDate).slice(0, 10),
+    status: row.status,
+    estimatedMinutes: Number(row.estimatedMinutes),
+    newUnitCount: Number(row.newUnitCount),
+    reviewUnitCount: Number(row.reviewUnitCount),
+    weakUnitCount: Number(row.weakUnitCount),
+    sequenceRangeLabel: row.sequenceRangeLabel,
+    items,
+    createdAt: new Date(row.createdAt).toISOString(),
+    updatedAt: new Date(row.updatedAt).toISOString()
+  };
+}
+
+function getAdaptiveTaskItem(itemId, userId) {
+  if (!isUuid(itemId)) return null;
+  return queryOne(`
+    select
+      item.id::text as "id",
+      task.plan_id::text as "planId",
+      task.task_date as "taskDate"
+    from daily_study_task_items item
+    join daily_study_tasks task on task.id = item.task_id
+    join memory_plans plan on plan.id = task.plan_id
+    where item.id = ${sqlValue(itemId)}
+      and plan.user_id = ${sqlValue(userId)}
+      and plan.deleted_at is null
+    limit 1
+  `);
+}
+
+function getAdaptiveIdempotencyRecord(userId, idempotencyKey) {
+  return queryOne(`
+    select
+      operation_type as "operationType",
+      entity_id as "entityId",
+      response_payload as "responsePayload"
+    from idempotency_records
+    where user_id = ${sqlValue(userId)}
+      and idempotency_key = ${sqlValue(idempotencyKey)}
+    limit 1
+  `);
+}
+
+function resolveAdaptiveScopeId(structure, scopeType, scopeId) {
+  if (scopeType === 'full') return null;
+  const publicMatch = String(scopeId || '').match(/^great-compassion-section-(\d+)$/);
+  const section = structure.sections.find((item) => item.id === scopeId)
+    || (publicMatch
+      ? structure.sections.find((item) => Number(item.sortOrder) === Number(publicMatch[1]))
+      : null);
+  if (!section) throw adaptivePlanError('ASSESSMENT_SCOPE_NOT_FOUND', 404);
+  return section.id;
+}
+
+function normalizeAdaptiveIdempotencyKey(value) {
+  const key = String(value || '').trim();
+  if (!key) throw adaptivePlanError('IDEMPOTENCY_KEY_REQUIRED', 400);
+  if (key.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    throw adaptivePlanError('IDEMPOTENCY_KEY_INVALID', 400);
+  }
+  return key;
+}
+
+function normalizeAdaptiveStrategy(value, targetDays) {
+  const strategy = String(value || '').trim();
+  if (['accelerated', 'standard', 'steady'].includes(strategy)) return strategy;
+  if (targetDays <= 7) return 'accelerated';
+  if (targetDays <= 14) return 'standard';
+  return 'steady';
+}
+
+function createAdaptiveSequenceRangeLabel(items) {
+  if (!items.length) return '';
+  const ids = items.map((item) => String(item.memoryUnitId));
+  return ids.length === 1 ? ids[0] : `${ids[0]} - ${ids[ids.length - 1]}`;
+}
+
+function toAdaptiveItemState(row) {
+  return {
+    memoryUnitId: row.memoryUnitId,
+    phase: row.phase,
+    dueAt: row.dueAt ? String(row.dueAt).slice(0, 10) : null,
+    lastGrade: row.lastGrade || null,
+    lastReviewedAt: row.lastReviewedAt ? new Date(row.lastReviewedAt).toISOString() : null,
+    successfulRecallCount: Number(row.successfulRecallCount),
+    crossDaySuccessCount: Number(row.crossDaySuccessCount),
+    lapseCount: Number(row.lapseCount),
+    needsSameSessionRetry: row.lastGrade === 'again'
+  };
+}
+
+function toAdaptiveTaskItem(row) {
+  const result = row.result && typeof row.result === 'object' ? row.result : null;
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    memoryUnitId: row.memoryUnitId,
+    taskType: row.taskType,
+    sortOrder: Number(row.sortOrder),
+    status: row.status,
+    result: result?.grade || row.result || null,
+    completedAt: result?.completedAt || null
+  };
+}
+
+function publicAdaptiveUserId(userId) {
+  return userId === IDS.demoUser ? 'demo-user' : userId;
+}
+
+function adaptivePlanError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
 }
 
 function normalizeFestivalContentIds(value) {
@@ -4036,6 +4725,7 @@ module.exports = {
   completeTask,
   copyContentAsNewVersion,
   createAsset,
+  createAdaptivePlan,
   createContent,
   createFestival,
   createMemoryAssessment,
@@ -4043,10 +4733,12 @@ module.exports = {
   createRecitationSession,
   dispatchNotificationJobs,
   createPlan,
+  completeStudyTaskItem,
   getContent,
   getContentStructure,
   getGrowthOverview,
   getDashboard,
+  getTodayStudyTask,
   getNotificationSettings,
   getUserById,
   getAdminById,
