@@ -65,6 +65,29 @@ function cleanup(userId) {
   `);
 }
 
+function cleanupAndRestore(userId, options = {}) {
+  const cleanupFn = options.cleanupFn || cleanup;
+  const restoreFn = options.restoreFn || (() => ensureAdaptiveSchema(runPostgresSql));
+  try {
+    cleanupFn(userId);
+  } finally {
+    restoreFn();
+  }
+}
+
+test('migration gate restores the pending index even when fixture cleanup fails', () => {
+  let restored = false;
+  assert.throws(() => cleanupAndRestore('fixture-user', {
+    cleanupFn() {
+      throw new Error('cleanup failed');
+    },
+    restoreFn() {
+      restored = true;
+    }
+  }), /cleanup failed/);
+  assert.equal(restored, true);
+});
+
 test('postgres adaptive migration consolidates duplicate pending units before creating the unique index', {
   skip: process.env.RUN_POSTGRES_ADAPTIVE_SCHEMA_MIGRATION_TEST !== '1',
   concurrency: false
@@ -147,7 +170,6 @@ test('postgres adaptive migration consolidates duplicate pending units before cr
       )
     `), (error) => String(error.stderr).includes(PENDING_INDEX));
   } finally {
-    cleanup(userId);
-    ensureAdaptiveSchema(runPostgresSql);
+    cleanupAndRestore(userId);
   }
 });
