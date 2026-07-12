@@ -89,6 +89,19 @@ test('adaptive schema includes the controller-supplemented state, task, and idem
   );
 });
 
+test('adaptive schema consolidates historical duplicate pending items before enforcing the pending-unit index', () => {
+  const joined = collectStatements().join('\n');
+  const consolidationStart = joined.indexOf('row_number() over');
+  const pendingIndexStart = joined.indexOf('daily_study_task_items_pending_unit_uidx');
+
+  assert.ok(consolidationStart >= 0, 'duplicate pending items must be consolidated during migration');
+  assert.ok(pendingIndexStart > consolidationStart, 'consolidation must run before the pending-unit index');
+  assert.match(joined, /status = 'superseded'/);
+  assert.match(joined, /migrationReason/);
+  assert.match(joined, /order by task\.task_date asc, item\.created_at asc, item\.id asc/i);
+  assert.match(joined, /then 'completed'/);
+});
+
 test('adaptive runtime migrations are mirrored in the declarative schema', () => {
   const schemaSql = normalizeSql(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
 
@@ -127,11 +140,15 @@ test('adaptive migrations are repeatable idempotent statements', () => {
   assert.deepEqual(secondRun, firstRun);
   for (const statement of firstRun) {
     const normalized = normalizeSql(statement);
-    assert.match(normalized, /^(?:alter table|create table|create(?: unique)? index|drop index|update)\b/);
+    assert.match(normalized, /^(?:alter table|create table|create(?: unique)? index|drop index|update|with)\b/);
     const repeatableTypeMigration = normalized.includes('alter column estimated_minutes type numeric(6,1)');
     if (normalized.startsWith('drop index ')) {
       assert.match(normalized, /\bif exists\b/);
-    } else if (!normalized.startsWith('update ') && !repeatableTypeMigration) {
+    } else if (
+      !normalized.startsWith('update ')
+      && !normalized.startsWith('with ')
+      && !repeatableTypeMigration
+    ) {
       assert.match(normalized, /\bif not exists\b/);
     }
   }

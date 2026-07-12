@@ -59,8 +59,6 @@
 - canonical seed repair 测试会短暂制造数据库冲突，因此必须使用 `RUN_POSTGRES_SEED_REPAIR_TEST=1` 独立串行执行；不能与其他共享同一数据库的 PostgreSQL 测试并行。
 - PostgreSQL 初始化仍会输出大量 `IF NOT EXISTS` NOTICE，不影响退出码和测试结果。
 
----
-
 # 最终复审剩余 3 个 Important 修复报告
 
 日期：2026-07-12
@@ -111,3 +109,33 @@
 
 - PostgreSQL runtime migration 会保留新全类型索引并删除旧 new-only 索引；重复执行只产生 `does not exist, skipping` NOTICE，不影响结果。
 - PostgreSQL 仓储继续沿用现有同步 `psql` 调用模型；本次未扩大范围重构数据库访问层。
+
+---
+
+## 最后一个 Important：历史全类型 pending 唯一索引安全迁移
+
+### 根因与修复
+
+- 已存在数据库可能同时含有同一 `(plan_id, memory_unit_id)` 的跨日期 `due_review` / `weak_review` pending 项；直接创建 `daily_study_task_items_pending_unit_uidx` 会使 `ensureAdaptiveSchema` 失败。
+- runtime migration 和 `backend/schema.sql` 现在都在创建全类型 pending 唯一索引前，按 `task_date ASC, item.created_at ASC, item.id ASC` 对每组 pending 项排序。
+- 最早项保留 pending；其余项改为 `superseded`，不物理删除，并在原有 JSON object 上写入 `migrationReason: "superseded_duplicate_pending_unit"`。若旧 `result` 不是 object，则保存在 `previousResult`，避免数据丢失。
+- 被归并项所在任务会重新计算 pending 数；没有 pending 项的旧任务改为 `completed`，避免继续显示为待办。CTE 计数显式排除本次 `superseded_items`，规避 PostgreSQL 同语句快照仍可见旧 pending 值的问题。
+
+### TDD 与真实 PostgreSQL 覆盖
+
+- RED：schema contract test 先失败，证明 runtime migration 中没有归并步骤。
+- RED：真实 PG migration gate 首次暴露同一数据修改 CTE 的快照问题，重复项已 superseded 但旧任务仍是 pending。
+- GREEN：修复后，独立 PG gate 会临时删除新索引、插入跨日期 weak/due 重复 pending、运行 `ensureAdaptiveSchema`，并断言：
+  - 仅 task_date 最早的 weak 项保持 pending；较晚 due 项为 superseded 且带迁移原因。
+  - 被清空 pending 的旧任务为 completed。
+  - 第二次运行无额外变更。
+  - 新唯一索引存在，后续重复 pending 插入失败。
+  - `finally` 清理随机测试用户、计划、任务和任务项，并恢复索引；测试以单并发独立执行。
+
+### 最终验证
+
+- `node --test test/adaptive-schema.test.js`：6/6 通过。
+- `RUN_POSTGRES_ADAPTIVE_SCHEMA_MIGRATION_TEST=1 node --test --test-concurrency=1 test/adaptive-schema-postgres.test.js`：1/1 真实 PostgreSQL 迁移 gate 通过。
+- `npm test`：191 tests，160 pass，31 skip，0 fail。
+- `RUN_POSTGRES_ADAPTIVE_PLAN_TEST=1 node --test --test-reporter=dot test/*.test.js`：完整 PostgreSQL adaptive gates 通过；其余未启用的独立 PG gates 保持 skip。
+- `npm run check`、改动相关 `node --check`、`node tools/check-ui-parity.mjs`、`git diff --check`：通过。

@@ -217,6 +217,63 @@ function ensureAdaptiveSchema(execute) {
         on daily_study_task_items(task_id, sort_order)
     `,
     `
+      with ranked_pending_items as (
+        select
+          item.id,
+          item.task_id,
+          row_number() over (
+            partition by item.plan_id, item.memory_unit_id
+            order by task.task_date asc, item.created_at asc, item.id asc
+          ) as pending_rank
+        from daily_study_task_items item
+        join daily_study_tasks task on task.id = item.task_id
+        where item.plan_id is not null
+          and item.status = 'pending'
+      ), superseded_items as (
+        update daily_study_task_items item
+        set
+          status = 'superseded',
+          result = (
+            case
+              when item.result is null then '{}'::jsonb
+              when jsonb_typeof(item.result) = 'object' then item.result
+              else jsonb_build_object('previousResult', item.result)
+            end
+          ) || jsonb_build_object('migrationReason', 'superseded_duplicate_pending_unit'),
+          updated_at = now()
+        from ranked_pending_items ranked
+        where item.id = ranked.id
+          and ranked.pending_rank > 1
+        returning item.id, item.task_id
+      ), affected_tasks as (
+        select distinct task_id from superseded_items
+      ), task_counts as (
+        select
+          task.id,
+          count(item.id) filter (
+            where item.status = 'pending'
+              and not exists (
+                select 1
+                from superseded_items superseded
+                where superseded.id = item.id
+              )
+          )::int as pending_count
+        from daily_study_tasks task
+        join affected_tasks affected on affected.task_id = task.id
+        left join daily_study_task_items item on item.task_id = task.id
+        group by task.id
+      )
+      update daily_study_tasks task
+      set
+        status = case when task_counts.pending_count = 0 then 'completed' else 'pending' end,
+        updated_at = now()
+      from task_counts
+      where task.id = task_counts.id
+        and task.status is distinct from case
+          when task_counts.pending_count = 0 then 'completed' else 'pending'
+        end
+    `,
+    `
       create unique index if not exists daily_study_task_items_pending_unit_uidx
         on daily_study_task_items(plan_id, memory_unit_id)
         where plan_id is not null and status = 'pending'
