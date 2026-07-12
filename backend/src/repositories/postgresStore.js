@@ -8,6 +8,7 @@ const {
 } = require('../../../common/adaptive-memory');
 const { businessDate } = require('../../../common/business-date');
 const { ensureAdaptiveSchema } = require('./adaptiveSchema');
+const { ensureNotificationSchema } = require('./notificationSchema');
 
 const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空复现', '整段复诵', '抽查巩固'];
 const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
@@ -337,6 +338,7 @@ function ensureFeatureSchema() {
     )
   `);
   ensureAdaptiveSchema(queryScalar);
+  ensureNotificationSchema(queryScalar);
 }
 
 function todayDate() {
@@ -3885,7 +3887,7 @@ function getNotificationSettings(userId = IDS.demoUser) {
   `);
 
   const defaults = [
-    { channel: 'wechat_subscribe', enabled: true, quietHours: { start: '22:00', end: '07:00' } },
+    { channel: 'wechat_subscribe', enabled: false, quietHours: { start: '22:00', end: '07:00' } },
     { channel: 'app_push', enabled: true, quietHours: { start: '22:00', end: '07:00' } },
     { channel: 'sms', enabled: false, quietHours: { start: '22:00', end: '07:00' } }
   ];
@@ -3937,6 +3939,179 @@ function upsertNotificationSetting({ userId = IDS.demoUser, channel, enabled, qu
   `);
 }
 
+function saveNotificationSubscriptionResult({ userId, templateKey, templateId, status, idempotencyKey }) {
+  const normalizedUserId = ensureUser(userId);
+  const normalizedTemplateKey = String(templateKey || '').trim();
+  const normalizedTemplateId = String(templateId || '').trim();
+  const normalizedStatus = String(status || '').trim();
+  const normalizedKey = String(idempotencyKey || '').trim();
+  if (!normalizedTemplateKey || !normalizedTemplateId || !normalizedKey || normalizedKey.length > 180) {
+    throw notificationError('NOTIFICATION_SUBSCRIPTION_INVALID', 400);
+  }
+  if (!['accept', 'reject', 'ban'].includes(normalizedStatus)) {
+    throw notificationError('NOTIFICATION_SUBSCRIPTION_STATUS_INVALID', 400);
+  }
+  const requestPayload = {
+    templateKey: normalizedTemplateKey,
+    templateId: normalizedTemplateId,
+    status: normalizedStatus
+  };
+  const existingIdempotency = queryOne(`
+    select
+      request_payload as "requestPayload",
+      response_payload as "responsePayload"
+    from notification_subscription_idempotency
+    where user_id = ${sqlValue(normalizedUserId)}
+      and idempotency_key = ${sqlValue(normalizedKey)}
+    limit 1
+  `);
+  if (existingIdempotency) {
+    if (!sameNotificationSubscriptionRequest(existingIdempotency.requestPayload, requestPayload)) {
+      throw notificationError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return { ...existingIdempotency.responsePayload, replayed: true };
+  }
+
+  const subscription = queryReturningOne(`
+    insert into notification_subscriptions (
+      user_id, template_key, template_id, status, granted_at, consumed_at
+    ) values (
+      ${sqlValue(normalizedUserId)},
+      ${sqlValue(normalizedTemplateKey)},
+      ${sqlValue(normalizedTemplateId)},
+      ${sqlValue(normalizedStatus)},
+      ${normalizedStatus === 'accept' ? 'now()' : 'null'},
+      null
+    )
+    on conflict (user_id, template_id) do update set
+      template_key = excluded.template_key,
+      status = excluded.status,
+      granted_at = excluded.granted_at,
+      consumed_at = null,
+      updated_at = now()
+    returning
+      id::text as "id",
+      user_id::text as "userId",
+      template_key as "templateKey",
+      template_id as "templateId",
+      status,
+      granted_at as "grantedAt",
+      consumed_at as "consumedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `);
+  const enabled = queryScalar(`
+    select exists (
+      select 1 from notification_subscriptions
+      where user_id = ${sqlValue(normalizedUserId)} and status = 'accept'
+    )
+  `) === 't';
+  const currentSetting = getNotificationSettings(normalizedUserId)
+    .find((item) => item.channel === 'wechat_subscribe');
+  const setting = upsertNotificationSetting({
+    userId: normalizedUserId,
+    channel: 'wechat_subscribe',
+    enabled,
+    quietHours: currentSetting ? currentSetting.quietHours : null
+  });
+  const responsePayload = { subscription, setting };
+  const inserted = queryScalar(`
+    insert into notification_subscription_idempotency (
+      user_id, idempotency_key, request_payload, response_payload
+    ) values (
+      ${sqlValue(normalizedUserId)},
+      ${sqlValue(normalizedKey)},
+      ${sqlJson(requestPayload)}::jsonb,
+      ${sqlJson(responsePayload)}::jsonb
+    )
+    on conflict (user_id, idempotency_key) do nothing
+    returning id::text
+  `);
+  if (!inserted) {
+    const replay = queryOne(`
+      select request_payload as "requestPayload", response_payload as "responsePayload"
+      from notification_subscription_idempotency
+      where user_id = ${sqlValue(normalizedUserId)} and idempotency_key = ${sqlValue(normalizedKey)}
+      limit 1
+    `);
+    if (!replay || !sameNotificationSubscriptionRequest(replay.requestPayload, requestPayload)) {
+      throw notificationError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return { ...replay.responsePayload, replayed: true };
+  }
+  return responsePayload;
+}
+
+function getNotificationSubscription({ userId, templateId }) {
+  const normalizedUserId = normalizeUserId(userId);
+  return queryOne(`
+    select
+      id::text as "id",
+      user_id::text as "userId",
+      template_key as "templateKey",
+      template_id as "templateId",
+      status,
+      granted_at as "grantedAt",
+      consumed_at as "consumedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from notification_subscriptions
+    where user_id = ${sqlValue(normalizedUserId)}
+      and template_id = ${sqlValue(String(templateId || '').trim())}
+    limit 1
+  `);
+}
+
+function findAvailableNotificationSubscription({ userId, templateId, templateKey }) {
+  const normalizedUserId = normalizeUserId(userId);
+  const where = [
+    `user_id = ${sqlValue(normalizedUserId)}`,
+    `template_id = ${sqlValue(String(templateId || '').trim())}`,
+    "status = 'accept'",
+    'consumed_at is null'
+  ];
+  if (templateKey) where.push(`template_key = ${sqlValue(String(templateKey).trim())}`);
+  return queryOne(`
+    select
+      id::text as "id",
+      user_id::text as "userId",
+      template_key as "templateKey",
+      template_id as "templateId",
+      status,
+      granted_at as "grantedAt",
+      consumed_at as "consumedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from notification_subscriptions
+    where ${where.join(' and ')}
+    order by granted_at asc
+    limit 1
+  `);
+}
+
+function getNotificationDeliveryTarget(userId) {
+  const normalizedUserId = normalizeUserId(userId);
+  return queryOne(`
+    select id::text as "userId", coalesce(wechat_openid, '') as openid
+    from users
+    where id = ${sqlValue(normalizedUserId)} and deleted_at is null
+    limit 1
+  `);
+}
+
+function isNotificationChannelEnabled(userId, channel) {
+  const normalizedUserId = normalizeUserId(userId);
+  const value = queryScalar(`
+    select coalesce((
+      select enabled::text from notification_settings
+      where user_id = ${sqlValue(normalizedUserId)}
+        and channel = ${sqlValue(String(channel || '').trim())}
+      limit 1
+    ), 'false')
+  `);
+  return value === 'true';
+}
+
 function createNotificationJob({ userId = IDS.demoUser, taskId = null, channel, scheduledAt, payload }) {
   const normalizedUserId = ensureUser(userId);
   const normalizedChannel = String(channel || '').trim();
@@ -3971,6 +4146,12 @@ function createNotificationJob({ userId = IDS.demoUser, taskId = null, channel, 
       scheduled_at as "scheduledAt",
       status,
       payload,
+      attempt_count as "attemptCount",
+      next_retry_at as "nextRetryAt",
+      last_error as "lastError",
+      provider_message_id as "providerMessageId",
+      provider_response as "providerResponse",
+      sent_at as "sentAt",
       created_at as "createdAt",
       updated_at as "updatedAt"
   `);
@@ -4131,6 +4312,11 @@ function listNotificationJobs({ userId, limit = 20, status, startAt, endAt, orga
       nj.scheduled_at as "scheduledAt",
       nj.status,
       nj.payload,
+      nj.attempt_count as "attemptCount",
+      nj.next_retry_at as "nextRetryAt",
+      nj.last_error as "lastError",
+      nj.provider_message_id as "providerMessageId",
+      nj.provider_response as "providerResponse",
       nj.sent_at as "sentAt",
       nj.created_at as "createdAt",
       nj.updated_at as "updatedAt",
@@ -4148,8 +4334,8 @@ function listNotificationJobs({ userId, limit = 20, status, startAt, endAt, orga
   `);
 }
 
-function dispatchNotificationJobs({ dueBefore = new Date().toISOString(), limit = 20 } = {}) {
-  const pendingJobs = queryRows(`
+function listDueNotificationJobs({ dueBefore = new Date().toISOString(), limit = 20 } = {}) {
+  return queryRows(`
     select
       id::text as "id",
       user_id::text as "userId",
@@ -4158,22 +4344,115 @@ function dispatchNotificationJobs({ dueBefore = new Date().toISOString(), limit 
       scheduled_at as "scheduledAt",
       status,
       payload,
+      attempt_count as "attemptCount",
+      next_retry_at as "nextRetryAt",
+      last_error as "lastError",
+      provider_message_id as "providerMessageId",
+      provider_response as "providerResponse",
+      sent_at as "sentAt",
       created_at as "createdAt",
       updated_at as "updatedAt"
     from notification_jobs
     where status = 'pending'
       and scheduled_at <= ${sqlValue(String(dueBefore || new Date().toISOString()))}
+      and (next_retry_at is null or next_retry_at <= ${sqlValue(String(dueBefore || new Date().toISOString()))})
     order by scheduled_at asc
     limit ${Number(limit || 20)}
   `);
+}
 
-  const dispatched = pendingJobs.map((job) => queryReturningOne(`
+function recordNotificationJobSuccess({ jobId, subscriptionId, providerMessageId, providerResponse, sentAt }) {
+  const completedAt = String(sentAt || new Date().toISOString());
+  const rawUpdated = queryScalar(`
+    with consumed as (
+      update notification_subscriptions
+      set consumed_at = ${sqlValue(completedAt)}, updated_at = ${sqlValue(completedAt)}
+      where id = ${sqlValue(normalizeId(subscriptionId))}
+        and status = 'accept'
+        and consumed_at is null
+        and user_id = (
+          select user_id from notification_jobs
+          where id = ${sqlValue(normalizeId(jobId))} and status = 'pending'
+        )
+      returning id
+    ), channel_setting as (
+      update notification_settings
+      set
+        enabled = exists (
+          select 1 from notification_subscriptions
+          where user_id = (
+              select user_id from notification_jobs where id = ${sqlValue(normalizeId(jobId))}
+            )
+            and id <> ${sqlValue(normalizeId(subscriptionId))}
+            and status = 'accept'
+            and consumed_at is null
+        ),
+        updated_at = ${sqlValue(completedAt)}
+      where user_id = (
+          select user_id from notification_jobs where id = ${sqlValue(normalizeId(jobId))}
+        )
+        and channel = 'wechat_subscribe'
+      returning id
+    ), updated as (
+      update notification_jobs
+      set
+        status = 'sent',
+        sent_at = ${sqlValue(completedAt)},
+        attempt_count = attempt_count + 1,
+        next_retry_at = null,
+        last_error = null,
+        provider_message_id = ${sqlValue(String(providerMessageId || ''))},
+        provider_response = ${sqlJson(providerResponse || null)}::jsonb,
+        updated_at = ${sqlValue(completedAt)}
+      where id = ${sqlValue(normalizeId(jobId))}
+        and status = 'pending'
+        and exists (select 1 from consumed)
+        and (select count(*) from channel_setting) >= 0
+      returning
+        id::text as "id",
+        user_id::text as "userId",
+        task_id::text as "taskId",
+        channel,
+        scheduled_at as "scheduledAt",
+        status,
+        payload,
+        attempt_count as "attemptCount",
+        next_retry_at as "nextRetryAt",
+        last_error as "lastError",
+        provider_message_id as "providerMessageId",
+        provider_response as "providerResponse",
+        sent_at as "sentAt",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+    )
+    select row_to_json(updated) from updated
+  `);
+  const updated = rawUpdated ? JSON.parse(rawUpdated) : null;
+  if (!updated) throw notificationError('WECHAT_SUBSCRIPTION_REQUIRED', 409);
+  return updated;
+}
+
+function recordNotificationJobFailure({ jobId, error, retryable, providerResponse, attemptedAt }) {
+  const failedAt = String(attemptedAt || new Date().toISOString());
+  const retryableSql = retryable ? 'true' : 'false';
+  const updated = queryReturningOne(`
     update notification_jobs
     set
-      status = 'sent',
-      sent_at = now(),
-      updated_at = now()
-    where id = ${sqlValue(job.id)}
+      status = case when ${retryableSql} and attempt_count + 1 < 3 then 'pending' else 'failed' end,
+      attempt_count = attempt_count + 1,
+      next_retry_at = case
+        when ${retryableSql} and attempt_count + 1 < 3 then
+          ${sqlValue(failedAt)}::timestamptz + case attempt_count
+            when 0 then interval '1 minute'
+            when 1 then interval '5 minutes'
+            else interval '30 minutes'
+          end
+        else null
+      end,
+      last_error = ${sqlValue(String(error || 'NOTIFICATION_DELIVERY_FAILED'))},
+      provider_response = ${sqlJson(providerResponse || null)}::jsonb,
+      updated_at = ${sqlValue(failedAt)}
+    where id = ${sqlValue(normalizeId(jobId))} and status = 'pending'
     returning
       id::text as "id",
       user_id::text as "userId",
@@ -4182,18 +4461,17 @@ function dispatchNotificationJobs({ dueBefore = new Date().toISOString(), limit 
       scheduled_at as "scheduledAt",
       status,
       payload,
+      attempt_count as "attemptCount",
+      next_retry_at as "nextRetryAt",
+      last_error as "lastError",
+      provider_message_id as "providerMessageId",
+      provider_response as "providerResponse",
       sent_at as "sentAt",
       created_at as "createdAt",
       updated_at as "updatedAt"
-  `)).map((job) => ({
-    ...job,
-    deliveryProvider: 'mock'
-  }));
-
-  return {
-    dispatchedCount: dispatched.length,
-    dispatched
-  };
+  `);
+  if (!updated) throw notificationError('NOTIFICATION_JOB_NOT_PENDING', 409);
+  return updated;
 }
 
 function getGrowthOverview(userId = IDS.demoUser) {
@@ -5149,6 +5427,19 @@ function assessmentError(code, statusCode) {
   return error;
 }
 
+function notificationError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+function sameNotificationSubscriptionRequest(left = {}, right = {}) {
+  return left.templateKey === right.templateKey &&
+    left.templateId === right.templateId &&
+    left.status === right.status;
+}
+
 function hashAdminPassword(password) {
   return crypto.createHash('sha256').update(String(password || '')).digest('hex');
 }
@@ -5191,7 +5482,6 @@ module.exports = {
   createMemoryAssessment,
   createNotificationJob,
   createRecitationSession,
-  dispatchNotificationJobs,
   createPlan,
   completeStudyTaskItem,
   getContent,
@@ -5200,6 +5490,8 @@ module.exports = {
   getDashboard,
   getTodayStudyTask,
   getNotificationSettings,
+  getNotificationDeliveryTarget,
+  getNotificationSubscription,
   getUserById,
   getAdminById,
   initializeDatabase,
@@ -5213,6 +5505,8 @@ module.exports = {
   listContents,
   listFestivals,
   listNotificationJobs,
+  listDueNotificationJobs,
+  isNotificationChannelEnabled,
   listOrganizationAssets,
   listOrganizations,
   listPlans,
@@ -5224,6 +5518,10 @@ module.exports = {
   updateContent,
   updateFestival,
   updateAssetAccess,
+  findAvailableNotificationSubscription,
+  recordNotificationJobFailure,
+  recordNotificationJobSuccess,
+  saveNotificationSubscriptionResult,
   upsertRecitationGoal,
   upsertNotificationSetting
 };

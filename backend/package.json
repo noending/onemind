@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/server.js && node --check src/routes.js && node --check src/repositories/memoryStore.js && node --check src/repositories/postgresStore.js && node --check src/repositories/store.js && node --check src/data/seed.js",
+    "check": "node --check src/server.js && node --check src/routes.js && node --check src/repositories/memoryStore.js && node --check src/repositories/postgresStore.js && node --check src/repositories/store.js && node --check src/repositories/notificationSchema.js && node --check src/services/wechatSubscribeConfig.js && node --check src/services/wechatAccessToken.js && node --check src/services/wechatSubscribeSender.js && node --check src/services/notificationDispatcher.js && node --check ../common/api.js && node --check ../pages/profile/index.js && node --check src/data/seed.js",
     "admin:install": "npm --prefix admin-app install",
     "admin:dev": "npm --prefix admin-app run dev",
     "admin:build": "npm --prefix admin-app run build"

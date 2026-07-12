@@ -13,7 +13,7 @@ const {
   copyContentAsNewVersion,
   createAdaptivePlan,
   createPlan,
-  dispatchNotificationJobs,
+  findAvailableNotificationSubscription,
   completeTask,
   findAdminByCredentials,
   getAdminById,
@@ -23,6 +23,7 @@ const {
   getGrowthOverview,
   getTodayStudyTask,
   getNotificationSettings,
+  getNotificationDeliveryTarget,
   getStoreMode,
   getUserById,
   listAdminContents,
@@ -32,6 +33,8 @@ const {
   listContents,
   listFestivals,
   listNotificationJobs,
+  listDueNotificationJobs,
+  isNotificationChannelEnabled,
   listOrganizationAssets,
   listOrganizations,
   listPlans,
@@ -46,8 +49,19 @@ const {
   updateContent,
   updateFestival,
   updateAssetAccess,
+  recordNotificationJobFailure,
+  recordNotificationJobSuccess,
+  saveNotificationSubscriptionResult,
   completeStudyTaskItem
 } = require('./repositories/store');
+const {
+  findTemplateById,
+  parseWechatSubscribeTemplates,
+  toPublicCapabilities
+} = require('./services/wechatSubscribeConfig');
+const { createWechatAccessTokenProvider } = require('./services/wechatAccessToken');
+const { createWechatSubscribeSender } = require('./services/wechatSubscribeSender');
+const { createNotificationDispatcher } = require('./services/notificationDispatcher');
 
 const fs = require('fs');
 const path = require('path');
@@ -67,6 +81,26 @@ const DEMO_USER_ID = process.env.DEMO_USER_ID || 'demo-user';
 const WECHAT_LOGIN_MODE = process.env.WECHAT_LOGIN_MODE || 'mock';
 const WECHAT_APP_ID = process.env.WECHAT_APP_ID || '';
 const WECHAT_APP_SECRET = process.env.WECHAT_APP_SECRET || '';
+const WECHAT_SUBSCRIBE_CONFIG = parseWechatSubscribeTemplates();
+const wechatAccessTokenProvider = createWechatAccessTokenProvider({
+  appId: WECHAT_APP_ID,
+  appSecret: WECHAT_APP_SECRET
+});
+const wechatSubscribeSender = createWechatSubscribeSender({
+  accessTokenProvider: wechatAccessTokenProvider
+});
+const notificationDispatcher = createNotificationDispatcher({
+  repository: {
+    findAvailableNotificationSubscription,
+    getNotificationDeliveryTarget,
+    isNotificationChannelEnabled,
+    listDueNotificationJobs,
+    recordNotificationJobFailure,
+    recordNotificationJobSuccess
+  },
+  sender: wechatSubscribeSender,
+  templateConfig: WECHAT_SUBSCRIBE_CONFIG
+});
 
 const ROLE_PERMISSIONS = {
   super_admin: [
@@ -146,6 +180,12 @@ async function handleRequest(req, res, body) {
       service: 'oneMind backend',
       phase: 'phase-3-phase-4-skeleton',
       storeMode: getStoreMode()
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/notification-capabilities') {
+    return sendJson(res, 200, {
+      data: toPublicCapabilities(WECHAT_SUBSCRIBE_CONFIG)
     });
   }
 
@@ -241,12 +281,35 @@ async function handleRequest(req, res, body) {
   if (req.method === 'PUT' && pathname === '/api/notification-settings') {
     if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
     const payload = parseJsonBody(body);
+    if (payload.channel === 'wechat_subscribe' && payload.enabled === true) {
+      return sendJson(res, 409, { error: 'WECHAT_SUBSCRIPTION_ACCEPT_REQUIRED' });
+    }
     return sendJson(res, 200, {
       data: upsertNotificationSetting({
         userId: userSession.id,
         channel: payload.channel,
         enabled: payload.enabled,
         quietHours: payload.quietHours
+      })
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/notification-subscriptions/wechat') {
+    if (!userSession) return sendJson(res, 401, { error: 'UNAUTHORIZED' });
+    const idempotencyKey = getIdempotencyKey(req);
+    const payload = parseJsonBody(body);
+    const template = findTemplateById(WECHAT_SUBSCRIBE_CONFIG, payload.templateId);
+    if (!template) return sendJson(res, 400, { error: 'WECHAT_SUBSCRIBE_TEMPLATE_INVALID' });
+    if (!['accept', 'reject', 'ban'].includes(String(payload.status || '').trim())) {
+      return sendJson(res, 400, { error: 'WECHAT_SUBSCRIBE_STATUS_INVALID' });
+    }
+    return sendJson(res, 200, {
+      data: saveNotificationSubscriptionResult({
+        userId: userSession.id,
+        templateKey: template.key,
+        templateId: template.templateId,
+        status: payload.status,
+        idempotencyKey
       })
     });
   }
@@ -710,7 +773,7 @@ async function handleRequest(req, res, body) {
 
   if (req.method === 'POST' && pathname === '/api/admin/notification-jobs/dispatch') {
     return sendJson(res, 200, {
-      data: dispatchNotificationJobs({
+      data: await notificationDispatcher.dispatchDue({
         dueBefore: requestUrl.searchParams.get('dueBefore') || new Date().toISOString(),
         limit: requestUrl.searchParams.get('limit') || 20
       })

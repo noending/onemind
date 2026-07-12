@@ -100,7 +100,7 @@
 ### 3.3 仓库层（repositories/）
 
 - `store.js`：导入时尝试 `require('./postgresStore')`，并执行 `initializeDatabase()`。成功则切到 `postgres` 模式，失败则回退到 `memory` 模式并打印 warn。
-- `memoryStore.js`：完全基于内存对象 `state`；提供 `listContents` / `createContent` / `updateContent` / `archiveContent` / `getContent` / `listFestivals` / `listPlans` / `createPlan` / `completeTask` / `loginByWechatCode` / `getUserById` / `getNotificationSettings` / `upsertNotificationSetting` / `createNotificationJob` / `listNotificationJobs` / `dispatchNotificationJobs` / `getGrowthOverview` / `listRecitationGoals` / `upsertRecitationGoal` / `createRecitationSession` / `listTodayFocus` / `getDashboard` / `listOrganizations` / `listOrganizationAssets` / `createAsset` / `updateAsset` / `archiveAsset` / `updateAssetAccess` / `addOrganizationMember` / `listAuditLogs`。
+- `memoryStore.js`：完全基于内存对象 `state`；通知接口只负责授权、到期任务读取及原子成功/失败记录，外部发送由独立 `notificationDispatcher` 编排。
 - `postgresStore.js`：使用 `child_process.execFileSync` 调用系统 `psql` 客户端，连接到 `PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE`（默认 `127.0.0.1:5432 / magic / onemind`），提供与 `memoryStore` 同样的接口语义。
 
 ### 3.4 种子数据（data/seed.js）

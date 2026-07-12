@@ -17,12 +17,14 @@ const {
 } = require("../../common/platform");
 const {
   getNotificationSettingsApi,
+  getNotificationCapabilitiesApi,
   getAuthUser,
   getCurrentUser,
   isBackendEnabled,
   listNotificationJobsApi,
   loginWithWechat,
   logout,
+  saveWechatSubscriptionResultApi,
   updateNotificationSettingApi
 } = require("../../common/api");
 
@@ -289,7 +291,7 @@ function defaultNotificationSetting(channel) {
     id: `local-${channel}`,
     userId: "local",
     channel,
-    enabled: channel !== "sms",
+    enabled: channel === "app_push",
     quietHours: {
       start: "22:00",
       end: "07:00"
@@ -448,6 +450,103 @@ function saveNotificationJobCache(jobs) {
   safeSetStorage(PROFILE_NOTIFICATION_JOBS_KEY, normalizeNotificationJobs(jobs));
 }
 
+function notificationResultIdempotencyKey(templateId, status) {
+  return [
+    "wechat-subscribe",
+    String(templateId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48),
+    status,
+    Date.now(),
+    Math.random().toString(36).slice(2, 10)
+  ].join("-");
+}
+
+function applyNotificationSettingsToPage(page, settings, hint) {
+  const normalizedSettings = normalizeNotificationSettings(settings);
+  saveNotificationCache(normalizedSettings);
+  page.setData({
+    notificationSettings: normalizedSettings,
+    notificationSourceText: hint
+  });
+  return normalizedSettings;
+}
+
+function disableUnverifiedWechatSetting(settings) {
+  return normalizeNotificationSettings(settings).map((setting) =>
+    setting.channel === "wechat_subscribe" ? { ...setting, enabled: false } : setting
+  );
+}
+
+function requestWechatSubscriptionAuthorization(page) {
+  if (!page.data.auth || !page.data.auth.loggedIn || !isBackendEnabled()) {
+    wx.showToast({ title: "请先登录后再开启微信提醒", icon: "none" });
+    return;
+  }
+  const capabilities = page.data.notificationCapabilities || {};
+  const templates = Array.isArray(capabilities.templates) ? capabilities.templates : [];
+  if (!capabilities.available || !templates.length) {
+    const title = capabilities.error === "WECHAT_SUBSCRIBE_NOT_CONFIGURED"
+      ? "微信订阅模板未配置，暂时无法开启"
+      : "提醒能力获取失败，请稍后重试";
+    wx.showToast({ title, icon: "none" });
+    return;
+  }
+  if (typeof wx.requestSubscribeMessage !== "function") {
+    wx.showToast({ title: "当前微信版本不支持订阅消息", icon: "none" });
+    return;
+  }
+
+  const tmplIds = templates.map((item) => item.templateId).filter(Boolean);
+  wx.requestSubscribeMessage({
+    tmplIds,
+    success(result = {}) {
+      const decisions = templates.map((template) => ({
+        templateId: template.templateId,
+        status: String(result[template.templateId] || "").trim()
+      }));
+      if (decisions.some((item) => !["accept", "reject", "ban"].includes(item.status))) {
+        wx.showToast({ title: "订阅结果无效，微信提醒未开启", icon: "none" });
+        return;
+      }
+      Promise.all(decisions.map((decision) => saveWechatSubscriptionResultApi({
+        ...decision,
+        idempotencyKey: notificationResultIdempotencyKey(decision.templateId, decision.status)
+      }))).then(() => {
+        const accepted = decisions.some((item) => item.status === "accept");
+        const nextSettings = (page.data.notificationSettings || []).map((setting) =>
+          setting.channel === "wechat_subscribe"
+            ? { ...setting, enabled: accepted, updatedAt: new Date().toISOString() }
+            : setting
+        );
+        applyNotificationSettingsToPage(page, nextSettings, "提醒设置已同步后台");
+        wx.showToast({
+          title: accepted
+            ? "已开启微信提醒"
+            : decisions.some((item) => item.status === "ban")
+              ? "订阅消息已被系统禁止，请在小程序设置中开启"
+              : "订阅未获授权，微信提醒未开启",
+          icon: "none"
+        });
+      }).catch(() => {
+        updateNotificationSettingApi({
+          channel: "wechat_subscribe",
+          enabled: false,
+          quietHours: normalizeQuietHours(
+            (page.data.notificationSettings || []).find((item) => item.channel === "wechat_subscribe")?.quietHours
+          )
+        }).catch(() => null);
+        const nextSettings = (page.data.notificationSettings || []).map((setting) =>
+          setting.channel === "wechat_subscribe" ? { ...setting, enabled: false } : setting
+        );
+        applyNotificationSettingsToPage(page, nextSettings, "订阅授权保存失败");
+        wx.showToast({ title: "订阅授权保存失败，微信提醒未开启", icon: "none" });
+      });
+    },
+    fail() {
+      wx.showToast({ title: "订阅请求失败，微信提醒未开启", icon: "none" });
+    }
+  });
+}
+
 function buildPlatformCapabilities() {
   return getReminderCapabilities().map((item) => ({
     ...item,
@@ -487,6 +586,12 @@ Page({
     platformChecklistHint: "",
     notificationSettings: [],
     notificationJobs: [],
+    notificationCapabilities: {
+      provider: "wechat_subscribe",
+      available: false,
+      templates: [],
+      error: "NOTIFICATION_CAPABILITIES_UNAVAILABLE"
+    },
     notificationSourceText: "",
     notificationJobsHint: "",
     recitationGoals: [],
@@ -654,7 +759,7 @@ Page({
     const useRemote = isBackendEnabled() && loggedIn;
 
     if (!useRemote) {
-      const cachedSettings = getNotificationCache();
+      const cachedSettings = disableUnverifiedWechatSetting(getNotificationCache());
       const cachedJobs = getNotificationJobCache();
       this.setData({
         notificationSettings: cachedSettings,
@@ -674,8 +779,9 @@ Page({
 
     return Promise.all([
       getNotificationSettingsApi(),
-      listNotificationJobsApi(5)
-    ]).then(([settings, jobs]) => {
+      listNotificationJobsApi(5),
+      getNotificationCapabilitiesApi()
+    ]).then(([settings, jobs, capabilities]) => {
       const nextSettings = normalizeNotificationSettings(settings || []);
       const nextJobs = normalizeNotificationJobs(jobs || []);
       saveNotificationCache(nextSettings);
@@ -683,6 +789,7 @@ Page({
       this.setData({
         notificationSettings: nextSettings,
         notificationJobs: nextJobs,
+        notificationCapabilities: capabilities,
         notificationSourceText: "提醒设置已同步后台",
         notificationJobsHint: nextJobs.length
           ? "最近 5 条提醒任务已同步"
@@ -693,11 +800,17 @@ Page({
         notificationJobs: nextJobs
       };
     }).catch(() => {
-      const cachedSettings = getNotificationCache();
+      const cachedSettings = disableUnverifiedWechatSetting(getNotificationCache());
       const cachedJobs = getNotificationJobCache();
       this.setData({
         notificationSettings: cachedSettings,
         notificationJobs: cachedJobs,
+        notificationCapabilities: {
+          provider: "wechat_subscribe",
+          available: false,
+          templates: [],
+          error: "NOTIFICATION_CAPABILITIES_UNAVAILABLE"
+        },
         notificationSourceText: cachedSettings.some((item) => item.updatedAt)
           ? "后台同步失败，已回退到本地缓存"
           : "后台同步失败，当前使用本地默认提醒设置",
@@ -914,6 +1027,10 @@ Page({
     if (!channel) return;
     const current = (this.data.notificationSettings || []).find((item) => item.channel === channel);
     if (!current) return;
+    if (channel === "wechat_subscribe" && !current.enabled) {
+      requestWechatSubscriptionAuthorization(this);
+      return;
+    }
 
     const nextSetting = {
       ...current,
@@ -925,16 +1042,6 @@ Page({
       (this.data.notificationSettings || []).map((item) => (item.channel === channel ? nextSetting : item))
     );
 
-    const applyNotificationSettings = (settings, hint) => {
-      const normalizedSettings = normalizeNotificationSettings(settings);
-      saveNotificationCache(normalizedSettings);
-      this.setData({
-        notificationSettings: normalizedSettings,
-        notificationSourceText: hint
-      });
-      return normalizedSettings;
-    };
-
     if (this.data.auth.loggedIn && isBackendEnabled()) {
       updateNotificationSettingApi({
         channel: nextSetting.channel,
@@ -944,13 +1051,13 @@ Page({
         const mergedSettings = normalizeNotificationSettings(
           nextSettings.map((item) => (item.channel === channel ? updatedSetting : item))
         );
-        applyNotificationSettings(mergedSettings, "提醒设置已同步后台");
+        applyNotificationSettingsToPage(this, mergedSettings, "提醒设置已同步后台");
         wx.showToast({
           title: nextSetting.enabled ? "已开启" : "已关闭",
           icon: "none"
         });
       }).catch(() => {
-        applyNotificationSettings(nextSettings, "后台同步失败，已保存在本地");
+        applyNotificationSettingsToPage(this, nextSettings, "后台同步失败，已保存在本地");
         wx.showToast({
           title: nextSetting.enabled ? "本地已开启" : "本地已关闭",
           icon: "none"
@@ -959,7 +1066,7 @@ Page({
       return;
     }
 
-    applyNotificationSettings(nextSettings, "当前使用本地提醒设置");
+    applyNotificationSettingsToPage(this, nextSettings, "当前使用本地提醒设置");
     wx.showToast({
       title: nextSetting.enabled ? "已开启" : "已关闭",
       icon: "none"

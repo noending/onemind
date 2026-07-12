@@ -145,7 +145,11 @@
 | `sentAt` | ISO | 否 | 实际发送时间。 |
 | `status` | enum | 否 | `pending` / `sent` / `failed` / `cancelled`。 |
 | `payload` | object | 否 | 自定义载荷。 |
-| `deliveryProvider` | string | 否 | 实际发送方（`mock` 占位）。 |
+| `attemptCount` | number | 是 | 已执行派发次数，最多 3 次。 |
+| `nextRetryAt` | ISO | 否 | 可重试失败的下一次执行时间。 |
+| `lastError` | string | 否 | 最近一次失败原因。 |
+| `providerMessageId` | string | 否 | 微信成功回执消息 ID。 |
+| `providerResponse` | object | 否 | 微信原始 JSON 回执。 |
 
 ## 9. Organization / OrganizationMember
 

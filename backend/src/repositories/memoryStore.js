@@ -43,6 +43,8 @@ const state = {
   contentVersions: [],
   notificationSettings: [],
   notificationJobs: [],
+  notificationSubscriptions: [],
+  notificationSubscriptionIdempotency: {},
   memoryAssessments: [],
   assessmentCompletionResponses: {},
   adaptivePlans: [],
@@ -1719,7 +1721,7 @@ function getNotificationSettings(userId = 'demo-user') {
       id: `${userId}-${channel}`,
       userId,
       channel,
-      enabled: channel !== 'sms',
+      enabled: channel === 'app_push',
       quietHours: {
         start: '22:00',
         end: '07:00'
@@ -1775,6 +1777,12 @@ function createNotificationJob({ userId = 'demo-user', taskId = null, channel, s
     scheduledAt: normalizedSchedule,
     status: 'pending',
     payload: payload || {},
+    attemptCount: 0,
+    nextRetryAt: null,
+    lastError: '',
+    providerMessageId: '',
+    providerResponse: null,
+    sentAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -1918,26 +1926,159 @@ function listNotificationJobs({ userId = 'demo-user', limit = 20, status, startA
     });
 }
 
-function dispatchNotificationJobs({ dueBefore = new Date().toISOString(), limit = 20 } = {}) {
-  const dueAt = String(dueBefore || new Date().toISOString());
-  const pending = state.notificationJobs
-    .filter((job) => job.status === 'pending' && String(job.scheduledAt) <= dueAt)
-    .slice(0, Number(limit || 20));
+function saveNotificationSubscriptionResult({ userId, templateKey, templateId, status, idempotencyKey }) {
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedTemplateKey = String(templateKey || '').trim();
+  const normalizedTemplateId = String(templateId || '').trim();
+  const normalizedStatus = String(status || '').trim();
+  const normalizedKey = String(idempotencyKey || '').trim();
+  if (!normalizedUserId || !normalizedTemplateKey || !normalizedTemplateId || !normalizedKey) {
+    throw notificationError('NOTIFICATION_SUBSCRIPTION_INVALID', 400);
+  }
+  if (!['accept', 'reject', 'ban'].includes(normalizedStatus)) {
+    throw notificationError('NOTIFICATION_SUBSCRIPTION_STATUS_INVALID', 400);
+  }
 
-  const dispatched = pending.map((job) => {
-    job.status = 'sent';
-    job.sentAt = new Date().toISOString();
-    job.updatedAt = job.sentAt;
-    return {
-      ...job,
-      deliveryProvider: 'mock'
-    };
-  });
+  const idempotencyScope = `${normalizedUserId}:${normalizedKey}`;
+  const request = { templateKey: normalizedTemplateKey, templateId: normalizedTemplateId, status: normalizedStatus };
+  const replay = state.notificationSubscriptionIdempotency[idempotencyScope];
+  if (replay) {
+    if (JSON.stringify(replay.request) !== JSON.stringify(request)) {
+      throw notificationError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return { ...structuredClone(replay.response), replayed: true };
+  }
 
-  return {
-    dispatchedCount: dispatched.length,
-    dispatched
+  const now = new Date().toISOString();
+  const existing = state.notificationSubscriptions.find((item) =>
+    item.userId === normalizedUserId && item.templateId === normalizedTemplateId
+  );
+  const subscription = {
+    ...(existing || { id: createId('notify_sub'), createdAt: now }),
+    userId: normalizedUserId,
+    templateKey: normalizedTemplateKey,
+    templateId: normalizedTemplateId,
+    status: normalizedStatus,
+    grantedAt: normalizedStatus === 'accept' ? now : null,
+    consumedAt: null,
+    updatedAt: now
   };
+  if (existing) Object.assign(existing, subscription);
+  else state.notificationSubscriptions.push(subscription);
+
+  const enabled = state.notificationSubscriptions.some((item) =>
+    item.userId === normalizedUserId && item.status === 'accept'
+  );
+  const setting = upsertNotificationSetting({
+    userId: normalizedUserId,
+    channel: 'wechat_subscribe',
+    enabled,
+    quietHours: getNotificationSettings(normalizedUserId)
+      .find((item) => item.channel === 'wechat_subscribe')?.quietHours || null
+  });
+  const response = { subscription: { ...subscription }, setting };
+  state.notificationSubscriptionIdempotency[idempotencyScope] = { request, response: structuredClone(response) };
+  return response;
+}
+
+function getNotificationSubscription({ userId, templateId }) {
+  return state.notificationSubscriptions.find((item) =>
+    item.userId === userId && item.templateId === templateId
+  ) || null;
+}
+
+function findAvailableNotificationSubscription({ userId, templateId, templateKey }) {
+  return state.notificationSubscriptions.find((item) =>
+    item.userId === userId &&
+    item.templateId === templateId &&
+    (!templateKey || item.templateKey === templateKey) &&
+    item.status === 'accept' &&
+    !item.consumedAt
+  ) || null;
+}
+
+function getNotificationDeliveryTarget(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  return user ? { userId: user.id, openid: user.wechatOpenid || '' } : null;
+}
+
+function isNotificationChannelEnabled(userId, channel) {
+  return getNotificationSettings(userId).some((setting) =>
+    setting.channel === channel && setting.enabled === true
+  );
+}
+
+function listDueNotificationJobs({ dueBefore = new Date().toISOString(), limit = 20 } = {}) {
+  const dueAt = String(dueBefore || new Date().toISOString());
+  return state.notificationJobs
+    .filter((job) => job.status === 'pending')
+    .filter((job) => String(job.scheduledAt) <= dueAt)
+    .filter((job) => !job.nextRetryAt || String(job.nextRetryAt) <= dueAt)
+    .slice()
+    .sort((left, right) => String(left.scheduledAt).localeCompare(String(right.scheduledAt)))
+    .slice(0, Math.max(0, Number(limit || 20)))
+    .map((job) => ({ ...job }));
+}
+
+function recordNotificationJobSuccess({ jobId, subscriptionId, providerMessageId, providerResponse, sentAt }) {
+  const job = state.notificationJobs.find((item) => item.id === jobId);
+  const subscription = state.notificationSubscriptions.find((item) => item.id === subscriptionId);
+  if (!job || job.status !== 'pending') throw notificationError('NOTIFICATION_JOB_NOT_PENDING', 409);
+  if (!subscription || subscription.userId !== job.userId || subscription.status !== 'accept' || subscription.consumedAt) {
+    throw notificationError('WECHAT_SUBSCRIPTION_REQUIRED', 409);
+  }
+  const completedAt = String(sentAt || new Date().toISOString());
+  subscription.consumedAt = completedAt;
+  subscription.updatedAt = completedAt;
+  const hasAvailableAuthorization = state.notificationSubscriptions.some((item) =>
+    item.userId === job.userId && item.status === 'accept' && !item.consumedAt
+  );
+  const currentWechatSetting = getNotificationSettings(job.userId)
+    .find((item) => item.channel === 'wechat_subscribe');
+  upsertNotificationSetting({
+    userId: job.userId,
+    channel: 'wechat_subscribe',
+    enabled: hasAvailableAuthorization,
+    quietHours: currentWechatSetting ? currentWechatSetting.quietHours : null
+  });
+  Object.assign(job, {
+    status: 'sent',
+    sentAt: completedAt,
+    attemptCount: Number(job.attemptCount || 0) + 1,
+    nextRetryAt: null,
+    lastError: '',
+    providerMessageId: String(providerMessageId || ''),
+    providerResponse: providerResponse || null,
+    updatedAt: completedAt
+  });
+  return { ...job };
+}
+
+function recordNotificationJobFailure({ jobId, error, retryable, providerResponse, attemptedAt }) {
+  const job = state.notificationJobs.find((item) => item.id === jobId);
+  if (!job || job.status !== 'pending') throw notificationError('NOTIFICATION_JOB_NOT_PENDING', 409);
+  const failedAt = String(attemptedAt || new Date().toISOString());
+  const attemptCount = Number(job.attemptCount || 0) + 1;
+  const shouldRetry = Boolean(retryable) && attemptCount < 3;
+  const retryDelaysMs = [60_000, 5 * 60_000, 30 * 60_000];
+  Object.assign(job, {
+    status: shouldRetry ? 'pending' : 'failed',
+    attemptCount,
+    nextRetryAt: shouldRetry
+      ? new Date(new Date(failedAt).getTime() + retryDelaysMs[attemptCount - 1]).toISOString()
+      : null,
+    lastError: String(error || 'NOTIFICATION_DELIVERY_FAILED'),
+    providerResponse: providerResponse || null,
+    updatedAt: failedAt
+  });
+  return { ...job };
+}
+
+function notificationError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
 }
 
 function getGrowthOverview(userId = 'demo-user') {
@@ -2367,13 +2508,16 @@ module.exports = {
   createNotificationJob,
   createAdaptivePlan,
   createMemoryAssessment,
-  dispatchNotificationJobs,
   createRecitationSession,
   getUserById,
   getGrowthOverview,
   getNotificationSettings,
+  getNotificationDeliveryTarget,
+  getNotificationSubscription,
   getDashboard,
   listNotificationJobs,
+  listDueNotificationJobs,
+  isNotificationChannelEnabled,
   loginByWechatCode,
   updateUserProfile,
   createPlan,
@@ -2400,5 +2544,9 @@ module.exports = {
   updateAssetAccess,
   upsertRecitationGoal,
   upsertNotificationSetting,
+  findAvailableNotificationSubscription,
+  recordNotificationJobFailure,
+  recordNotificationJobSuccess,
+  saveNotificationSubscriptionResult,
   todayDate
 };

@@ -44,7 +44,7 @@
   - 任务：`POST /api/review-tasks/:id/complete`。
   - 今日 / 成长：`GET /api/today-focus`、`GET /api/growth-overview`。
   - 读诵：`GET /api/recitation-goals`、`PUT /api/recitation-goals/:contentId`、`POST /api/recitation-sessions`。
-  - 通知：`GET /api/notification-settings`、`PUT /api/notification-settings`、`POST /api/notification-jobs`、`GET /api/notification-jobs`。
+  - 通知：`GET /api/notification-capabilities`、`POST /api/notification-subscriptions/wechat`、`GET/PUT /api/notification-settings`、`POST/GET /api/notification-jobs`。
   - 管理：`POST /api/admin/login`、`GET /api/admin/session`、`GET /api/admin/overview`、`POST /api/admin/contents`、`PUT/DELETE /api/admin/contents/:id`、`POST /api/admin/assets`、`PUT/DELETE /api/admin/assets/:id`、`POST /api/admin/notification-jobs/dispatch`。
   - 组织与资产：`GET /api/organizations`、`GET /api/organizations/:id/assets`、`POST /api/organizations/:id/members`、`PUT /api/assets/:id/access`。
   - 审计：`GET /api/audit-logs`。
@@ -61,7 +61,7 @@
   - 内容：`listContents(filters)` / `createContent(payload)` / `updateContent(contentId, payload)` / `archiveContent(contentId)` / `getContent(contentId)` / `listFestivals()`。
   - 计划与任务：`listPlans(userId)` / `createPlan({ userId, contentId, startDate, mode })` / `completeTask({ taskId, result, selfRating, latencyBand, mistakeCount, note })`。
   - 用户与会话：`loginByWechatCode(payload)` / `getUserById(userId)`。
-  - 通知：`getNotificationSettings(userId)` / `upsertNotificationSetting({ userId, channel, enabled, quietHours })` / `createNotificationJob({ userId, taskId, channel, scheduledAt, payload })` / `listNotificationJobs({ userId, limit })` / `dispatchNotificationJobs({ dueBefore, limit })`。
+  - 通知：repository 负责授权、到期任务和原子成功/失败状态；`notificationDispatcher` 负责异步微信发送编排，不再存在 repository mock dispatch。
   - 成长 / 读诵：`getGrowthOverview(userId)` / `listRecitationGoals(userId)` / `upsertRecitationGoal({ userId, contentId, goalType, preferredPeriod, dailyTargetCount })` / `createRecitationSession({ ... })`。
   - 今日：`listTodayFocus(userId)`。
   - 仪表盘：`getDashboard()`。

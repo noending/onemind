@@ -399,6 +399,28 @@ Idempotency-Key: <1-180 characters>
 
 ## 10. 提醒设置
 
+提醒链路分为队列、用户授权、外部发送三层。`notification_jobs.status=sent` 仅表示微信 subscribe-message API 已返回 `errcode=0`。
+
+### 读取提醒能力
+
+`GET /api/notification-capabilities`
+
+无需登录。返回值只公开模板身份信息，不包含 app secret、page 或 fields：
+
+```json
+{
+  "data": {
+    "provider": "wechat_subscribe",
+    "available": true,
+    "templates": [
+      { "key": "review", "templateId": "wechat-template-id", "label": "复习提醒" }
+    ]
+  }
+}
+```
+
+未配置时返回 `available=false`、空模板数组和 `WECHAT_SUBSCRIBE_NOT_CONFIGURED`。
+
 ### 读取提醒设置
 
 `GET /api/notification-settings`
@@ -430,13 +452,37 @@ Authorization: Bearer <user-token>
 ```json
 {
   "channel": "wechat_subscribe",
-  "enabled": true,
+  "enabled": false,
   "quietHours": {
     "start": "22:00",
     "end": "07:00"
   }
 }
 ```
+
+`wechat_subscribe` 只能通过此接口关闭，不能直接开启。开启必须在小程序用户手势中调用 `wx.requestSubscribeMessage`，并保存至少一个 `accept` 结果。
+
+### 保存微信订阅结果
+
+`POST /api/notification-subscriptions/wechat`
+
+请求头：
+
+```text
+Authorization: Bearer <user-token>
+Idempotency-Key: <unique-key, max 180 chars>
+```
+
+每个模板结果单独提交：
+
+```json
+{
+  "templateId": "wechat-template-id",
+  "status": "accept"
+}
+```
+
+`status` 仅支持 `accept | reject | ban`。相同幂等键和相同请求安全重放；同一键复用到不同请求返回 `409 IDEMPOTENCY_KEY_CONFLICT`。至少一个模板为 `accept` 后 `wechat_subscribe` setting 才启用；最后一份授权发送并消费后自动关闭。
 
 ### 创建提醒任务
 
@@ -450,11 +496,14 @@ Authorization: Bearer <user-token>
   "channel": "wechat_subscribe",
   "scheduledAt": "2026-05-27T21:00:00+08:00",
   "payload": {
-    "templateId": "demo-template",
-    "page": "pages/home/index"
+    "type": "review",
+    "title": "心经复习",
+    "message": "请开始今天的复习"
   }
 }
 ```
+
+`payload.type` 通过服务端配置映射到 template key；模板 ID、page 和字段映射不由客户端写入 job。
 
 ### 查看当前用户提醒任务
 
@@ -527,11 +576,24 @@ Authorization: Bearer <admin-token>
 - `dueBefore`
 - `limit`
 
-当前为演示态 mock 派发：
+路由会 await 异步 dispatcher。dispatcher 只读取到期 `pending` 任务，并校验模板配置、真实 openid、未消费 `accept` 授权后调用微信。返回：
 
-- 将 `pending` 状态的提醒任务更新为 `sent`
-- 回写 `sentAt`
-- 返回 `dispatchedCount`
+```json
+{
+  "data": {
+    "processed": 3,
+    "sent": 1,
+    "failed": 1,
+    "retrying": 1,
+    "providers": {
+      "wechat_subscribe": { "sent": 1, "failed": 1, "retrying": 1 }
+    },
+    "results": []
+  }
+}
+```
+
+微信返回非零 `errcode` 时不会标记 `sent`。可重试失败写入 `attemptCount/nextRetryAt/lastError/providerResponse`，最多尝试 3 次；永久失败或第 3 次失败标记 `failed`。
 
 ### 管理后台页面
 

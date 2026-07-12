@@ -70,6 +70,8 @@
 ## 4.4 通知与审计
 
 - `notification_settings`：提醒渠道设置
+- `notification_subscriptions`：按用户和微信模板保存授权、授予与消费状态
+- `notification_subscription_idempotency`：订阅结果 API 幂等响应
 - `notification_jobs`：待发送提醒任务
 - `audit_logs`：关键操作审计日志
 
@@ -189,16 +191,19 @@
 
 - 支撑独立的日常读诵系统与连续打卡统计。
 
-## 5.8 notification_settings / notification_jobs
+## 5.8 notification_settings / notification_subscriptions / notification_jobs
 
 用途：
 
-- 存储用户提醒开关与提醒发送任务。
+- 存储用户提醒开关、逐模板授权与提醒发送任务。
 
 说明：
 
 - `notification_settings.quiet_hours` 为 jsonb。
+- `notification_subscriptions.status` 为 `accept | reject | ban`，`granted_at/consumed_at` 区分授权和单次消费。
 - `notification_jobs.payload` 为 jsonb。
+- `notification_jobs.attempt_count/next_retry_at/last_error` 记录最多 3 次派发状态。
+- `provider_message_id/provider_response` 保存微信回执；只有 `errcode=0` 才写 `sent_at` 和 `status=sent`。
 
 ## 5.9 audit_logs
 
@@ -255,4 +260,3 @@
 - 内容模式配置与训练/读诵会话表已落地。
 - 审计日志与组织基础表已落地，可支撑 Phase 4 深化。
 - 后续新增能力需先更新 `schema.sql`，再回写本文档。
-

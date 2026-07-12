@@ -671,6 +671,24 @@ function getNotificationSettingsApi() {
   return request("/api/notification-settings").then((response) => response.data || []);
 }
 
+function getNotificationCapabilitiesApi() {
+  return request("/api/notification-capabilities").then((response) => response.data || {
+    provider: "wechat_subscribe",
+    available: false,
+    templates: [],
+    error: "NOTIFICATION_CAPABILITIES_UNAVAILABLE"
+  });
+}
+
+function saveWechatSubscriptionResultApi(payload = {}) {
+  const { idempotencyKey, ...data } = payload;
+  return request("/api/notification-subscriptions/wechat", {
+    method: "POST",
+    header: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+    data
+  }).then((response) => response.data || null);
+}
+
 function updateNotificationSettingApi(payload = {}) {
   return request("/api/notification-settings", {
     method: "PUT",
@@ -751,6 +769,7 @@ module.exports = {
   getTodayStudyTaskApi,
   getContentStructureApi,
   getNotificationSettingsApi,
+  getNotificationCapabilitiesApi,
   listNotificationJobsApi,
   listRecitationGoalsApi,
   listContents,
@@ -759,6 +778,7 @@ module.exports = {
   normalizeContent,
   normalizeFestival,
   recommendMemoryPlanApi,
+  saveWechatSubscriptionResultApi,
   getAuthUser,
   setBackendEnabled,
   setBaseUrl,
