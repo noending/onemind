@@ -3,7 +3,9 @@
     "page": "recitation",
     "source": "design/src/app/App.tsx#FullTextModal",
     "target": "pages/recitation/index.(wxml|wxss|js)",
-    "updatedAt": "2026-07-07",
+    "updatedAt": "2026-07-12",
+    "interactionMode": "manual-completion-no-playback",
+    "notes": "阶段 A 验收覆盖全文、修持提示、手动轮次和完成记录；不保留播放器样式基线。",
     "designFrame": {
       "widthPx": 390,
       "heightPx": 844
@@ -52,7 +54,7 @@
       "miniRpx": 31,
       "implementedRpx": 30
     },
-    "footerButtonRadius": {
+    "completionButtonRadius": {
       "designPx": 999,
       "miniRpx": 1921,
       "implementedRpx": 999
@@ -68,6 +70,11 @@
       "designPx": 6,
       "miniRpx": 12,
       "implementedRpx": 12
+    },
+    "roundControlGap": {
+      "designPx": 5,
+      "miniRpx": 10,
+      "implementedRpx": 10
     }
   },
   "selectorSnapshot": {
@@ -87,9 +94,19 @@
       "border-radius: 30rpx",
       "padding: 24rpx"
     ],
+    ".round-inline": [
+      "margin-bottom: 14rpx",
+      "display: flex",
+      "justify-content: space-between"
+    ],
+    ".round-inline-btn": [
+      "width: var(--btn-h-sm)",
+      "height: var(--btn-h-sm)",
+      "border-radius: var(--radius-pill)"
+    ],
     ".complete-button": [
-      "height: 72rpx",
-      "border-radius: 999rpx"
+      "height: var(--btn-h-md)",
+      "border-radius: var(--radius-pill)"
     ]
   }
 }

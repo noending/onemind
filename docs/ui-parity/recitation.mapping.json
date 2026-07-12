@@ -1,8 +1,9 @@
 {
   "meta": {
     "page": "recitation",
-    "updatedAt": "2026-06-05",
-    "notes": "Web FullTextModal 与 MiniApp recitation 页结构映射基线。"
+    "updatedAt": "2026-07-12",
+    "interactionMode": "manual-completion-no-playback",
+    "notes": "MiniApp 读诵页采用全文查看、手动轮次和完成记录；阶段 A 不包含音频、播放计时、进度条或播放器控制。"
   },
   "mappings": [
     {
@@ -76,45 +77,59 @@
       }
     },
     {
-      "id": "recitation.round-row",
+      "id": "recitation.full-text-view",
       "designRef": {
         "file": "design/src/app/App.tsx",
-        "line": 1761,
-        "snippet": "轮次与控制"
+        "line": 1674,
+        "snippet": "经文全文"
       },
       "miniappRef": {
         "file": "pages/recitation/index.wxml",
-        "line": 58,
-        "selector": ".round-inline",
-        "snippet": "round-inline"
+        "line": 4,
+        "selector": ".header-top-title",
+        "snippet": "经文全文"
       }
     },
     {
-      "id": "recitation.progress-row",
+      "id": "recitation.round-adjustment",
       "designRef": {
         "file": "design/src/app/App.tsx",
-        "line": 1767,
-        "snippet": "时间 + 进度条"
+        "line": 1761,
+        "snippet": "轮次"
       },
       "miniappRef": {
         "file": "pages/recitation/index.wxml",
         "line": 67,
-        "selector": ".time-row",
-        "snippet": "progress-slider"
+        "selector": ".round-inline",
+        "snippet": "decreaseRound + roundCount + increaseRound"
       }
     },
     {
-      "id": "recitation.controls",
+      "id": "recitation.completion-record",
       "designRef": {
-        "file": "design/src/app/App.tsx",
-        "line": 1781,
-        "snippet": "播放器控制区"
+        "file": "docs/PRODUCT_REQUIREMENTS.md",
+        "line": 48,
+        "snippet": "完成打卡"
       },
       "miniappRef": {
         "file": "pages/recitation/index.wxml",
-        "line": 73,
-        "selector": ".control-row",
-        "snippet": "control-mini / control-play / control-btn"
+        "line": 74,
+        "selector": ".complete-button",
+        "snippet": "completeRecitation"
+      }
+    },
+    {
+      "id": "recitation.no-playback",
+      "designRef": {
+        "file": "docs/PRODUCT_REQUIREMENTS.md",
+        "line": 113,
+        "snippet": "播放功能不属于本阶段范围"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.(js|wxml|wxss)",
+        "line": 1,
+        "selector": "absence of audio, timer, progress, and playback controls",
+        "snippet": "manual completion only"
       }
     }
   ]

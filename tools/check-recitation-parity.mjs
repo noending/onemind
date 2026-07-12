@@ -28,6 +28,34 @@ function includesEvery(content, values) {
   return values.every((value) => content.includes(value));
 }
 
+const REQUIRED_MAPPING_IDS = [
+  "recitation.topbar",
+  "recitation.hero-card",
+  "recitation.stats-strip",
+  "recitation.lines",
+  "recitation.note-card",
+  "recitation.full-text-view",
+  "recitation.round-adjustment",
+  "recitation.completion-record",
+  "recitation.no-playback"
+];
+
+const PLAYBACK_IDENTIFIERS = [
+  "<audio",
+  "innerAudioContext",
+  "syncPlaybackView",
+  "startPlaybackTicker",
+  "time-row",
+  "progress-slider",
+  "control-row",
+  "control-play"
+];
+
+function hasRequiredMappings(mapping) {
+  const ids = new Set((mapping.mappings || []).map((item) => item.id));
+  return REQUIRED_MAPPING_IDS.every((id) => ids.has(id));
+}
+
 function runChecks() {
   const mapping = loadJson(files.mapping);
   const tokens = loadJson(files.tokens);
@@ -38,20 +66,50 @@ function runChecks() {
 
   const checks = [
     {
-      id: "config.mapping-has-items",
-      check: () => Array.isArray(mapping.mappings) && mapping.mappings.length >= 8
+      id: "config.mapping-covers-manual-recitation",
+      check: () => (
+        mapping.meta?.interactionMode === "manual-completion-no-playback"
+        && hasRequiredMappings(mapping)
+      )
     },
     {
-      id: "config.tokens-has-selectors",
-      check: () => !!tokens.selectorSnapshot && Object.keys(tokens.selectorSnapshot).length >= 5
+      id: "config.tokens-cover-manual-actions",
+      check: () => (
+        tokens.meta?.interactionMode === "manual-completion-no-playback"
+        && includesEvery(Object.keys(tokens.selectorSnapshot || {}), [
+          ".hero-card",
+          ".stats-strip",
+          ".segment-card",
+          ".note-card",
+          ".round-inline",
+          ".round-inline-btn",
+          ".complete-button"
+        ])
+      )
     },
     {
-      id: "logic.playback-sync",
-      check: () => /syncPlaybackView\(\)/.test(recitationJs) && /startPlaybackTicker/.test(recitationJs)
+      id: "logic.no-playback-entry",
+      check: () => !PLAYBACK_IDENTIFIERS.some((identifier) => (
+        recitationJs.includes(identifier)
+        || recitationWxml.includes(identifier)
+        || recitationWxss.includes(identifier)
+      ))
     },
     {
-      id: "logic.practice-tip",
-      check: () => /buildPracticeTip/.test(recitationJs) && /dailyDurationText/.test(recitationJs)
+      id: "logic.practice-tip-and-daily-progress",
+      check: () => /buildPracticeTip/.test(recitationJs) && /buildDailySegmentText/.test(recitationJs)
+    },
+    {
+      id: "logic.round-adjustment",
+      check: () => /increaseRound/.test(recitationJs) && /decreaseRound/.test(recitationJs)
+    },
+    {
+      id: "logic.completion-record-path",
+      check: () => (
+        /completeRecitationWithFallback/.test(recitationJs)
+        && /roundCount/.test(recitationJs)
+        && /durationSeconds/.test(recitationJs)
+      )
     },
     {
       id: "structure.topbar-and-hero",
@@ -78,11 +136,11 @@ function runChecks() {
       ])
     },
     {
-      id: "structure.player-footer",
+      id: "structure.round-adjustment-and-completion",
       check: () => includesEvery(recitationWxml, [
         "round-inline",
-        "time-row",
-        "control-row",
+        "bindtap=\"decreaseRound\"",
+        "bindtap=\"increaseRound\"",
         "complete-button"
       ])
     },
