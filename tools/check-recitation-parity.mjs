@@ -40,29 +40,158 @@ const REQUIRED_MAPPING_IDS = [
   "recitation.no-playback"
 ];
 
-const PLAYBACK_IDENTIFIERS = [
-  "<audio",
-  "innerAudioContext",
-  "syncPlaybackView",
-  "startPlaybackTicker",
-  "time-row",
-  "progress-slider",
-  "control-row",
-  "control-play"
+const PLAYBACK_RULES = [
+  { id: "audio-element", pattern: /<\s*audio(?:\s|>)/i },
+  { id: "wx-create-inner-audio-context", pattern: /\bwx\s*\.\s*createInnerAudioContext\s*\(/i },
+  { id: "wx-background-audio-manager", pattern: /\bwx\s*\.\s*getBackgroundAudioManager\s*\(/i },
+  { id: "wx-create-web-audio-context", pattern: /\bwx\s*\.\s*createWebAudioContext\s*\(/i },
+  { id: "audio-context-identifier", pattern: /\baudio[_-]?context\b/i },
+  { id: "playback-method-call", pattern: /\b(?:play|pause|stop|seek)\s*\(/i },
+  {
+    id: "audio-event-method-call",
+    pattern: /\.\s*(?:on|off)(?:play|pause|stop|timeupdate|ended|error|waiting|seeking|seeked|canplay)\s*\(/i
+  },
+  {
+    id: "audio-event-binding",
+    pattern: /\b(?:bind|catch):?(?:timeupdate|play|pause|ended|waiting|seeking|seeked|canplay)\s*=/i
+  },
+  {
+    id: "playback-control-binding",
+    pattern: /\b(?:bind|catch):?(?:tap|change)\s*=\s*["'][^"']*(?:play|pause|stop|seek|audio)[^"']*["']/i
+  },
+  {
+    id: "playback-data-action",
+    pattern: /\bdata-(?:action|command)\s*=\s*["'](?:play|pause|stop|seek)["']/i
+  },
+  { id: "playback-control-class", pattern: /\b(?:time-row|progress-slider|control-row|control-play)\b/i },
+  { id: "playback-timer-symbol", pattern: /\b(?:syncPlaybackView|startPlaybackTicker|playbackTimer)\b/i }
 ];
+
+export const PLAYBACK_NEGATIVE_FIXTURES = Object.freeze([
+  {
+    id: "inner-audio-context",
+    expectedRuleId: "wx-create-inner-audio-context",
+    source: "const player = wx.createInnerAudioContext();"
+  },
+  {
+    id: "inner-audio-context-uppercase",
+    expectedRuleId: "wx-create-inner-audio-context",
+    source: "const player = WX.CREATEINNERAUDIOCONTEXT();"
+  },
+  {
+    id: "background-audio-manager",
+    expectedRuleId: "wx-background-audio-manager",
+    source: "const player = wx.getBackgroundAudioManager();"
+  },
+  {
+    id: "web-audio-context",
+    expectedRuleId: "wx-create-web-audio-context",
+    source: "const graph = wx.createWebAudioContext();"
+  },
+  {
+    id: "audio-context-identifier",
+    expectedRuleId: "audio-context-identifier",
+    source: "let audioContext = null;"
+  },
+  { id: "audio-element", expectedRuleId: "audio-element", source: "<audio src=\"{{audioUrl}}\"></audio>" },
+  { id: "play-call", expectedRuleId: "playback-method-call", source: "player.play();" },
+  { id: "pause-call", expectedRuleId: "playback-method-call", source: "player.pause();" },
+  { id: "stop-call", expectedRuleId: "playback-method-call", source: "player.stop();" },
+  { id: "seek-call", expectedRuleId: "playback-method-call", source: "player.seek(12);" },
+  {
+    id: "timeupdate-event-method",
+    expectedRuleId: "audio-event-method-call",
+    source: "player.onTimeUpdate(syncProgress);"
+  },
+  {
+    id: "play-event-method",
+    expectedRuleId: "audio-event-method-call",
+    source: "player.onPlay(handlePlay);"
+  },
+  {
+    id: "timeupdate-event-binding",
+    expectedRuleId: "audio-event-binding",
+    source: "<video bindtimeupdate=\"onTimeUpdate\"></video>"
+  },
+  {
+    id: "colon-timeupdate-event-binding",
+    expectedRuleId: "audio-event-binding",
+    source: "<video bind:timeupdate=\"onTimeUpdate\"></video>"
+  },
+  {
+    id: "play-control-binding",
+    expectedRuleId: "playback-control-binding",
+    source: "<button bindtap=\"togglePlayback\">开始</button>"
+  },
+  {
+    id: "colon-play-control-binding",
+    expectedRuleId: "playback-control-binding",
+    source: "<button bind:tap=\"togglePlayback\">开始</button>"
+  },
+  {
+    id: "seek-control-binding",
+    expectedRuleId: "playback-control-binding",
+    source: "<slider bindchange=\"seekAudio\" />"
+  },
+  {
+    id: "playback-data-action",
+    expectedRuleId: "playback-data-action",
+    source: "<button data-action=\"play\">开始</button>"
+  },
+  {
+    id: "playback-control-class",
+    expectedRuleId: "playback-control-class",
+    source: "<button class=\"control-play\">开始</button>"
+  },
+  {
+    id: "playback-timer",
+    expectedRuleId: "playback-timer-symbol",
+    source: "startPlaybackTicker();"
+  }
+]);
+
+export function detectPlaybackViolations(sources = {}) {
+  const violations = [];
+  Object.entries(sources).forEach(([sourceId, content]) => {
+    if (typeof content !== "string") return;
+    PLAYBACK_RULES.forEach((rule) => {
+      const match = content.match(rule.pattern);
+      if (!match) return;
+      violations.push({ sourceId, ruleId: rule.id, match: match[0] });
+    });
+  });
+  return violations;
+}
+
+export function runPlaybackGateSelfCheck() {
+  const failedFixtureIds = PLAYBACK_NEGATIVE_FIXTURES
+    .filter((fixture) => !detectPlaybackViolations({ fixture: fixture.source })
+      .some((violation) => violation.ruleId === fixture.expectedRuleId))
+    .map((fixture) => fixture.id);
+  return {
+    passed: failedFixtureIds.length === 0,
+    failedFixtureIds
+  };
+}
 
 function hasRequiredMappings(mapping) {
   const ids = new Set((mapping.mappings || []).map((item) => item.id));
   return REQUIRED_MAPPING_IDS.every((id) => ids.has(id));
 }
 
-function runChecks() {
+export function runChecks() {
   const mapping = loadJson(files.mapping);
   const tokens = loadJson(files.tokens);
   const designApp = readFile(files.designApp);
   const recitationWxml = readFile(files.recitationWxml);
   const recitationWxss = readFile(files.recitationWxss);
   const recitationJs = readFile(files.recitationJs);
+  const recitationSources = {
+    js: recitationJs,
+    wxml: recitationWxml,
+    wxss: recitationWxss
+  };
+  const playbackGateSelfCheck = runPlaybackGateSelfCheck();
 
   const checks = [
     {
@@ -88,12 +217,12 @@ function runChecks() {
       )
     },
     {
+      id: "guard.no-playback-negative-fixtures",
+      check: () => playbackGateSelfCheck.passed
+    },
+    {
       id: "logic.no-playback-entry",
-      check: () => !PLAYBACK_IDENTIFIERS.some((identifier) => (
-        recitationJs.includes(identifier)
-        || recitationWxml.includes(identifier)
-        || recitationWxss.includes(identifier)
-      ))
+      check: () => detectPlaybackViolations(recitationSources).length === 0
     },
     {
       id: "logic.practice-tip-and-daily-progress",
@@ -177,4 +306,6 @@ function runChecks() {
   }
 }
 
-runChecks();
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  runChecks();
+}

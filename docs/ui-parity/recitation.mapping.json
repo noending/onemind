@@ -43,7 +43,7 @@
       },
       "miniappRef": {
         "file": "pages/recitation/index.wxml",
-        "line": 24,
+        "line": 25,
         "selector": ".stats-strip",
         "snippet": "stats-strip"
       }
@@ -57,7 +57,7 @@
       },
       "miniappRef": {
         "file": "pages/recitation/index.wxml",
-        "line": 39,
+        "line": 46,
         "selector": ".segment-card",
         "snippet": "wx:for=\"{{content.segments}}\""
       }
@@ -71,7 +71,7 @@
       },
       "miniappRef": {
         "file": "pages/recitation/index.wxml",
-        "line": 49,
+        "line": 54,
         "selector": ".note-card",
         "snippet": "note-card"
       }
@@ -85,7 +85,7 @@
       },
       "miniappRef": {
         "file": "pages/recitation/index.wxml",
-        "line": 4,
+        "line": 5,
         "selector": ".header-top-title",
         "snippet": "经文全文"
       }
@@ -113,7 +113,7 @@
       },
       "miniappRef": {
         "file": "pages/recitation/index.wxml",
-        "line": 74,
+        "line": 76,
         "selector": ".complete-button",
         "snippet": "completeRecitation"
       }
