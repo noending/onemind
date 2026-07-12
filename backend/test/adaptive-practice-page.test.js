@@ -53,7 +53,7 @@ test('adaptive submission reports measured metrics with a stable bounded key and
   assert.match(source, /latencyMs/);
   assert.match(source, /mistakeCount/);
   assert.match(source, /hintCount/);
-  assert.match(source, /reviewedAt/);
+  assert.doesNotMatch(source, /reviewedAt/);
   assert.match(source, /idempotencyKey/);
   assert.match(source, /slice\(0,\s*180\)/);
   assert.match(source, /response\.task/);

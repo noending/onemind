@@ -74,13 +74,19 @@ test('adaptive schema includes the controller-supplemented state, task, and idem
     'on daily_study_tasks(plan_id, task_date)',
     'on daily_study_task_items(task_id, sort_order)',
     'on daily_study_task_items(plan_id, memory_unit_id)',
-    "where plan_id is not null and task_type = 'new' and status = 'pending'",
+    'daily_study_task_items_pending_unit_uidx',
+    "where plan_id is not null and status = 'pending'",
+    'drop index if exists daily_study_task_items_pending_new_uidx',
     'unique (user_id, start_idempotency_key)',
     'on memory_assessments(user_id, completion_idempotency_key)',
     'where completion_idempotency_key is not null'
   ]) {
     assert.match(joined, new RegExp(contract.replace(/[()]/g, '\\$&')));
   }
+  assert.doesNotMatch(
+    joined.slice(joined.indexOf('daily_study_task_items_pending_unit_uidx')),
+    /task_type\s*=\s*'new'/
+  );
 });
 
 test('adaptive runtime migrations are mirrored in the declarative schema', () => {
@@ -121,9 +127,11 @@ test('adaptive migrations are repeatable idempotent statements', () => {
   assert.deepEqual(secondRun, firstRun);
   for (const statement of firstRun) {
     const normalized = normalizeSql(statement);
-    assert.match(normalized, /^(?:alter table|create table|create(?: unique)? index|update)\b/);
+    assert.match(normalized, /^(?:alter table|create table|create(?: unique)? index|drop index|update)\b/);
     const repeatableTypeMigration = normalized.includes('alter column estimated_minutes type numeric(6,1)');
-    if (!normalized.startsWith('update ') && !repeatableTypeMigration) {
+    if (normalized.startsWith('drop index ')) {
+      assert.match(normalized, /\bif exists\b/);
+    } else if (!normalized.startsWith('update ') && !repeatableTypeMigration) {
       assert.match(normalized, /\bif not exists\b/);
     }
   }

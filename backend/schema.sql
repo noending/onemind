@@ -368,9 +368,11 @@ create unique index if not exists memory_assessments_completion_key_uidx
 create index if not exists idx_memory_item_states_plan_due on memory_item_states(plan_id, due_at);
 create index if not exists idx_daily_study_tasks_plan_date on daily_study_tasks(plan_id, task_date);
 create index if not exists idx_daily_study_task_items_task_sort on daily_study_task_items(task_id, sort_order);
-create unique index if not exists daily_study_task_items_pending_new_uidx
+create unique index if not exists daily_study_task_items_pending_unit_uidx
   on daily_study_task_items(plan_id, memory_unit_id)
-  where plan_id is not null and task_type = 'new' and status = 'pending';
+  where plan_id is not null and status = 'pending';
+
+drop index if exists daily_study_task_items_pending_new_uidx;
 
 create table if not exists review_tasks (
   id uuid primary key default gen_random_uuid(),

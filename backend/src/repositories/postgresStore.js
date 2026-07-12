@@ -19,7 +19,10 @@ const MAX_ADAPTIVE_RECONCILIATION_ATTEMPTS = 5;
 const ADAPTIVE_PLAN_CREATE_OPERATION = 'adaptive_plan_create';
 const STUDY_TASK_ITEM_COMPLETE_OPERATION = 'study_task_item_complete';
 const LEGACY_PLAN_ARCHIVE_OPERATION = 'legacy_plan_archive';
-const PENDING_NEW_INDEX = 'daily_study_task_items_pending_new_uidx';
+const PENDING_UNIT_INDEXES = [
+  'daily_study_task_items_pending_unit_uidx',
+  'daily_study_task_items_pending_new_uidx'
+];
 
 const DB_CONFIG = {
   host: process.env.PGHOST || '127.0.0.1',
@@ -685,6 +688,53 @@ function createContentVersionSnapshot(content, { changeNote = '' } = {}) {
   `);
 }
 
+function createApprovedPublishedContentVersion(content, { changeNote = '' } = {}) {
+  const contentId = normalizeId(content?.id);
+  if (!contentId || content.publishStatus !== 'published' || content.reviewStatus !== 'approved') return null;
+  const versionNo = nextContentVersionNo(contentId);
+  return queryReturningOne(`
+    insert into content_versions (
+      content_id,
+      version_no,
+      snapshot_json,
+      change_note,
+      created_by,
+      review_status,
+      source_note,
+      version_note,
+      reviewed_by,
+      reviewed_at,
+      published_at
+    ) values (
+      ${sqlValue(contentId)},
+      ${versionNo},
+      ${sqlJson(content)}::jsonb,
+      ${sqlValue(String(changeNote || '').trim() || content.versionNote || '审核通过并发布')},
+      ${sqlValue(IDS.adminUser)},
+      'approved',
+      ${sqlValue(content.sourceNote || '')},
+      ${sqlValue(content.versionNote || '')},
+      ${sqlValue(IDS.adminUser)},
+      now(),
+      now()
+    )
+    returning
+      id::text as "id",
+      content_id::text as "contentId",
+      version_no as "versionNo",
+      snapshot_json as "snapshotJson",
+      change_note as "changeNote",
+      created_by::text as "createdBy",
+      review_status as "reviewStatus",
+      source_note as "sourceNote",
+      version_note as "versionNote",
+      reviewed_by::text as "reviewedBy",
+      reviewed_at as "reviewedAt",
+      published_at as "publishedAt",
+      created_at as "createdAt"
+  `);
+}
+
 function listContentVersions(contentId) {
   const normalizedContentId = normalizeId(contentId);
   if (!normalizedContentId) return [];
@@ -696,6 +746,12 @@ function listContentVersions(contentId) {
       snapshot_json as "snapshotJson",
       change_note as "changeNote",
       created_by::text as "createdBy",
+      review_status as "reviewStatus",
+      source_note as "sourceNote",
+      version_note as "versionNote",
+      reviewed_by::text as "reviewedBy",
+      reviewed_at as "reviewedAt",
+      published_at as "publishedAt",
       created_at as "createdAt"
     from content_versions
     where content_id = ${sqlValue(normalizedContentId)}
@@ -799,6 +855,17 @@ function createContent(payload = {}) {
   });
 
   upsertContentModeConfig(content.id, payload);
+  createApprovedPublishedContentVersion({
+    ...content,
+    segments,
+    defaultMode: payload.defaultMode,
+    supportedModes: payload.supportedModes,
+    supportsRecitation: payload.supportsRecitation,
+    recommendedRecitationTime: payload.recommendedRecitationTime,
+    recitationTheme: payload.recitationTheme
+  }, {
+    changeNote: payload.versionNote || '创建内容时审核通过并发布'
+  });
 
   appendAuditLog({
     action: 'content.created',
@@ -965,6 +1032,17 @@ function updateContent(contentId, payload = {}) {
     supportsRecitation: payload.supportsRecitation !== undefined ? payload.supportsRecitation : existing.supportsRecitation,
     recommendedRecitationTime: payload.recommendedRecitationTime !== undefined ? payload.recommendedRecitationTime : existing.recommendedRecitationTime,
     recitationTheme: payload.recitationTheme !== undefined ? payload.recitationTheme : existing.recitationTheme
+  });
+  createApprovedPublishedContentVersion({
+    ...updated,
+    segments,
+    defaultMode: payload.defaultMode !== undefined ? payload.defaultMode : existing.defaultMode,
+    supportedModes: payload.supportedModes !== undefined ? payload.supportedModes : existing.supportedModes,
+    supportsRecitation: payload.supportsRecitation !== undefined ? payload.supportsRecitation : existing.supportsRecitation,
+    recommendedRecitationTime: payload.recommendedRecitationTime !== undefined ? payload.recommendedRecitationTime : existing.recommendedRecitationTime,
+    recitationTheme: payload.recitationTheme !== undefined ? payload.recitationTheme : existing.recitationTheme
+  }, {
+    changeNote: payload.versionNote || '更新内容时审核通过并发布'
   });
 
   appendAuditLog({
@@ -1799,21 +1877,7 @@ function getTodayStudyTask(userId, planId, date = todayDate()) {
     const plan = getAdaptivePlanById(planId, normalizedUserId);
     if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
 
-    const historicalTaskDate = queryScalar(`
-      select task.task_date::text
-      from daily_study_tasks task
-      where task.plan_id = ${sqlValue(plan.id)}
-        and task.task_date <= ${sqlValue(taskDate)}::date
-        and task.status in ('pending', 'in_progress')
-        and exists (
-          select 1
-          from daily_study_task_items item
-          where item.task_id = task.id
-            and item.status = 'pending'
-        )
-      order by task.task_date asc, task.created_at asc
-      limit 1
-    `);
+    const historicalTaskDate = findEarliestPendingAdaptiveTaskDate(plan.id, taskDate);
     if (historicalTaskDate) return getAdaptiveDailyTask(plan.id, historicalTaskDate);
 
     const existing = getAdaptiveDailyTask(plan.id, taskDate);
@@ -1823,7 +1887,9 @@ function getTodayStudyTask(userId, planId, date = todayDate()) {
       const inserted = insertAdaptiveDailyTask(plan, taskDate, attempt === 0);
       if (!inserted) throw adaptivePlanError('STUDY_TASK_ALLOCATION_CONFLICT', 409);
     } catch (error) {
-      if (!isPendingNewAllocationConflict(error)) throw error;
+      if (!isPendingUnitAllocationConflict(error)) throw error;
+      const winningTaskDate = findEarliestPendingAdaptiveTaskDate(plan.id);
+      if (winningTaskDate) return getAdaptiveDailyTask(plan.id, winningTaskDate);
       if (attempt + 1 >= MAX_ADAPTIVE_TASK_ALLOCATION_ATTEMPTS) {
         throw adaptivePlanError('STUDY_TASK_ALLOCATION_CONFLICT', 409);
       }
@@ -1835,6 +1901,24 @@ function getTodayStudyTask(userId, planId, date = todayDate()) {
   }
 
   throw adaptivePlanError('STUDY_TASK_ALLOCATION_CONFLICT', 409);
+}
+
+function findEarliestPendingAdaptiveTaskDate(planId, latestDate) {
+  return queryScalar(`
+    select task.task_date::text
+    from daily_study_tasks task
+    where task.plan_id = ${sqlValue(planId)}
+      ${latestDate ? `and task.task_date <= ${sqlValue(latestDate)}::date` : ''}
+      and task.status in ('pending', 'in_progress')
+      and exists (
+        select 1
+        from daily_study_task_items item
+        where item.task_id = task.id
+          and item.status = 'pending'
+      )
+    order by task.task_date asc, task.created_at asc
+    limit 1
+  `);
 }
 
 function insertAdaptiveDailyTask(plan, taskDate, allowEmptyTask) {
@@ -2383,10 +2467,10 @@ function normalizeAdaptiveStrategy(value, targetDays) {
   return 'steady';
 }
 
-function isPendingNewAllocationConflict(error) {
+function isPendingUnitAllocationConflict(error) {
   return [error?.message, error?.stderr, error?.stdout]
     .filter(Boolean)
-    .some((value) => String(value).includes(PENDING_NEW_INDEX));
+    .some((value) => PENDING_UNIT_INDEXES.some((indexName) => String(value).includes(indexName)));
 }
 
 function createAdaptiveSequenceRangeLabel(items) {

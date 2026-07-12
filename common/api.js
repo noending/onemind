@@ -618,7 +618,11 @@ function getTodayStudyTaskApi(planId, date) {
 }
 
 function completeStudyTaskItemApi(itemId, payload = {}) {
-  const { idempotencyKey, ...data } = payload;
+  const { idempotencyKey } = payload;
+  const data = { grade: payload.grade };
+  for (const field of ['latencyMs', 'mistakeCount', 'hintCount']) {
+    if (payload[field] !== undefined) data[field] = payload[field];
+  }
   return request(`/api/study-task-items/${encodeURIComponent(itemId)}/complete`, {
     method: "POST",
     header: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},

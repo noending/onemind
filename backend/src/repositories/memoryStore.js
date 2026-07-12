@@ -216,6 +216,41 @@ function createContentVersionSnapshot(content, { changeNote = '' } = {}) {
   return version;
 }
 
+function createApprovedPublishedContentVersion(content, { changeNote = '' } = {}) {
+  if (content.publishStatus !== 'published' || content.reviewStatus !== 'approved') return null;
+  const now = new Date().toISOString();
+  const snapshotSource = { ...content };
+  delete snapshotSource.publishedVersion;
+  const version = {
+    id: createId('content_version'),
+    contentId: content.id,
+    versionNo: nextContentVersionNo(content.id),
+    snapshotJson: toContentDetail(snapshotSource),
+    changeNote: String(changeNote || '').trim() || content.versionNote || '审核通过并发布',
+    createdBy: 'system',
+    createdAt: now,
+    reviewStatus: 'approved',
+    sourceNote: content.sourceNote || '',
+    versionNote: content.versionNote || '',
+    reviewedBy: 'system',
+    reviewedAt: content.reviewedAt || now,
+    publishedAt: now,
+    sourceContentId: content.sourceContentId || '',
+    sourceVersionNo: content.sourceVersionNo || null
+  };
+  state.contentVersions.unshift(version);
+  content.publishedVersion = {
+    id: version.id,
+    versionNo: version.versionNo,
+    reviewStatus: version.reviewStatus,
+    sourceNote: version.sourceNote,
+    versionNote: version.versionNote,
+    sourceContentId: version.sourceContentId,
+    sourceVersionNo: version.sourceVersionNo
+  };
+  return version;
+}
+
 function listContentVersions(contentId) {
   return state.contentVersions
     .filter((item) => item.contentId === contentId)
@@ -263,6 +298,9 @@ function createContent(payload = {}) {
     updatedAt: new Date().toISOString()
   };
   contents.push(content);
+  createApprovedPublishedContentVersion(content, {
+    changeNote: payload.versionNote || '创建内容时审核通过并发布'
+  });
   appendAuditLog({
     actorType: 'admin_user',
     actorId: 'system',
@@ -380,6 +418,9 @@ function updateContent(contentId, payload = {}) {
   };
 
   const current = contents[index];
+  createApprovedPublishedContentVersion(current, {
+    changeNote: payload.versionNote || '更新内容时审核通过并发布'
+  });
 
   appendAuditLog({
     actorType: 'admin_user',

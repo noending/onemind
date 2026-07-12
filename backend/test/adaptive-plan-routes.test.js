@@ -303,7 +303,7 @@ test('study item completion validates keys and preserves idempotent results', as
     method: 'POST',
     pathname,
     headers,
-    payload: { grade: 'good', reviewedAt: '2026-07-10T08:00:00.000Z' }
+    payload: { grade: 'good', reviewedAt: '2000-01-01T00:00:00.000Z' }
   });
   const repeated = await request({
     method: 'POST',
@@ -313,5 +313,7 @@ test('study item completion validates keys and preserves idempotent results', as
   });
 
   assert.equal(first.statusCode, 200);
+  assert.notEqual(first.body.data.state.lastReviewedAt, '2000-01-01T00:00:00.000Z');
+  assert.ok(Date.parse(first.body.data.state.lastReviewedAt) > Date.now() - 10_000);
   assert.deepEqual(repeated.body.data, first.body.data);
 });

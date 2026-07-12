@@ -65,7 +65,7 @@ test('today-task production request omits a client-local date', async () => {
   assert.equal(request.url, 'https://api.example.test/api/study-tasks/today?planId=plan-1');
 });
 
-test('item-completion client encodes the item path and forwards its key only in headers', async () => {
+test('item-completion client encodes the item path and never submits reviewedAt', async () => {
   api.setBaseUrl('https://api.example.test');
   storage.set('oneMind.auth.token', 'signed-user-token');
 
@@ -82,10 +82,7 @@ test('item-completion client encodes the item path and forwards its key only in 
   );
   assert.equal(request.method, 'POST');
   assert.equal(request.header['Idempotency-Key'], 'adaptive-completion-key');
-  assert.deepEqual(request.data, {
-    grade: 'good',
-    reviewedAt: '2026-07-10T08:00:00.000Z'
-  });
+  assert.deepEqual(request.data, { grade: 'good' });
 });
 
 test('legacy archive client encodes the plan path and sends its idempotency key only in headers', async () => {

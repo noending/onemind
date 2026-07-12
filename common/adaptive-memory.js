@@ -1,3 +1,5 @@
+const { businessDate } = require('./business-date');
+
 const TARGET_DAY_MIN = 3;
 const TARGET_DAY_MAX = 84;
 const DEFAULT_TARGET_DAYS = {
@@ -88,7 +90,7 @@ function allocateDailyUnits({ states = [], date, dailyMinutes = 15, targetDays =
 }
 
 function naturalDate(value) {
-  return value ? String(value).slice(0, 10) : null;
+  return value ? businessDate(value) : null;
 }
 
 function addDays(date, days) {

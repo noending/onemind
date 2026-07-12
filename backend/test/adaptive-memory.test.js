@@ -73,6 +73,28 @@ test('a unit only becomes stable after a later-day successful recall', () => {
   assert.equal(isInitialComplete([second]), true);
 });
 
+test('Shanghai midnight advances clean recall and due date by the business day', () => {
+  const next = applyReviewGrade(
+    {
+      memoryUnitId: 'u-shanghai-midnight',
+      phase: 'learning',
+      successfulRecallCount: 1,
+      crossDaySuccessCount: 0,
+      lastReviewedAt: '2026-07-11T15:59:59.999Z'
+    },
+    {
+      grade: 'good',
+      reviewedAt: '2026-07-11T16:00:00.000Z',
+      hintCount: 0,
+      mistakeCount: 0
+    }
+  );
+
+  assert.equal(next.crossDaySuccessCount, 1);
+  assert.equal(next.phase, 'stable');
+  assert.equal(next.dueAt, '2026-07-15');
+});
+
 test('hinted or mistaken good reviews do not earn cross-day stable success', () => {
   const first = applyReviewGrade(
     { memoryUnitId: 'u1', phase: 'learning', successfulRecallCount: 0, crossDaySuccessCount: 0 },

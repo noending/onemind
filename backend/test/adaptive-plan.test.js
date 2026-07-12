@@ -274,6 +274,24 @@ function completePostgresTask(postgresStore, plan, task = plan.task, reviewedAt 
   });
 }
 
+function prepareSinglePostgresAllocationCandidate(plan, taskType) {
+  const memoryUnitId = plan.task.items[0].memoryUnitId;
+  const candidate = taskType === 'due_review'
+    ? "phase = 'learning', last_grade = 'good', due_at = '2026-07-11'::date"
+    : "phase = 'learning', last_grade = 'again', due_at = '2026-07-20'::date";
+  runPostgresSql(`
+    update memory_item_states
+    set phase = 'stable', last_grade = 'good', due_at = '2026-07-20'::date,
+      updated_at = now()
+    where plan_id = ${sqlValue(plan.id)};
+    update memory_item_states
+    set ${candidate}, updated_at = now()
+    where plan_id = ${sqlValue(plan.id)}
+      and memory_unit_id = ${sqlValue(memoryUnitId)};
+  `);
+  return memoryUnitId;
+}
+
 function pickTaskItemResultDto(item) {
   return {
     result: item.result,
@@ -1262,7 +1280,7 @@ test('postgres cross-task final-item completion converges plan status after stal
   }
 });
 
-test('postgres concurrent different-date allocation never overlaps pending new units', {
+test('postgres concurrent different-date new allocation returns one winning task', {
   skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
 }, async () => {
   const postgresStore = getGatedPostgresStore();
@@ -1290,7 +1308,6 @@ test('postgres concurrent different-date allocation never overlaps pending new u
     const secondNewIds = new Set(secondDate.items
       .filter((item) => item.taskType === 'new' && item.status === 'pending')
       .map((item) => item.memoryUnitId));
-    const overlap = [...firstNewIds].filter((memoryUnitId) => secondNewIds.has(memoryUnitId));
     const [stored] = queryPostgresRows(`
       select
         (select count(*)::int from daily_study_tasks
@@ -1314,11 +1331,11 @@ test('postgres concurrent different-date allocation never overlaps pending new u
         ) duplicated) as "duplicatePendingNewCount"
     `);
 
+    assert.equal(firstDate.id, secondDate.id);
     assert.ok(firstNewIds.size > 0);
-    assert.ok(secondNewIds.size > 0);
-    assert.deepEqual(overlap, []);
+    assert.deepEqual(secondNewIds, firstNewIds);
     assert.deepEqual(stored, {
-      taskCount: 2,
+      taskCount: 1,
       emptyTaskCount: 0,
       duplicatePendingNewCount: 0
     });
@@ -1327,6 +1344,52 @@ test('postgres concurrent different-date allocation never overlaps pending new u
     cleanupPostgresAdaptiveUser(userId);
   }
 });
+
+for (const taskType of ['due_review', 'weak_review']) {
+  test(`postgres concurrent different-date allocation returns one winning ${taskType} task`, {
+    skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+  }, async () => {
+    const postgresStore = getGatedPostgresStore();
+    const userId = createPostgresTestUser();
+    const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+    completePostgresTask(postgresStore, plan);
+    const memoryUnitId = prepareSinglePostgresAllocationCandidate(plan, taskType);
+    installTaskInsertDelayTrigger();
+
+    try {
+      const [first, second] = await Promise.all([
+        runPostgresStoreChild(
+          'getTodayStudyTask',
+          [userId, plan.id, '2026-07-11'],
+          'onemind.test_delay_adaptive_task_insert'
+        ),
+        runPostgresStoreChild(
+          'getTodayStudyTask',
+          [userId, plan.id, '2026-07-12'],
+          'onemind.test_delay_adaptive_task_insert'
+        )
+      ]);
+      const pending = queryPostgresRows(`
+        select task.id::text as "taskId", task.task_date::text as "taskDate",
+          item.task_type as "taskType", item.memory_unit_id::text as "memoryUnitId"
+        from daily_study_task_items item
+        join daily_study_tasks task on task.id = item.task_id
+        where item.plan_id = ${sqlValue(plan.id)}
+          and item.memory_unit_id = ${sqlValue(memoryUnitId)}
+          and item.status = 'pending'
+        order by task.task_date asc, task.created_at asc
+      `);
+
+      assert.equal(first.id, second.id);
+      assert.equal(pending.length, 1);
+      assert.equal(first.id, pending[0].taskId);
+      assert.equal(pending[0].taskType, taskType);
+    } finally {
+      removeTaskInsertDelayTrigger();
+      cleanupPostgresAdaptiveUser(userId);
+    }
+  });
+}
 
 test('postgres listPlans returns the real adaptive public shape and unchanged legacy rows', {
   skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'

@@ -217,9 +217,12 @@ function ensureAdaptiveSchema(execute) {
         on daily_study_task_items(task_id, sort_order)
     `,
     `
-      create unique index if not exists daily_study_task_items_pending_new_uidx
+      create unique index if not exists daily_study_task_items_pending_unit_uidx
         on daily_study_task_items(plan_id, memory_unit_id)
-        where plan_id is not null and task_type = 'new' and status = 'pending'
+        where plan_id is not null and status = 'pending'
+    `,
+    `
+      drop index if exists daily_study_task_items_pending_new_uidx
     `
   ];
 

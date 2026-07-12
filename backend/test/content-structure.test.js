@@ -19,7 +19,9 @@ require.cache[storeModulePath] = {
 };
 const { handleRequest } = require('../src/routes');
 
-function request(pathname) {
+function request(input) {
+  const options = typeof input === 'string' ? { pathname: input } : input;
+  const { method = 'GET', pathname, headers = {}, payload } = options;
   return new Promise((resolve, reject) => {
     const response = {
       writeHead(statusCode, headers) {
@@ -34,8 +36,22 @@ function request(pathname) {
       }
     };
 
-    handleRequest({ method: 'GET', url: pathname, headers: {} }, response, '').catch(reject);
+    handleRequest(
+      { method, url: pathname, headers },
+      response,
+      payload === undefined ? '' : JSON.stringify(payload)
+    ).catch(reject);
   });
+}
+
+async function loginAdmin() {
+  const response = await request({
+    method: 'POST',
+    pathname: '/api/admin/login',
+    payload: { username: 'magic', password: 'Noending5@' }
+  });
+  assert.equal(response.statusCode, 200);
+  return response.body.data.token;
 }
 
 function withDraftSeedContent(run) {
@@ -215,6 +231,92 @@ test('memory content projection follows a newly approved published version over 
   }
 });
 
+test('memory create API persists an authoritative approved published version', async () => {
+  const token = await loginAdmin();
+  const created = await request({
+    method: 'POST',
+    pathname: '/api/admin/contents',
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      title: `首发版本测试 ${Date.now()}`,
+      body: '首发正文',
+      publishStatus: 'published',
+      reviewStatus: 'approved',
+      sourceNote: '首发权威来源',
+      versionNote: '首发审核版本'
+    }
+  });
+
+  try {
+    assert.equal(created.statusCode, 201);
+    const content = created.body.data;
+    const versions = store.listContentVersions(content.id);
+    const listed = store.listContents().find((item) => item.id === content.id);
+    const detail = store.getContent(content.id);
+
+    assert.equal(versions.length, 1);
+    assert.equal(versions[0].id, content.publishedVersionId);
+    assert.equal(versions[0].reviewStatus, 'approved');
+    assert.ok(versions[0].publishedAt);
+    for (const projected of [content, listed, detail]) {
+      assert.equal(projected.publishedVersionId, versions[0].id);
+      assert.equal(projected.reviewStatus, 'approved');
+    }
+  } finally {
+    await request({
+      method: 'DELETE',
+      pathname: `/api/admin/contents/${encodeURIComponent(created.body.data.id)}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+  }
+});
+
+test('memory publish API creates an approved version only after review approval', async () => {
+  const token = await loginAdmin();
+  const created = await request({
+    method: 'POST',
+    pathname: '/api/admin/contents',
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      title: `草稿发布测试 ${Date.now()}`,
+      body: '草稿正文',
+      publishStatus: 'draft',
+      reviewStatus: 'draft'
+    }
+  });
+
+  try {
+    assert.equal(created.statusCode, 201);
+    assert.equal(created.body.data.publishedVersionId, '');
+    assert.equal(store.listContentVersions(created.body.data.id).some((item) => item.reviewStatus === 'approved'), false);
+
+    const published = await request({
+      method: 'PUT',
+      pathname: `/api/admin/contents/${encodeURIComponent(created.body.data.id)}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        publishStatus: 'published',
+        reviewStatus: 'approved',
+        sourceNote: '发布权威来源',
+        versionNote: '审核通过版本'
+      }
+    });
+    const versions = store.listContentVersions(created.body.data.id);
+    const approved = versions.filter((item) => item.reviewStatus === 'approved' && item.publishedAt);
+
+    assert.equal(published.statusCode, 200);
+    assert.equal(approved.length, 1);
+    assert.equal(published.body.data.publishedVersionId, approved[0].id);
+    assert.equal(published.body.data.reviewStatus, 'approved');
+  } finally {
+    await request({
+      method: 'DELETE',
+      pathname: `/api/admin/contents/${encodeURIComponent(created.body.data.id)}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+  }
+});
+
 function runPostgresSql(sql) {
   return execFileSync(process.env.PSQL_BIN || '/opt/homebrew/bin/psql', [
     '-X',
@@ -285,6 +387,61 @@ test('memory and postgres content providers expose the same canonical publicatio
   });
 
   assert.deepEqual(pickPublication(postgres), pickPublication(memory));
+});
+
+test('postgres create and publish APIs persist authoritative approved versions with memory parity', {
+  skip: process.env.RUN_POSTGRES_STRUCTURE_TEST !== '1'
+}, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+  postgresStore.initializeDatabase();
+  const createdIds = [];
+
+  try {
+    const direct = postgresStore.createContent({
+      title: `PostgreSQL 首发版本 ${Date.now()}`,
+      body: 'PostgreSQL 首发正文',
+      publishStatus: 'published',
+      reviewStatus: 'approved',
+      sourceNote: 'PostgreSQL 首发来源',
+      versionNote: 'PostgreSQL 首发版本'
+    });
+    createdIds.push(direct.id);
+    const directVersions = postgresStore.listContentVersions(direct.id);
+    assert.equal(directVersions.length, 1);
+    assert.equal(directVersions[0].id, direct.publishedVersionId);
+    assert.equal(directVersions[0].reviewStatus, 'approved');
+    assert.ok(directVersions[0].publishedAt);
+
+    const draft = postgresStore.createContent({
+      title: `PostgreSQL 草稿发布 ${Date.now()}`,
+      body: 'PostgreSQL 草稿正文',
+      publishStatus: 'draft',
+      reviewStatus: 'draft'
+    });
+    createdIds.push(draft.id);
+    assert.equal(postgresStore.listContentVersions(draft.id).some((item) => item.reviewStatus === 'approved'), false);
+
+    const published = postgresStore.updateContent(draft.id, {
+      publishStatus: 'published',
+      reviewStatus: 'approved',
+      sourceNote: 'PostgreSQL 发布来源',
+      versionNote: 'PostgreSQL 审核通过版本'
+    });
+    const publishedVersions = postgresStore.listContentVersions(draft.id)
+      .filter((item) => item.reviewStatus === 'approved' && item.publishedAt);
+    assert.equal(publishedVersions.length, 1);
+    assert.equal(published.publishedVersionId, publishedVersions[0].id);
+    assert.equal(published.reviewStatus, 'approved');
+  } finally {
+    if (createdIds.length) {
+      runPostgresSql(`
+        delete from content_mode_configs where content_id in (${createdIds.map((id) => `'${id}'`).join(',')});
+        delete from content_segments where content_id in (${createdIds.map((id) => `'${id}'`).join(',')});
+        delete from content_versions where content_id in (${createdIds.map((id) => `'${id}'`).join(',')});
+        delete from contents where id in (${createdIds.map((id) => `'${id}'`).join(',')});
+      `);
+    }
+  }
 });
 
 test('postgres canonical v1 seed explicitly repairs and audits conflicting metadata', {

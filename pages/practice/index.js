@@ -532,7 +532,6 @@ Page({
     const item = session.activeUnit;
     const metrics = session.activeMetrics;
     const idempotencyKey = this.data.adaptiveAttemptKey || adaptiveAttemptKey(this.data.adaptiveTask, item);
-    const reviewedAt = new Date().toISOString();
     this.setData({
       adaptiveSubmitting: true,
       adaptiveSubmitError: "",
@@ -544,7 +543,6 @@ Page({
       latencyMs: Math.max(0, Date.now() - Number(metrics.startedAt || Date.now())),
       mistakeCount: Number(metrics.mistakeCount || 0),
       hintCount: Number(metrics.hintCount || 0),
-      reviewedAt,
       idempotencyKey
     })
       .then((response) => {
