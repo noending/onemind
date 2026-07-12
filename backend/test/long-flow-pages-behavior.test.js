@@ -40,6 +40,80 @@ function planStorage(unitCount = 84, recommendedTargetDays = 14) {
   };
 }
 
+test('legacy migration retry preserves legacyPlanId through assessment back to plan setup', async () => {
+  const legacyPlanId = 'legacy-long-plan-1';
+  const stored = planStorage();
+  stored.assessmentContext.legacyPlanId = legacyPlanId;
+  let retryUrl = '';
+  global.wx = {
+    getStorageSync(key) {
+      return key === PLAN_STORAGE_KEY ? stored : null;
+    },
+    redirectTo({ url }) { retryUrl = url; }
+  };
+  const setupPage = mountPage(loadPage('../../pages/plan-setup/index.js'));
+  setupPage.onLoad({
+    assessmentId: 'assessment-84',
+    contentId: 'great-compassion-opening',
+    versionId: 'great-compassion-v1',
+    legacyPlanId
+  });
+  setupPage.retryAssessment();
+
+  assert.match(retryUrl, /legacyPlanId=legacy-long-plan-1/);
+  const retryOptions = Object.fromEntries(new URL(`https://local.test${retryUrl}`).searchParams.entries());
+
+  const api = require('../../common/api');
+  const originalRecommend = api.recommendMemoryPlanApi;
+  let nextStorage = null;
+  let nextSetupUrl = '';
+  api.recommendMemoryPlanApi = () => Promise.resolve({
+    unitCount: 1,
+    dailyMinutes: 15,
+    recommendedTargetDays: 14,
+    familiarityLevel: 'partial'
+  });
+  try {
+    global.wx = {
+      setStorageSync(key, value) {
+        if (key === PLAN_STORAGE_KEY) nextStorage = value;
+      },
+      redirectTo({ url }) { nextSetupUrl = url; }
+    };
+    const assessmentPage = mountPage(loadPage('../../pages/assessment/index.js'));
+    assessmentPage.loadStructure = () => {};
+    assessmentPage.onLoad(retryOptions);
+    assessmentPage.stopTimer = () => {};
+    assessmentPage.setData({
+      structure: {
+        sections: [{
+          id: 'section-1',
+          reviewStatus: 'approved',
+          units: [{ id: 'unit-1', text: '南无', firstCharacterCue: '南' }]
+        }]
+      },
+      assessment: { id: 'assessment-retry' },
+      quizItems: [{ memoryUnitId: 'unit-1' }],
+      answers: [{ memoryUnitId: 'unit-1', result: 'know', revealed: false, latencyMs: 100 }]
+    });
+    assessmentPage.finishAssessment(false);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(assessmentPage.data.legacyPlanId, legacyPlanId);
+    assert.equal(nextStorage.assessmentContext.legacyPlanId, legacyPlanId);
+    assert.match(nextSetupUrl, /legacyPlanId=legacy-long-plan-1/);
+
+    const nextOptions = Object.fromEntries(new URL(`https://local.test${nextSetupUrl}`).searchParams.entries());
+    global.wx = { getStorageSync: () => nextStorage };
+    const nextSetupPage = mountPage(loadPage('../../pages/plan-setup/index.js'));
+    nextSetupPage.onLoad(nextOptions);
+    assert.equal(nextSetupPage.data.legacyPlanId, legacyPlanId);
+    assert.equal(nextSetupPage.data.assessmentContext.legacyPlanId, legacyPlanId);
+  } finally {
+    api.recommendMemoryPlanApi = originalRecommend;
+  }
+});
+
 test('plan setup computes the 84-unit 14-day workload during its first onLoad', () => {
   global.wx = {
     getStorageSync(key) {

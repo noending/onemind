@@ -199,8 +199,9 @@ Page({
       versionId: this.data.routeVersionId
     };
     if (!context.contentId || !context.versionId) return;
+    const legacyPlanId = this.data.legacyPlanId || context.legacyPlanId || "";
     wx.redirectTo({
-      url: `/pages/assessment/index?contentId=${encodeURIComponent(context.contentId)}&versionId=${encodeURIComponent(context.versionId)}`
+      url: `/pages/assessment/index?contentId=${encodeURIComponent(context.contentId)}&versionId=${encodeURIComponent(context.versionId)}&legacyPlanId=${encodeURIComponent(legacyPlanId)}`
     });
   },
 

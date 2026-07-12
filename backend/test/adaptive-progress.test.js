@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
   buildAdaptiveTaskCard,
@@ -74,6 +76,60 @@ test('short legacy and adaptive plans do not request migration', () => {
   }).migrationRequired, false);
 });
 
+test('profile renders legacy long plans as migration-only without building the old curve', () => {
+  const previousPage = global.Page;
+  let definition;
+  global.Page = (pageDefinition) => { definition = pageDefinition; };
+  global.wx = global.wx || {};
+  delete require.cache[require.resolve('../../pages/profile/index.js')];
+  require('../../pages/profile/index.js');
+  global.Page = previousPage;
+
+  const page = { ...definition, data: structuredClone(definition.data) };
+  let measured = 0;
+  page.setData = (patch, callback) => {
+    Object.assign(page.data, patch);
+    if (callback) callback();
+  };
+  page.measureAndBuildCurveChart = () => { measured += 1; };
+  page.data.plans = [{
+    id: 'legacy-long-profile',
+    title: '大悲咒',
+    tier: 'long',
+    migrationRequired: true,
+    totalDays: 28,
+    currentDay: 4,
+    tasks: []
+  }];
+  page.data.selectedPlanId = 'legacy-long-profile';
+
+  page.refreshCurveData();
+
+  assert.equal(page.data.selectedPlanMigrationRequired, true);
+  assert.equal(page.data.selectedPlanIsAdaptive, false);
+  assert.deepEqual(page.data.curveData, []);
+  assert.equal(measured, 0);
+
+  const markup = fs.readFileSync(path.resolve(__dirname, '../../pages/profile/index.wxml'), 'utf8');
+  assert.match(markup, /wx:(?:if|elif)="\{\{selectedPlanMigrationRequired\}\}"[^>]*legacy-migration-panel/);
+  assert.doesNotMatch(markup, /wx:elif="\{\{curveData\.length\}\}"[\s\S]*selectedPlanMigrationRequired[\s\S]*curve-chart-shell/);
+
+  page.data.plans = [{
+    id: 'legacy-short-profile',
+    title: '六字大明咒',
+    tier: 'short',
+    migrationRequired: false,
+    totalDays: 3,
+    currentDay: 1,
+    tasks: []
+  }];
+  page.data.selectedPlanId = 'legacy-short-profile';
+  page.refreshCurveData();
+  assert.equal(page.data.selectedPlanMigrationRequired, false);
+  assert.equal(page.data.curveData.length, 31);
+  assert.equal(measured, 1);
+});
+
 test('stable progress is based on memory item states rather than fixed task count', () => {
   const states = [
     { phase: 'stable', dueAt: '2026-07-14', lastGrade: 'good' },
@@ -115,6 +171,25 @@ test('memory today focus includes the materialized adaptive daily task', () => {
   assert.equal(task.reviewUnitCount, plan.task.reviewUnitCount);
   assert.equal(task.weakUnitCount, plan.task.weakUnitCount);
   assert.equal(task.estimatedMinutes, plan.task.estimatedMinutes);
+});
+
+test('memory adaptive creation and list DTOs always expose the content title', () => {
+  const userId = uniqueKey('adaptive-title-owner');
+  const created = memoryStore.createAdaptivePlan({
+    userId,
+    contentId: 'great-compassion-opening',
+    contentVersionId: 'great-compassion-v1',
+    scopeType: 'full',
+    targetDays: 14,
+    dailyMinutes: 15,
+    familiarityLevel: 'partial',
+    date: '2026-07-10',
+    idempotencyKey: uniqueKey('adaptive-title-plan')
+  });
+  const listed = memoryStore.listPlans(userId).find((plan) => plan.id === created.id);
+
+  assert.equal(created.title, '大悲咒');
+  assert.equal(listed.title, '大悲咒');
 });
 
 test('memory provider archives only the owning legacy plan and replay is idempotent', () => {

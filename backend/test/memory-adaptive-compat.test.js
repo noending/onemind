@@ -54,6 +54,7 @@ test('adaptive mapping preserves adaptive fields and does not synthesize legacy 
 
   const [mapped] = await memory.syncPlansFromBackend();
 
+  assert.equal(mapped.title, '大悲咒');
   assert.equal(mapped.contentVersionId, 'great-compassion-v1');
   assert.equal(mapped.scopeType, 'section');
   assert.equal(mapped.scopeId, 'great-compassion-section-1');
@@ -65,6 +66,8 @@ test('adaptive mapping preserves adaptive fields and does not synthesize legacy 
   assert.equal(mapped.adaptiveStatus, 'active');
   assert.deepEqual(mapped.itemStates, itemStates);
   assert.deepEqual(mapped.tasks, []);
+  assert.equal(memory.getPlanRows()[0].title, '大悲咒');
+  assert.equal(memory.getProgressItems().reviewing[0].title, '大悲咒');
 });
 
 test('legacy mapping keeps existing fixed-task compatibility fields unchanged', async () => {

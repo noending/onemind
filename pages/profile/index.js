@@ -1046,12 +1046,33 @@ Page({
       return;
     }
 
+    if (plan.migrationRequired) {
+      this.setData({
+        selectedPlanTitle: plan.title || "",
+        selectedPlanIsAdaptive: false,
+        selectedPlanMigrationRequired: true,
+        adaptiveProgress: null,
+        curveData: [],
+        curveChart: {
+          points: [],
+          segments: [],
+          guideLines: [],
+          xTicks: [],
+          yTicks: [],
+          nodeLegend: []
+        },
+        curveCurrentDay: 0,
+        curveTotalDays: 0
+      });
+      return;
+    }
+
     const normalized = normalizeCurveProgress(plan);
     const built = buildCurveData(normalized.totalDay);
     this.setData({
       selectedPlanTitle: plan.title || "",
       selectedPlanIsAdaptive: false,
-      selectedPlanMigrationRequired: Boolean(plan.migrationRequired),
+      selectedPlanMigrationRequired: false,
       adaptiveProgress: null,
       curveData: built.points,
       curveReviewDays: built.reviewDays,

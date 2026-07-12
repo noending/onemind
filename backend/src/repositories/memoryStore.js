@@ -1144,6 +1144,7 @@ function createAdaptivePlan(payload = {}) {
     id: createId('adaptive_plan'),
     userId,
     contentId,
+    title: contents.find((item) => item.id === contentId)?.title || '',
     contentVersionId,
     scopeType,
     scopeId,
@@ -1364,7 +1365,11 @@ function normalizeAdaptiveStrategy(value, targetDays) {
 }
 
 function toAdaptivePlan(plan) {
-  return cloneJson(plan);
+  const content = contents.find((item) => item.id === plan.contentId);
+  return cloneJson({
+    ...plan,
+    title: plan.title || content?.title || ''
+  });
 }
 
 function toAdaptiveDailyTask(task) {

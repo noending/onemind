@@ -371,8 +371,10 @@ function hasPlans() {
 
 function normalizePlan(plan) {
   const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
+  const content = findContent(plan.contentId) || plan.contentSnapshot;
   const normalized = withLegacyMigrationFlag({
     ...plan,
+    title: plan.title || (content && content.title) || "学习计划",
     growthStage: growthStageFromScore(plan.masteryScore),
     taskRows: tasks.map((task) => ({
       id: task.id,
@@ -412,7 +414,7 @@ function getProgressItems() {
     const item = {
       id: plan.id,
       contentId: plan.contentId,
-      title: plan.title,
+      title: plan.title || (content && content.title) || "学习计划",
       mode: normalizeMode(plan.mode),
       growthStage: growthStageFromScore(plan.masteryScore),
       scene: content ? content.scene : "按计划修持",
@@ -519,7 +521,7 @@ function mapRemotePlan(plan) {
     id: plan.id,
     userId: plan.userId,
     contentId: plan.contentId,
-    title: plan.title,
+    title: plan.title || (snapshot && snapshot.title) || "",
     mode: normalizeMode(plan.mode),
     contentSnapshot: snapshot ? {
       id: snapshot.id,

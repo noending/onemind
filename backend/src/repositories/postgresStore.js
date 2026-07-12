@@ -1629,10 +1629,12 @@ function createAdaptivePlan(payload = {}) {
     createdAt: now,
     updatedAt: now
   };
+  const title = String(getContent(contentId)?.title || 'Adaptive memory plan');
   const plan = {
     id: planId,
     userId: publicAdaptiveUserId(normalizedUserId),
     contentId: String(contentId),
+    title,
     contentVersionId: String(contentVersionId),
     scopeType,
     scopeId,
@@ -1663,7 +1665,6 @@ function createAdaptivePlan(payload = {}) {
     ${sqlValue(now)}::timestamptz,
     ${sqlValue(now)}::timestamptz
   )`).join(',');
-  const title = String(getContent(contentId)?.title || 'Adaptive memory plan');
   const persistedJson = queryScalar(`
     with reservation as (
       insert into idempotency_records (
@@ -2147,6 +2148,7 @@ function getAdaptivePlanById(planId, userId) {
       mp.id::text as "id",
       mp.user_id::text as "userId",
       mp.content_id::text as "contentId",
+      mp.title,
       mp.content_version_id::text as "contentVersionId",
       cv.version_no as "contentVersionNo",
       mp.scope_type as "scopeType",
@@ -2195,6 +2197,7 @@ function getAdaptivePlanById(planId, userId) {
     id: row.id,
     userId: publicAdaptiveUserId(row.userId),
     contentId: publicContent,
+    title: row.title || getContent(publicContent)?.title || '',
     contentVersionId: publicContentVersionId(row),
     scopeType: row.scopeType,
     scopeId: row.scopeType === 'section' && publicContent === 'great-compassion-opening'

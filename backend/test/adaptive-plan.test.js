@@ -342,6 +342,7 @@ test('memory listPlans returns legacy and adaptive plans with the real adaptive 
   assert.ok(Array.isArray(listedLegacy.tasks));
   assert.ok(listedAdaptive);
   assert.equal(listedAdaptive.contentVersionId, adaptive.contentVersionId);
+  assert.equal(listedAdaptive.title, '大悲咒');
   assert.equal(listedAdaptive.adaptiveStatus, adaptive.adaptiveStatus);
   assert.deepEqual(listedAdaptive.itemStates, adaptive.itemStates);
   assert.equal(Object.hasOwn(listedAdaptive, 'task'), false);
@@ -572,6 +573,9 @@ test('memory and postgres creation responses expose the same complete adaptive D
       .find((plan) => plan.id === postgresPlan.id);
     const rereadTask = postgresStore.getTodayStudyTask(postgresUserId, postgresPlan.id, '2026-07-10');
 
+    assert.equal(memoryPlan.title, '大悲咒');
+    assert.equal(postgresPlan.title, memoryPlan.title);
+    assert.equal(rereadPlan.title, memoryPlan.title);
     assert.deepEqual(pickAdaptiveCreationParity(postgresPlan), pickAdaptiveCreationParity(memoryPlan));
     assert.deepEqual(postgresPlan.itemStates, rereadPlan.itemStates);
     assert.deepEqual(postgresPlan.task, rereadTask);
@@ -1071,7 +1075,7 @@ test('postgres listPlans returns the real adaptive public shape and unchanged le
     for (const field of [
       'userId', 'contentId', 'contentVersionId', 'scopeType', 'scopeId',
       'targetDays', 'dailyMinutes', 'familiarityLevel', 'strategy',
-      'startDate', 'expectedFinishDate', 'adaptiveStatus'
+      'startDate', 'expectedFinishDate', 'adaptiveStatus', 'title'
     ]) {
       assert.deepEqual(listedAdaptive[field], adaptive[field], field);
     }
