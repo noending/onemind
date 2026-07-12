@@ -133,6 +133,19 @@ Authorization: Bearer <user-token>
 - `body`
 - `segments`
 
+### 长内容结构
+
+`GET /api/contents/{contentId}/versions/{contentVersionId}/structure`
+
+用于大悲咒等长内容的全文或章节学习入口。返回已审核版本的稳定结构：
+
+- `contentId`、`contentVersionId`、`reviewStatus`
+- `sourceNote`、`versionNote`
+- `sections[]`：章节的 `id`、`title`、`sortOrder`
+- `sections[].units[]`：可独立记忆的单元，包含 `id`、`text`、`firstCharacterCue`、`sortOrder`
+
+仅可读取已发布版本；不存在或未发布的版本分别返回 `CONTENT_VERSION_NOT_FOUND` 或 `CONTENT_VERSION_NOT_APPROVED`。
+
 ## 5. 节日专题
 
 `GET /api/festivals`
@@ -185,6 +198,92 @@ Authorization: Bearer <user-token>
 
 - 计划基本信息。
 - 计划下的 `tasks`。
+
+### 长内容熟悉度测评
+
+`POST /api/memory-assessments`
+
+请求头：
+
+```text
+Authorization: Bearer <user-token>
+Idempotency-Key: <1-180 characters>
+```
+
+请求：
+
+```json
+{
+  "contentId": "great-compassion-opening",
+  "contentVersionId": "great-compassion-v1",
+  "scopeType": "full",
+  "scopeId": null
+}
+```
+
+`scopeType` 为 `full` 或 `section`；章节范围必须提供结构接口返回的 `scopeId`。返回测评 `id`、内容/版本/范围、抽样 `items[]`、`unitCount`、`status` 与创建时间。抽样项包含 `memoryUnitId`、`firstCharacterCue`、`sortOrder`、`positionBand`，前台据此完成约 60 秒的熟悉度测评。
+
+### 测评建议
+
+`POST /api/memory-plans/recommendation`
+
+请求头同上。请求包含 `assessmentId`、与测评项一一对应的 `answers[]`、`dailyMinutes` 和可选 `targetDays`。每个答案使用 `memoryUnitId`、`result`（`cannot` / `partial` / `complete`）和可选 `revealed`。
+
+返回 `familiarityLevel`、`averageScore`、`targetDays`、`newUnitsPerDay`、`estimatedMinutes`、`dailyMinutes`、`intensity`、`disclaimer`，以及已完成的 `assessment`。相同用户、相同幂等键会返回首次结果；用同一键提交不同测评会返回 `IDEMPOTENCY_KEY_CONFLICT`。
+
+### 自适应长内容计划
+
+`POST /api/memory-plans`
+
+自适应请求头必须携带 `Authorization` 与 `Idempotency-Key`。请求：
+
+```json
+{
+  "contentId": "great-compassion-opening",
+  "contentVersionId": "great-compassion-v1",
+  "scopeType": "full",
+  "scopeId": null,
+  "targetDays": 14,
+  "dailyMinutes": 15,
+  "familiarityLevel": "partial",
+  "strategy": "standard",
+  "date": "2026-07-10"
+}
+```
+
+`targetDays` 支持预设 7、14、28 天及 3 至 84 天自定义周期。响应除计划 ID 外，包含 `contentVersionId`、`scopeType`、`scopeId`、`targetDays`、`dailyMinutes`、`familiarityLevel`、`strategy`、`startDate`、`expectedFinishDate`、`adaptiveStatus`、`itemStates[]` 和首日 `task`。计划只初始化所选全文或章节的记忆单元，不会混入其他章节。
+
+### 今日自适应学习任务
+
+`GET /api/study-tasks/today?planId={planId}&date={YYYY-MM-DD}`
+
+需要登录，`planId` 必填；`date` 省略时使用当天。返回 `id`、`planId`、`taskDate`、`items[]` 和可解释字段：`reviewUnitCount`、`weakUnitCount`、`newUnitCount`、`estimatedMinutes`、`sequenceRangeLabel`。每个项目包含 `taskType`（`due_review` / `weak_review` / `new`）、状态和固定的单元快照，避免练习时跨计划取数。
+
+### 完成自适应学习单元
+
+`POST /api/study-task-items/{itemId}/complete`
+
+请求头必须包含 `Authorization` 与 `Idempotency-Key`。请求：
+
+```json
+{
+  "grade": "again",
+  "reviewedAt": "2026-07-10T08:00:00.000Z",
+  "latencyMs": 5200,
+  "mistakeCount": 1,
+  "hintCount": 1
+}
+```
+
+`grade` 仅允许 `again`、`good`、`easy`。返回更新后的 `item`、`state`、`task` 和 `plan`。`again` 生成同次补练与下一日待复习；即使是当天最后一个单元也会保留可执行的待重试项。相同幂等键重放时返回首次结果，不会重复推进状态或计数。
+
+### 旧长计划迁移
+
+旧版长内容计划不会被静默重写。列表与前台会把其标记为 `migrationRequired`，仅显示迁移提示。用户完成新的测评和计划创建后，可调用：
+
+`POST /api/memory-plans/{planId}/archive`
+
+该操作需要登录和 `Idempotency-Key`，仅允许归属当前用户的旧长计划；归档重复请求返回相同结果。短内容和新的自适应计划不在该迁移范围内。
 
 ## 7. 复习任务
 
