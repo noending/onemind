@@ -11,6 +11,15 @@ function uniqueKey(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function pickTaskItemResultDto(item) {
+  return {
+    result: item.result,
+    latencyMs: item.latencyMs,
+    mistakeCount: item.mistakeCount,
+    hintCount: item.hintCount
+  };
+}
+
 function createAdaptivePlan(overrides = {}) {
   return store.createAdaptivePlan({
     userId: uniqueKey('task7-user'),
@@ -55,11 +64,11 @@ async function createRouteSession(handleRequest) {
   return response.body.data;
 }
 
-function loadPracticePage({ initialPlan, syncedPlan, backendEnabled = true, task }) {
+function loadPracticePage({ initialPlan, syncedPlan, backendEnabled = true, task, completionResponse }) {
   const source = fs.readFileSync(path.resolve(__dirname, '../../pages/practice/index.js'), 'utf8');
   let currentPlan = initialPlan || null;
   let page;
-  const calls = { ensureLogin: 0, getToday: 0, sync: 0 };
+  const calls = { ensureLogin: 0, getToday: 0, completeItem: 0, sync: 0 };
   const content = {
     id: 'great-compassion-opening',
     title: '大悲咒',
@@ -77,6 +86,10 @@ function loadPracticePage({ initialPlan, syncedPlan, backendEnabled = true, task
     getTodayStudyTaskApi() {
       calls.getToday += 1;
       return Promise.resolve(task);
+    },
+    completeStudyTaskItemApi() {
+      calls.completeItem += 1;
+      return Promise.resolve(completionResponse);
     },
     getCachedContents: () => [],
     getLocalContents: () => [content],
@@ -163,7 +176,7 @@ test('daily task exposes approved unit snapshots that start a practice session, 
   assert.deepEqual(retry.unit, task.items[0].unit);
 });
 
-test('memory completion normalizes and persists adaptive metrics in the returned state', () => {
+test('memory completion exposes a normalized task-item result DTO', () => {
   const plan = createAdaptivePlan();
   const completion = store.completeStudyTaskItem({
     userId: plan.userId,
@@ -176,14 +189,14 @@ test('memory completion normalizes and persists adaptive metrics in the returned
     idempotencyKey: uniqueKey('task7-metrics')
   });
 
-  assert.deepEqual(
-    {
-      lastLatencyMs: completion.state.lastLatencyMs,
-      mistakeCount: completion.state.mistakeCount,
-      hintCount: completion.state.hintCount
-    },
-    { lastLatencyMs: 0, mistakeCount: 2, hintCount: 0 }
-  );
+  assert.deepEqual(pickTaskItemResultDto(completion.item), {
+    result: 'good',
+    latencyMs: 0,
+    mistakeCount: 2,
+    hintCount: 0
+  });
+  const reloaded = store.getTodayStudyTask(plan.userId, plan.id, '2026-07-10');
+  assert.deepEqual(pickTaskItemResultDto(reloaded.items[0]), pickTaskItemResultDto(completion.item));
 });
 
 test('completion route forwards normalized metrics into the persisted adaptive state', async () => {
@@ -240,7 +253,7 @@ test('practice keeps local legacy plans off adaptive APIs and recognizes synced 
   const legacyPage = loadPracticePage({ initialPlan: legacy });
   legacyPage.instance.onLoad({ planId: legacy.id });
   await flushAsyncWork();
-  assert.deepEqual(legacyPage.calls, { ensureLogin: 0, getToday: 0, sync: 0 });
+  assert.deepEqual(legacyPage.calls, { ensureLogin: 0, getToday: 0, completeItem: 0, sync: 0 });
 
   const adaptive = {
     id: 'adaptive-plan',
@@ -263,7 +276,7 @@ test('practice keeps local legacy plans off adaptive APIs and recognizes synced 
   });
   adaptivePage.instance.onLoad({ planId: adaptive.id });
   await flushAsyncWork();
-  assert.deepEqual(adaptivePage.calls, { ensureLogin: 1, getToday: 1, sync: 1 });
+  assert.deepEqual(adaptivePage.calls, { ensureLogin: 1, getToday: 1, completeItem: 0, sync: 1 });
   assert.equal(adaptivePage.instance.data.adaptiveMode, true);
 });
 
@@ -287,4 +300,93 @@ test('practice reveal ignores study, check, and grade phases without adding hint
     page.revealAdaptiveAnswer();
     assert.equal(page.data.adaptiveSession.activeMetrics.hintCount, 0);
   });
+});
+
+test('practice displays the next pending unit state after a stable unit completes', async () => {
+  const task = {
+    id: 'today',
+    items: [
+      {
+        id: 'item-stable',
+        memoryUnitId: 'unit-stable',
+        status: 'pending',
+        unit: { id: 'unit-stable', text: '先完成的稳定单元', firstCharacterCue: '先' }
+      },
+      {
+        id: 'item-next',
+        memoryUnitId: 'unit-next',
+        status: 'pending',
+        unit: { id: 'unit-next', text: '仍待练习的新单元', firstCharacterCue: '仍' }
+      }
+    ]
+  };
+  const page = loadPracticePage({
+    completionResponse: {
+      task: {
+        ...task,
+        items: [
+          { ...task.items[0], status: 'completed', result: 'good', latencyMs: 1200, mistakeCount: 0, hintCount: 0 },
+          task.items[1]
+        ]
+      },
+      plan: {
+        itemStates: [
+          { memoryUnitId: 'unit-stable', phase: 'stable', dueAt: '2026-08-01' },
+          { memoryUnitId: 'unit-next', phase: 'learning', dueAt: '2026-07-13' }
+        ]
+      },
+      state: { memoryUnitId: 'unit-stable', phase: 'stable', dueAt: '2026-08-01' }
+    }
+  });
+
+  page.instance.startAdaptiveSession(task);
+  while (page.instance.data.adaptiveSession.step !== 'grade') {
+    page.instance.advanceAdaptiveStep();
+  }
+  page.instance.submitAdaptiveGrade('good');
+  await flushAsyncWork();
+
+  assert.equal(page.calls.completeItem, 1);
+  assert.equal(page.instance.data.adaptiveSession.activeUnit.memoryUnitId, 'unit-next');
+  assert.equal(page.instance.data.adaptiveStable, false);
+  assert.equal(page.instance.data.adaptiveNextDueAt, '2026-07-13');
+  assert.equal(page.instance.data.adaptiveCompleted, false);
+});
+
+test('practice marks a completed daily task stable only when every plan unit is stable', async () => {
+  const task = {
+    id: 'today',
+    items: [{
+      id: 'item-stable',
+      memoryUnitId: 'unit-stable',
+      status: 'pending',
+      unit: { id: 'unit-stable', text: '最后一个今日单元', firstCharacterCue: '最' }
+    }]
+  };
+  const page = loadPracticePage({
+    completionResponse: {
+      task: {
+        ...task,
+        status: 'completed',
+        items: [{ ...task.items[0], status: 'completed', result: 'good', latencyMs: 1200, mistakeCount: 0, hintCount: 0 }]
+      },
+      plan: {
+        itemStates: [
+          { memoryUnitId: 'unit-stable', phase: 'stable', dueAt: '2026-08-01' },
+          { memoryUnitId: 'unit-later', phase: 'learning', dueAt: '2026-07-13' }
+        ]
+      },
+      state: { memoryUnitId: 'unit-stable', phase: 'stable', dueAt: '2026-08-01' }
+    }
+  });
+
+  page.instance.startAdaptiveSession(task);
+  while (page.instance.data.adaptiveSession.step !== 'grade') {
+    page.instance.advanceAdaptiveStep();
+  }
+  page.instance.submitAdaptiveGrade('good');
+  await flushAsyncWork();
+
+  assert.equal(page.instance.data.adaptiveCompleted, true);
+  assert.equal(page.instance.data.adaptiveStable, false);
 });

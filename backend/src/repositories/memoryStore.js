@@ -1205,7 +1205,10 @@ function completeStudyTaskItem(payload = {}) {
     };
     Object.assign(stateItem, nextState);
     item.status = 'completed';
-    item.result = { grade, reviewedAt, ...metrics };
+    item.result = grade;
+    item.latencyMs = metrics.lastLatencyMs;
+    item.mistakeCount = metrics.mistakeCount;
+    item.hintCount = metrics.hintCount;
     item.completedAt = reviewedAt;
 
     if (grade === 'again') appendWeakRetry(task, item.memoryUnitId);
@@ -1263,6 +1266,9 @@ function createAdaptiveDailyTask(plan, taskDate) {
       sortOrder: index + 1,
       status: 'pending',
       result: null,
+      latencyMs: 0,
+      mistakeCount: 0,
+      hintCount: 0,
       completedAt: null
     })),
     createdAt: new Date().toISOString(),
@@ -1287,6 +1293,9 @@ function appendWeakRetry(task, memoryUnitId) {
     sortOrder: task.items.length + 1,
     status: 'pending',
     result: null,
+    latencyMs: 0,
+    mistakeCount: 0,
+    hintCount: 0,
     completedAt: null
   };
   task.items.push(retry);

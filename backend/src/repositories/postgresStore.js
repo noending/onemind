@@ -2345,6 +2345,7 @@ function toAdaptiveItemState(row) {
 
 function toAdaptiveTaskItem(row) {
   const result = row.result && typeof row.result === 'object' ? row.result : null;
+  const grade = result?.grade || (typeof row.result === 'string' ? row.result : null);
   return {
     id: row.id,
     taskId: row.taskId,
@@ -2352,8 +2353,11 @@ function toAdaptiveTaskItem(row) {
     taskType: row.taskType,
     sortOrder: Number(row.sortOrder),
     status: row.status,
-    result: result?.grade || row.result || null,
+    result: grade,
     completedAt: result?.completedAt || null,
+    latencyMs: Number(result?.latencyMs ?? result?.lastLatencyMs ?? 0),
+    mistakeCount: Number(result?.mistakeCount ?? 0),
+    hintCount: Number(result?.hintCount ?? 0),
     unit: {
       id: row.unitId,
       text: row.unitText,

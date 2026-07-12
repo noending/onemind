@@ -66,6 +66,27 @@ function adaptivePrompt(session) {
   return "请在心中完整复现这一单元";
 }
 
+function adaptiveSessionState(session, response) {
+  const planStates = Array.isArray(response && response.plan && response.plan.itemStates)
+    ? response.plan.itemStates
+    : [];
+  const fallback = response && response.state ? response.state : null;
+
+  if (session && session.isComplete) {
+    return {
+      dueAt: fallback && fallback.dueAt || "",
+      phase: planStates.length && planStates.every((state) => state && state.phase === "stable")
+        ? "stable"
+        : ""
+    };
+  }
+
+  const activeState = planStates.find((state) => (
+    state && session && session.activeUnit && state.memoryUnitId === session.activeUnit.memoryUnitId
+  ));
+  return activeState || fallback;
+}
+
 function getStatusBarHeight() {
   try {
     const windowInfo = typeof wx.getWindowInfo === "function"
@@ -436,7 +457,7 @@ Page({
     this.loadAdaptivePractice(this.data.planId);
   },
 
-  startAdaptiveSession(task, completionState = null) {
+  startAdaptiveSession(task, completionResponse = null) {
     const taskWithPendingItems = pendingTask(task);
     const session = createPracticeSession(taskWithPendingItems, { startAt: Date.now() });
     const activeUnit = session.activeUnit;
@@ -450,7 +471,7 @@ Page({
       });
       return;
     }
-    this.updateAdaptiveSession(session, task, completionState, {
+    this.updateAdaptiveSession(session, task, adaptiveSessionState(session, completionResponse), {
       adaptiveLoading: false,
       adaptiveError: "",
       adaptiveSubmitError: "",
@@ -535,7 +556,7 @@ Page({
     })
       .then((response) => {
         if (!response || !response.task) throw new Error("训练提交结果无效，请重试");
-        this.startAdaptiveSession(response.task, response.state || null);
+        this.startAdaptiveSession(response.task, response);
       })
       .catch((error) => {
         this.setData({

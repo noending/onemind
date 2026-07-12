@@ -262,6 +262,15 @@ function createPostgresAdaptivePlan(postgresStore, overrides = {}) {
   });
 }
 
+function pickTaskItemResultDto(item) {
+  return {
+    result: item.result,
+    latencyMs: item.latencyMs,
+    mistakeCount: item.mistakeCount,
+    hintCount: item.hintCount
+  };
+}
+
 test('full and section adaptive plans initialize only their selected units', () => {
   const structure = store.getContentStructure('great-compassion-opening', 'great-compassion-v1');
   const section = structure.sections[0];
@@ -607,6 +616,41 @@ test('postgres item completion is idempotent and binds keys to one item', {
     code: 'IDEMPOTENCY_KEY_CONFLICT',
     statusCode: 409
   });
+});
+
+test('memory and postgres providers return the same task-item result DTO', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const metrics = { latencyMs: 1234, mistakeCount: 2, hintCount: 1 };
+  const memoryPlan = createAdaptivePlan();
+  const memory = store.completeStudyTaskItem({
+    userId: memoryPlan.userId,
+    itemId: memoryPlan.task.items[0].id,
+    grade: 'good',
+    reviewedAt: '2026-07-10T08:00:00.000Z',
+    idempotencyKey: uniqueKey('memory-result-dto'),
+    ...metrics
+  });
+  const postgresStore = getGatedPostgresStore();
+  const postgresUserId = createPostgresTestUser();
+  const postgresPlan = createPostgresAdaptivePlan(postgresStore, { userId: postgresUserId });
+
+  try {
+    const postgres = postgresStore.completeStudyTaskItem({
+      userId: postgresPlan.userId,
+      itemId: postgresPlan.task.items[0].id,
+      grade: 'good',
+      reviewedAt: '2026-07-10T08:00:00.000Z',
+      idempotencyKey: uniqueKey('postgres-result-dto'),
+      ...metrics
+    });
+    const reread = postgresStore.getTodayStudyTask(postgresPlan.userId, postgresPlan.id, '2026-07-10');
+
+    assert.deepEqual(pickTaskItemResultDto(postgres.item), pickTaskItemResultDto(memory.item));
+    assert.deepEqual(pickTaskItemResultDto(reread.items[0]), pickTaskItemResultDto(postgres.item));
+  } finally {
+    cleanupPostgresAdaptiveUser(postgresUserId);
+  }
 });
 
 test('postgres again leaves exactly one pending weak retry and duplicate completion is inert', {
