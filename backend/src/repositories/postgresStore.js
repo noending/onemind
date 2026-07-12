@@ -1572,12 +1572,16 @@ function createAdaptivePlan(payload = {}) {
   const now = new Date().toISOString();
   const planId = crypto.randomUUID();
   const taskId = crypto.randomUUID();
+  const unitsById = new Map(units.map((unit) => [unit.id, unit]));
   const itemStates = units.map((unit) => ({
     memoryUnitId: unit.id,
     phase: 'new',
     dueAt: null,
     lastGrade: null,
     lastReviewedAt: null,
+    lastLatencyMs: 0,
+    mistakeCount: 0,
+    hintCount: 0,
     successfulRecallCount: 0,
     crossDaySuccessCount: 0,
     lapseCount: 0,
@@ -1597,7 +1601,17 @@ function createAdaptivePlan(payload = {}) {
     sortOrder: index + 1,
     status: 'pending',
     result: null,
-    completedAt: null
+    completedAt: null,
+    latencyMs: 0,
+    mistakeCount: 0,
+    hintCount: 0,
+    unit: {
+      id: item.memoryUnitId,
+      text: unitsById.get(item.memoryUnitId)?.text || '',
+      firstCharacterCue: unitsById.get(item.memoryUnitId)?.firstCharacterCue
+        || Array.from(String(unitsById.get(item.memoryUnitId)?.text || ''))[0]
+        || ''
+    }
   }));
   const task = {
     id: taskId,

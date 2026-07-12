@@ -40,3 +40,24 @@
 
 - 全量 PostgreSQL 测试文件的外层控制会话在 schema NOTICE 后未回传最终汇总，因此未将其结果计为验证证据；本次新增的真实 PostgreSQL parity 聚焦测试已通过。
 - 未恢复播放能力；评分仍限制为 `again`、`good`、`easy`；旧短内容分支未改动；请求继续通过 `Idempotency-Key` 传递幂等键。
+
+## 最后一个 Important：创建响应 DTO parity
+
+### 修复
+
+- PostgreSQL `createAdaptivePlan` 首次响应的 `itemStates` 现在包含 `lastLatencyMs`、`mistakeCount`、`hintCount`，初始值均为 `0`。
+- 首次响应的 `task.items` 现在包含 `latencyMs`、`mistakeCount`、`hintCount` 与完整 `unit` 快照。
+- 完整 DTO 在创建时写入幂等响应记录，因此首次创建与同键重试保持一致；字段 shape 与后续 GET mapper 返回一致。
+
+### TDD
+
+- RED：真实 memory/PostgreSQL 创建 parity 测试失败，精确显示 PostgreSQL 首次响应缺少 3 个 state 测量字段，以及 task item 的 3 个测量字段和 `unit`。
+- GREEN：添加完整创建 DTO 后，同一测试确认 memory/PostgreSQL 创建响应 parity，并确认 PostgreSQL 首次响应与后续 `listPlans`、`getTodayStudyTask` 读取结果一致。
+
+### 聚焦验证
+
+- PostgreSQL 创建 DTO parity 与创建幂等测试：2/2 通过。
+- memory 创建范围、首日分配与幂等测试：3/3 通过。
+- `node --check src/repositories/postgresStore.js`：通过。
+- `git diff --check`：通过。
+- 按要求未重跑完整 PostgreSQL 集成测试文件。

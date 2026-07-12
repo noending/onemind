@@ -271,6 +271,19 @@ function pickTaskItemResultDto(item) {
   };
 }
 
+function pickAdaptiveCreationParity(plan) {
+  return {
+    itemStates: plan.itemStates.map(({ memoryUnitId, ...state }) => state),
+    taskItems: plan.task.items.map(({ id, taskId, memoryUnitId, unit, ...item }) => ({
+      ...item,
+      unit: unit && {
+        text: unit.text,
+        firstCharacterCue: unit.firstCharacterCue
+      }
+    }))
+  };
+}
+
 test('full and section adaptive plans initialize only their selected units', () => {
   const structure = store.getContentStructure('great-compassion-opening', 'great-compassion-v1');
   const section = structure.sections[0];
@@ -544,6 +557,27 @@ test('postgres full and section plans persist scoped states and creation idempot
   assert.equal(fullPlan.expectedFinishDate, '2026-07-23');
   assert.equal(fullPlan.task.newUnitCount, 6);
   assert.equal(fullPlan.task.items.filter((item) => item.taskType === 'new').length, 6);
+});
+
+test('memory and postgres creation responses expose the same complete adaptive DTO', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const memoryPlan = createAdaptivePlan();
+  const postgresStore = getGatedPostgresStore();
+  const postgresUserId = createPostgresTestUser();
+
+  try {
+    const postgresPlan = createPostgresAdaptivePlan(postgresStore, { userId: postgresUserId });
+    const rereadPlan = postgresStore.listPlans(postgresUserId)
+      .find((plan) => plan.id === postgresPlan.id);
+    const rereadTask = postgresStore.getTodayStudyTask(postgresUserId, postgresPlan.id, '2026-07-10');
+
+    assert.deepEqual(pickAdaptiveCreationParity(postgresPlan), pickAdaptiveCreationParity(memoryPlan));
+    assert.deepEqual(postgresPlan.itemStates, rereadPlan.itemStates);
+    assert.deepEqual(postgresPlan.task, rereadTask);
+  } finally {
+    cleanupPostgresAdaptiveUser(postgresUserId);
+  }
 });
 
 test('postgres generates later daily tasks lazily and enforces plan ownership', {
