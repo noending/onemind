@@ -20,6 +20,7 @@ test('adaptive practice detects an adaptive plan before requesting the signed-in
   assert.match(source, /isAdaptivePlan\(localPlan\)/);
   assert.match(source, /syncPlansFromBackend/);
   assert.match(source, /setupLegacyPractice/);
+  assert.doesNotMatch(source, /getTodayStudyTaskApi\(planId,\s*todayDate\(\)\)/);
 });
 
 test('adaptive practice has the approved session controls and grades only', () => {

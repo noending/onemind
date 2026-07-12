@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 
 const { contents: seedContents } = require('../src/data/seed');
 const store = require('../src/repositories/memoryStore');
@@ -151,6 +153,178 @@ test('content normalization uses the reviewed builtin structure only when server
   assert.deepEqual(normalized.segments, builtin.segments);
   assert.deepEqual(normalized.sections, builtin.sections);
   assert.equal(normalized.publishedVersionId, 'great-compassion-v1');
+});
+
+test('backend content normalization never invents builtin publication metadata', () => {
+  const normalized = normalizeContent({
+    id: 'great-compassion-opening',
+    title: '大悲咒',
+    body: '服务端正文'
+  }, { source: 'backend' });
+
+  assert.equal(normalized.publishedVersionId, undefined);
+  assert.equal(normalized.reviewStatus, undefined);
+  assert.equal(normalized.sourceNote, undefined);
+  assert.equal(normalized.versionNote, undefined);
+});
+
+test('memory content list and get expose the same authoritative approved version metadata', () => {
+  const listed = store.listContents().find((item) => item.id === 'great-compassion-opening');
+  const detail = store.getContent('great-compassion-opening');
+
+  for (const content of [listed, detail]) {
+    assert.equal(content.publishedVersionId, 'great-compassion-v1');
+    assert.equal(content.reviewStatus, 'approved');
+    assert.equal(content.sourceNote, '经人工校对的首发版本');
+    assert.equal(content.versionNote, '首版 84 句学习结构');
+  }
+});
+
+test('memory content projection follows a newly approved published version over stale content fields', () => {
+  const content = seedContents.find((item) => item.id === 'great-compassion-opening');
+  const previous = {
+    publishedVersion: content.publishedVersion,
+    reviewStatus: content.reviewStatus,
+    sourceNote: content.sourceNote,
+    versionNote: content.versionNote
+  };
+  content.publishedVersion = {
+    id: 'great-compassion-v2',
+    versionNo: 2,
+    reviewStatus: 'approved',
+    sourceNote: '第二版权威来源',
+    versionNote: '第二版审核发布',
+    sourceVersionNo: 1
+  };
+  content.reviewStatus = 'rejected';
+  content.sourceNote = '陈旧内容来源';
+  content.versionNote = '陈旧内容版本';
+
+  try {
+    const listed = store.listContents().find((item) => item.id === content.id);
+    const detail = store.getContent(content.id);
+    for (const projected of [listed, detail]) {
+      assert.equal(projected.publishedVersionId, 'great-compassion-v2');
+      assert.equal(projected.reviewStatus, 'approved');
+      assert.equal(projected.sourceNote, '第二版权威来源');
+      assert.equal(projected.versionNote, '第二版审核发布');
+      assert.equal(projected.sourceVersionNo, 1);
+    }
+  } finally {
+    Object.assign(content, previous);
+  }
+});
+
+function runPostgresSql(sql) {
+  return execFileSync(process.env.PSQL_BIN || '/opt/homebrew/bin/psql', [
+    '-X',
+    '-h', process.env.PGHOST || '127.0.0.1',
+    '-p', process.env.PGPORT || '5432',
+    '-U', process.env.PGUSER || 'magic',
+    '-d', process.env.PGDATABASE || 'onemind',
+    '-v', 'ON_ERROR_STOP=1',
+    '-t', '-A', '-c', sql
+  ], {
+    env: { ...process.env, PGPASSWORD: process.env.PGPASSWORD || 'Noending5@' },
+    encoding: 'utf8'
+  }).trim();
+}
+
+test('postgres list and get select the latest approved published version metadata', {
+  skip: process.env.RUN_POSTGRES_STRUCTURE_TEST !== '1'
+}, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+  postgresStore.initializeDatabase();
+  const contentId = '33333333-3333-4333-8333-000000000005';
+  const versionId = crypto.randomUUID();
+  const versionNo = Number(runPostgresSql(`
+    select coalesce(max(version_no), 0) + 1
+    from content_versions where content_id = '${contentId}'
+  `));
+
+  try {
+    runPostgresSql(`
+      insert into content_versions (
+        id, content_id, version_no, snapshot_json, change_note, created_by,
+        review_status, source_note, version_note, reviewed_by, reviewed_at, published_at
+      ) values (
+        '${versionId}', '${contentId}', ${versionNo}, '{"sourceVersionNo":1}'::jsonb, 'approved v2 test',
+        '11111111-1111-4111-8111-222222222222', 'approved',
+        '第二版 PostgreSQL 权威来源', '第二版 PostgreSQL 审核发布',
+        '11111111-1111-4111-8111-222222222222', now(), now()
+      )
+    `);
+    const listed = postgresStore.listContents().find((item) => item.id === contentId);
+    const detail = postgresStore.getContent('great-compassion-opening');
+
+    for (const content of [listed, detail]) {
+      assert.equal(content.publishedVersionId, versionId);
+      assert.equal(content.reviewStatus, 'approved');
+      assert.equal(content.sourceNote, '第二版 PostgreSQL 权威来源');
+      assert.equal(content.versionNote, '第二版 PostgreSQL 审核发布');
+      assert.equal(content.sourceVersionNo, 1);
+    }
+  } finally {
+    runPostgresSql(`delete from content_versions where id = '${versionId}'`);
+  }
+});
+
+test('memory and postgres content providers expose the same canonical publication DTO', {
+  skip: process.env.RUN_POSTGRES_STRUCTURE_TEST !== '1'
+}, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+  postgresStore.initializeDatabase();
+  const memory = store.getContent('great-compassion-opening');
+  const postgres = postgresStore.getContent('great-compassion-opening');
+  const pickPublication = (content) => ({
+    publishedVersionId: content.publishedVersionId,
+    reviewStatus: content.reviewStatus,
+    sourceNote: content.sourceNote,
+    versionNote: content.versionNote,
+    sourceVersionNo: content.sourceVersionNo
+  });
+
+  assert.deepEqual(pickPublication(postgres), pickPublication(memory));
+});
+
+test('postgres canonical v1 seed explicitly repairs and audits conflicting metadata', {
+  skip: process.env.RUN_POSTGRES_SEED_REPAIR_TEST !== '1'
+}, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+  postgresStore.initializeDatabase();
+  const contentId = '33333333-3333-4333-8333-000000000005';
+  const versionId = runPostgresSql(`
+    select id::text from content_versions
+    where content_id = '${contentId}' and version_no = 1
+  `);
+  runPostgresSql(`
+    update content_versions
+    set review_status = 'draft', source_note = 'conflicting source',
+      version_note = 'conflicting version', published_at = null
+    where id = '${versionId}'
+  `);
+
+  postgresStore.initializeDatabase();
+  const repaired = JSON.parse(runPostgresSql(`
+    select row_to_json(v) from (
+      select review_status as "reviewStatus", source_note as "sourceNote",
+        version_note as "versionNote", published_at is not null as "published"
+      from content_versions where id = '${versionId}'
+    ) v
+  `));
+  const auditCount = Number(runPostgresSql(`
+    select count(*) from audit_logs
+    where action = 'content.version.seed_reconciled'
+      and target_id = '${versionId}'
+  `));
+
+  assert.deepEqual(repaired, {
+    reviewStatus: 'approved',
+    sourceNote: '经人工校对的首发版本',
+    versionNote: '首版 84 句学习结构',
+    published: true
+  });
+  assert.ok(auditCount >= 1);
 });
 
 test('postgres seeds and returns the reviewed great compassion structure idempotently', {

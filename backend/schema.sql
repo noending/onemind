@@ -285,7 +285,7 @@ create table if not exists daily_study_tasks (
   plan_id uuid not null references memory_plans(id) on delete cascade,
   task_date date not null,
   status varchar(24) not null default 'pending',
-  estimated_minutes int not null default 0,
+  estimated_minutes numeric(6,1) not null default 0,
   new_unit_count int not null default 0,
   review_unit_count int not null default 0,
   weak_unit_count int not null default 0,
@@ -295,6 +295,10 @@ create table if not exists daily_study_tasks (
   updated_at timestamptz not null default now(),
   unique (plan_id, task_date)
 );
+
+alter table daily_study_tasks
+  alter column estimated_minutes type numeric(6,1)
+  using estimated_minutes::numeric(6,1);
 
 create table if not exists daily_study_task_items (
   id uuid primary key default gen_random_uuid(),

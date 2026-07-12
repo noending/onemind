@@ -5,6 +5,7 @@ const {
   applyReviewGrade,
   isInitialComplete
 } = require('../../../common/adaptive-memory');
+const { businessDate } = require('../../../common/business-date');
 
 const {
   contents,
@@ -55,7 +56,7 @@ const state = {
 };
 
 function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return businessDate();
 }
 
 function addDays(dateString, days) {
@@ -1189,6 +1190,13 @@ function getTodayStudyTask(userId, planId, date = todayDate()) {
   if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
 
   const taskDate = String(date || todayDate()).slice(0, 10);
+  const historicalTask = state.adaptiveDailyTasks
+    .filter((item) => item.planId === plan.id && item.taskDate <= taskDate)
+    .filter((item) => ['pending', 'in_progress'].includes(item.status))
+    .filter((item) => item.items.some((taskItem) => taskItem.status === 'pending'))
+    .sort((left, right) => String(left.taskDate).localeCompare(String(right.taskDate)))[0];
+  if (historicalTask) return toAdaptiveDailyTask(historicalTask);
+
   let task = state.adaptiveDailyTasks.find((item) => item.planId === plan.id && item.taskDate === taskDate);
   if (!task) task = createAdaptiveDailyTask(plan, taskDate);
   return toAdaptiveDailyTask(task);
@@ -1245,7 +1253,7 @@ function completeStudyTaskItem(payload = {}) {
     item.hintCount = metrics.hintCount;
     item.completedAt = reviewedAt;
 
-    if (grade === 'again') appendWeakRetry(task, item.memoryUnitId);
+    if (grade === 'again') appendWeakRetry(task, item.memoryUnitId, plan.dailyMinutes);
 
     task.status = task.items.some((candidate) => candidate.status === 'pending') ? 'pending' : 'completed';
     task.updatedAt = new Date().toISOString();
@@ -1313,7 +1321,7 @@ function createAdaptiveDailyTask(plan, taskDate) {
   return task;
 }
 
-function appendWeakRetry(task, memoryUnitId) {
+function appendWeakRetry(task, memoryUnitId, dailyMinutes) {
   const existing = task.items.find((item) => (
     item.memoryUnitId === memoryUnitId && item.taskType === 'weak_review' && item.status === 'pending'
   ));
@@ -1334,7 +1342,7 @@ function appendWeakRetry(task, memoryUnitId) {
   };
   task.items.push(retry);
   task.weakUnitCount += 1;
-  task.estimatedMinutes = Math.ceil(task.estimatedMinutes + 0.5);
+  task.estimatedMinutes = Math.min(Number(dailyMinutes), Number(task.estimatedMinutes) + 0.5);
   return retry;
 }
 
@@ -2231,14 +2239,15 @@ function toContentSummary(content) {
     lengthTier: content.lengthTier,
     planDays: content.planDays,
     scene: content.scene,
-    publishedVersionId: content.publishedVersionId || publishedVersion.id || '',
-    sourceNote: content.sourceNote || publishedVersion.sourceNote || '',
-    versionNote: content.versionNote || publishedVersion.versionNote || '',
-    sourceContentId: content.sourceContentId || '',
-    sourceVersionNo: content.sourceVersionNo || null,
+    publishedVersionId: publishedVersion.id || content.publishedVersionId || '',
+    publishedVersionNo: publishedVersion.versionNo || null,
+    sourceNote: publishedVersion.sourceNote || '',
+    versionNote: publishedVersion.versionNote || '',
+    sourceContentId: publishedVersion.sourceContentId || content.sourceContentId || '',
+    sourceVersionNo: publishedVersion.sourceVersionNo || content.sourceVersionNo || null,
     accessLevel: content.accessLevel,
     publishStatus: content.publishStatus || 'draft',
-    reviewStatus: content.reviewStatus || publishedVersion.reviewStatus || 'draft',
+    reviewStatus: publishedVersion.reviewStatus || 'draft',
     reviewedAt: content.reviewedAt || null,
     createdAt: content.createdAt || null,
     updatedAt: content.updatedAt || null,

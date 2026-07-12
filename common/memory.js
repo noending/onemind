@@ -1,4 +1,5 @@
 const { findContent } = require("./content");
+const { businessDate } = require("./business-date");
 const {
   archiveMemoryPlanApi,
   completeReviewTaskApi,
@@ -37,7 +38,7 @@ function formatDate(date) {
 }
 
 function todayDate() {
-  return formatDate(new Date());
+  return businessDate();
 }
 
 function addDays(dateStr, dayOffset) {

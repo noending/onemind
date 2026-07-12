@@ -6,6 +6,8 @@ const DEFAULT_TARGET_DAYS = {
   familiar: 7
 };
 const INTERVAL_BY_GRADE = { again: 1, good: 3, easy: 7 };
+const REVIEW_MINUTES = 0.5;
+const NEW_MINUTES = 1.5;
 
 function normalizeTargetDays(value) {
   const parsed = Math.round(Number(value || 14));
@@ -38,26 +40,50 @@ function allocateDailyUnits({ states = [], date, dailyMinutes = 15, targetDays =
   const weakStates = states.filter((state) => state.lastGrade === 'again' && !dueIds.has(state.memoryUnitId));
   const newStates = states.filter((state) => state.phase === 'new');
   const normalizedDays = normalizeTargetDays(targetDays);
-  const dailyBudget = Math.max(5, Number(dailyMinutes || 15));
-  const reviewMinutes = (dueStates.length + weakStates.length) * 0.5;
-  const minuteCap = Math.max(0, Math.floor(Math.max(0, dailyBudget - reviewMinutes) / 1.5));
-  const newUnitCount = Math.min(
-    newStates.length,
-    Math.ceil(newStates.length / normalizedDays),
-    minuteCap
-  );
+  const parsedBudget = Number(dailyMinutes);
+  const dailyBudget = Number.isFinite(parsedBudget) ? Math.max(0, parsedBudget) : 15;
+  let remainingMinutes = dailyBudget;
+
+  function takeWithinBudget(items, cost, limit = items.length) {
+    const affordable = Math.max(0, Math.floor((remainingMinutes + Number.EPSILON) / cost));
+    const selected = items.slice(0, Math.min(items.length, limit, affordable));
+    remainingMinutes -= selected.length * cost;
+    return selected;
+  }
+
+  let selectedDue = takeWithinBudget(dueStates, REVIEW_MINUTES);
+  let selectedWeak = takeWithinBudget(weakStates, REVIEW_MINUTES);
+  const targetNewCount = Math.ceil(newStates.length / normalizedDays);
+  let selectedNew = takeWithinBudget(newStates, NEW_MINUTES, targetNewCount);
+  let minimumItemException = false;
+
+  if (!selectedDue.length && !selectedWeak.length && !selectedNew.length) {
+    const firstDue = dueStates[0];
+    const firstWeak = weakStates[0];
+    const firstNew = newStates[0];
+    if (firstDue) selectedDue = [firstDue];
+    else if (firstWeak) selectedWeak = [firstWeak];
+    else if (firstNew) selectedNew = [firstNew];
+    minimumItemException = Boolean(firstDue || firstWeak || firstNew);
+  }
+
+  const newUnitCount = selectedNew.length;
   const items = [
-    ...dueStates.map((state) => ({ ...state, taskType: 'due_review' })),
-    ...weakStates.map((state) => ({ ...state, taskType: 'weak_review' })),
-    ...newStates.slice(0, newUnitCount).map((state) => ({ ...state, taskType: 'new' }))
+    ...selectedDue.map((state) => ({ ...state, taskType: 'due_review' })),
+    ...selectedWeak.map((state) => ({ ...state, taskType: 'weak_review' })),
+    ...selectedNew.map((state) => ({ ...state, taskType: 'new' }))
   ];
+  const estimatedMinutes = selectedDue.length * REVIEW_MINUTES
+    + selectedWeak.length * REVIEW_MINUTES
+    + selectedNew.length * NEW_MINUTES;
 
   return {
     items,
     newUnitCount,
-    reviewUnitCount: dueStates.length,
-    weakUnitCount: weakStates.length,
-    estimatedMinutes: Math.ceil(items.length === 0 ? 0 : reviewMinutes + newUnitCount * 1.5)
+    reviewUnitCount: selectedDue.length,
+    weakUnitCount: selectedWeak.length,
+    estimatedMinutes,
+    minimumItemException
   };
 }
 
@@ -76,8 +102,11 @@ function applyReviewGrade(state = {}, review = {}) {
   const grade = review.grade;
   const reviewedDate = naturalDate(review.reviewedAt);
   const previousReviewedDate = naturalDate(state.lastReviewedAt);
-  const isSuccessful = grade !== 'again';
-  const crossDaySuccess = isSuccessful && previousReviewedDate && reviewedDate && reviewedDate > previousReviewedDate;
+  const isSuccessful = grade === 'good' || grade === 'easy';
+  const isCleanRecall = isSuccessful
+    && Number(review.hintCount || 0) === 0
+    && Number(review.mistakeCount || 0) === 0;
+  const crossDaySuccess = isCleanRecall && previousReviewedDate && reviewedDate && reviewedDate > previousReviewedDate;
   const successfulRecallCount = Number(state.successfulRecallCount || 0) + (isSuccessful ? 1 : 0);
   const crossDaySuccessCount = Number(state.crossDaySuccessCount || 0) + (crossDaySuccess ? 1 : 0);
   const interval = INTERVAL_BY_GRADE[grade] || INTERVAL_BY_GRADE.good;

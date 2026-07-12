@@ -55,6 +55,16 @@ test('today-task client encodes plan and date query values', async () => {
   assert.equal(request.header.Authorization, 'Bearer signed-user-token');
 });
 
+test('today-task production request omits a client-local date', async () => {
+  api.setBaseUrl('https://api.example.test');
+  storage.set('oneMind.auth.token', 'signed-user-token');
+
+  await api.getTodayStudyTaskApi('plan-1');
+
+  const request = requests.at(-1);
+  assert.equal(request.url, 'https://api.example.test/api/study-tasks/today?planId=plan-1');
+});
+
 test('item-completion client encodes the item path and forwards its key only in headers', async () => {
   api.setBaseUrl('https://api.example.test');
   storage.set('oneMind.auth.token', 'signed-user-token');

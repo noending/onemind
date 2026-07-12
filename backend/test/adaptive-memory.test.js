@@ -73,6 +73,106 @@ test('a unit only becomes stable after a later-day successful recall', () => {
   assert.equal(isInitialComplete([second]), true);
 });
 
+test('hinted or mistaken good reviews do not earn cross-day stable success', () => {
+  const first = applyReviewGrade(
+    { memoryUnitId: 'u1', phase: 'learning', successfulRecallCount: 0, crossDaySuccessCount: 0 },
+    { grade: 'good', reviewedAt: '2026-07-10T08:00:00.000Z' }
+  );
+  const hinted = applyReviewGrade(first, {
+    grade: 'good',
+    reviewedAt: '2026-07-11T08:00:00.000Z',
+    hintCount: 1,
+    mistakeCount: 0
+  });
+  const mistaken = applyReviewGrade(hinted, {
+    grade: 'easy',
+    reviewedAt: '2026-07-12T08:00:00.000Z',
+    hintCount: 0,
+    mistakeCount: 1
+  });
+  const clean = applyReviewGrade(mistaken, {
+    grade: 'easy',
+    reviewedAt: '2026-07-13T08:00:00.000Z',
+    hintCount: 0,
+    mistakeCount: 0
+  });
+
+  assert.equal(hinted.crossDaySuccessCount, 0);
+  assert.notEqual(hinted.phase, 'stable');
+  assert.equal(mistaken.crossDaySuccessCount, 0);
+  assert.notEqual(mistaken.phase, 'stable');
+  assert.equal(clean.crossDaySuccessCount, 1);
+  assert.equal(clean.phase, 'stable');
+});
+
+test('daily budget truncates due then weak backlog before allocating new units', () => {
+  const due = Array.from({ length: 20 }, (_, index) => ({
+    memoryUnitId: `due-${index + 1}`,
+    phase: 'reviewing',
+    dueAt: '2026-07-09',
+    lastGrade: 'good'
+  }));
+  const weak = Array.from({ length: 20 }, (_, index) => ({
+    memoryUnitId: `weak-${index + 1}`,
+    phase: 'learning',
+    dueAt: '2026-07-20',
+    lastGrade: 'again'
+  }));
+  const fresh = Array.from({ length: 84 }, (_, index) => ({
+    memoryUnitId: `new-${index + 1}`,
+    phase: 'new'
+  }));
+  const result = allocateDailyUnits({
+    states: [...due, ...weak, ...fresh],
+    date: '2026-07-10',
+    dailyMinutes: 5,
+    targetDays: 14
+  });
+
+  assert.equal(result.reviewUnitCount, 10);
+  assert.equal(result.weakUnitCount, 0);
+  assert.equal(result.newUnitCount, 0);
+  assert.equal(result.estimatedMinutes, 5);
+  assert.deepEqual(result.items.map((item) => item.taskType), Array(10).fill('due_review'));
+});
+
+test('daily budget uses leftover time for weak before new and leaves backlog pending', () => {
+  const states = [
+    ...Array.from({ length: 3 }, (_, index) => ({
+      memoryUnitId: `due-${index + 1}`,
+      phase: 'reviewing',
+      dueAt: '2026-07-09'
+    })),
+    ...Array.from({ length: 10 }, (_, index) => ({
+      memoryUnitId: `weak-${index + 1}`,
+      phase: 'learning',
+      dueAt: '2026-07-20',
+      lastGrade: 'again'
+    })),
+    ...Array.from({ length: 84 }, (_, index) => ({ memoryUnitId: `new-${index + 1}`, phase: 'new' }))
+  ];
+  const result = allocateDailyUnits({ states, date: '2026-07-10', dailyMinutes: 5, targetDays: 14 });
+
+  assert.equal(result.reviewUnitCount, 3);
+  assert.equal(result.weakUnitCount, 7);
+  assert.equal(result.newUnitCount, 0);
+  assert.ok(result.estimatedMinutes <= 5);
+  assert.equal(result.items.length, 10);
+});
+
+test('minimum one-item exception is explicit when one item costs more than the budget', () => {
+  const result = allocateDailyUnits({
+    states: [{ memoryUnitId: 'due-1', phase: 'reviewing', dueAt: '2026-07-09' }],
+    date: '2026-07-10',
+    dailyMinutes: 0.25,
+    targetDays: 14
+  });
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.estimatedMinutes, 0.5);
+  assert.equal(result.minimumItemException, true);
+});
+
 test('an earlier out-of-order successful review does not count as a cross-day success', () => {
   const next = applyReviewGrade(
     {

@@ -413,7 +413,8 @@ function getCurrentUser() {
     });
 }
 
-function normalizeContent(item) {
+function normalizeContent(item, options = {}) {
+  const allowBuiltinPublicationFallback = !options || options.source !== "backend";
   const builtinContent = findBuiltinContentFallback(item || {});
   const category = item.category || item.subtitle || TYPE_CATEGORY[item.type] || "经文片段";
   const lengthTier = item.lengthTier || item.length_tier || "short";
@@ -453,10 +454,16 @@ function normalizeContent(item) {
     scene: item.scene || "按计划修持",
     publishedVersionId: item.publishedVersionId !== undefined
       ? item.publishedVersionId
-      : builtinContent && builtinContent.publishedVersionId,
-    sourceNote: item.sourceNote !== undefined ? item.sourceNote : builtinContent && builtinContent.sourceNote,
-    versionNote: item.versionNote !== undefined ? item.versionNote : builtinContent && builtinContent.versionNote,
-    reviewStatus: item.reviewStatus !== undefined ? item.reviewStatus : builtinContent && builtinContent.reviewStatus,
+      : (allowBuiltinPublicationFallback ? builtinContent && builtinContent.publishedVersionId : undefined),
+    sourceNote: item.sourceNote !== undefined
+      ? item.sourceNote
+      : (allowBuiltinPublicationFallback ? builtinContent && builtinContent.sourceNote : undefined),
+    versionNote: item.versionNote !== undefined
+      ? item.versionNote
+      : (allowBuiltinPublicationFallback ? builtinContent && builtinContent.versionNote : undefined),
+    reviewStatus: item.reviewStatus !== undefined
+      ? item.reviewStatus
+      : (allowBuiltinPublicationFallback ? builtinContent && builtinContent.reviewStatus : undefined),
     hasAudio: Boolean(item.hasAudio),
     accessLevel: item.accessLevel || item.access_level || "public",
     defaultMode: item.defaultMode || "scientific",
@@ -469,11 +476,11 @@ function normalizeContent(item) {
   };
 }
 
-function normalizeFestival(item) {
+function normalizeFestival(item, options = {}) {
   const date = item.lunarDate || item.date || item.solarDate || "";
   const deity = item.relatedFigure || item.deity || "";
   const recommendedContents = Array.isArray(item.recommendedContents)
-    ? item.recommendedContents.map(normalizeContent)
+    ? item.recommendedContents.map((content) => normalizeContent(content, options))
     : (Array.isArray(item.contentIds)
       ? item.contentIds.map((contentId) => {
         const content = getLocalContents().find((entry) => entry.id === contentId);
@@ -497,7 +504,9 @@ function getLocalContents() {
 
 function getCachedContents() {
   const cached = safeGetStorage(API_CACHE_KEY, []);
-  return Array.isArray(cached) ? cached.map(normalizeContent) : [];
+  return Array.isArray(cached)
+    ? cached.map((item) => normalizeContent(item, { source: "backend" }))
+    : [];
 }
 
 function findCachedContent(id) {
@@ -518,7 +527,7 @@ function listContents() {
 
   return request("/api/contents")
     .then((response) => {
-      const contents = (response.data || []).map(normalizeContent);
+      const contents = (response.data || []).map((item) => normalizeContent(item, { source: "backend" }));
       safeSetStorage(API_CACHE_KEY, contents);
       return {
         contents,
@@ -552,7 +561,7 @@ function listFestivals() {
 
   return request("/api/festivals")
     .then((response) => ({
-      festivals: (response.data || []).map(normalizeFestival),
+      festivals: (response.data || []).map((item) => normalizeFestival(item, { source: "backend" })),
       source: "backend"
     }))
     .catch(() => ({

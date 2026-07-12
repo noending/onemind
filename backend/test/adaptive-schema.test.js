@@ -43,6 +43,7 @@ test('adaptive schema creates every required table and plan column', () => {
   ]) {
     assert.match(joined, new RegExp(`add column if not exists ${column}`));
   }
+  assert.match(joined, /alter column estimated_minutes type numeric\(6,1\)/);
 });
 
 test('adaptive schema includes the controller-supplemented state, task, and idempotency contract', () => {
@@ -121,6 +122,9 @@ test('adaptive migrations are repeatable idempotent statements', () => {
   for (const statement of firstRun) {
     const normalized = normalizeSql(statement);
     assert.match(normalized, /^(?:alter table|create table|create(?: unique)? index|update)\b/);
-    if (!normalized.startsWith('update ')) assert.match(normalized, /\bif not exists\b/);
+    const repeatableTypeMigration = normalized.includes('alter column estimated_minutes type numeric(6,1)');
+    if (!normalized.startsWith('update ') && !repeatableTypeMigration) {
+      assert.match(normalized, /\bif not exists\b/);
+    }
   }
 });

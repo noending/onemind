@@ -548,8 +548,7 @@ async function handleRequest(req, res, body) {
     return sendJson(res, 200, {
       data: getTodayStudyTask(
         userSession.id,
-        planId,
-        requestUrl.searchParams.get('date') || undefined
+        planId
       )
     });
   }

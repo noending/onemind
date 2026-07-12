@@ -262,6 +262,18 @@ function createPostgresAdaptivePlan(postgresStore, overrides = {}) {
   });
 }
 
+function completePostgresTask(postgresStore, plan, task = plan.task, reviewedAt = '2026-07-10T08:00:00.000Z') {
+  task.items.filter((item) => item.status === 'pending').forEach((item, index) => {
+    postgresStore.completeStudyTaskItem({
+      userId: plan.userId,
+      itemId: item.id,
+      grade: 'good',
+      idempotencyKey: uniqueKey(`postgres-complete-task-${index}`),
+      reviewedAt
+    });
+  });
+}
+
 function pickTaskItemResultDto(item) {
   return {
     result: item.result,
@@ -376,8 +388,17 @@ test('memory idempotency keys cannot cross adaptive operations', () => {
   }), { code: 'IDEMPOTENCY_KEY_CONFLICT', statusCode: 409 });
 });
 
-test('today task is generated lazily for a later date and cannot be read by another user', () => {
+test('later task is generated only after the historical task completes and enforces ownership', () => {
   const plan = createAdaptivePlan();
+  plan.task.items.forEach((item, index) => {
+    store.completeStudyTaskItem({
+      itemId: item.id,
+      userId: plan.userId,
+      grade: 'good',
+      idempotencyKey: uniqueKey(`complete-before-later-${index}`),
+      reviewedAt: '2026-07-10T08:00:00.000Z'
+    });
+  });
   const nextDay = store.getTodayStudyTask(plan.userId, plan.id, '2026-07-11');
 
   assert.equal(nextDay.taskDate, '2026-07-11');
@@ -431,7 +452,7 @@ test('item completion validates grades, is idempotent, and rejects a key reused 
   }), { code: 'IDEMPOTENCY_KEY_CONFLICT', statusCode: 409 });
 });
 
-test('a completed new unit is not allocated as new again on the next date', () => {
+test('a historical completed new item is not returned as another pending new allocation', () => {
   const plan = createAdaptivePlan();
   const sourceItem = plan.task.items[0];
   store.completeStudyTaskItem({
@@ -443,7 +464,112 @@ test('a completed new unit is not allocated as new again on the next date', () =
   });
 
   const nextDay = store.getTodayStudyTask(plan.userId, plan.id, '2026-07-11');
-  assert.equal(nextDay.items.some((item) => item.memoryUnitId === sourceItem.memoryUnitId), false);
+  const historicalItem = nextDay.items.find((item) => item.memoryUnitId === sourceItem.memoryUnitId);
+  assert.equal(nextDay.id, plan.task.id);
+  assert.equal(historicalItem.status, 'completed');
+  assert.equal(nextDay.items.some((item) => (
+    item.memoryUnitId === sourceItem.memoryUnitId
+    && item.taskType === 'new'
+    && item.status === 'pending'
+  )), false);
+});
+
+test('memory provider returns the earliest unfinished historical task before allocating today', () => {
+  const plan = createAdaptivePlan();
+  const historical = store.getTodayStudyTask(plan.userId, plan.id, '2026-07-11');
+
+  assert.equal(historical.id, plan.task.id);
+  assert.equal(historical.taskDate, '2026-07-10');
+  assert.throws(() => store.getTodayStudyTask(uniqueKey('other-owner'), plan.id, '2026-07-11'), {
+    code: 'STUDY_TASK_NOT_FOUND',
+    statusCode: 404
+  });
+});
+
+test('memory provider keeps yesterday again retry executable before creating a new date task', () => {
+  const plan = createAdaptivePlan();
+  const sourceItem = plan.task.items[0];
+  const failed = store.completeStudyTaskItem({
+    itemId: sourceItem.id,
+    userId: plan.userId,
+    grade: 'again',
+    idempotencyKey: uniqueKey('historical-again'),
+    reviewedAt: '2026-07-10T08:00:00.000Z'
+  });
+  const retry = failed.task.items.find((item) => item.taskType === 'weak_review' && item.status === 'pending');
+  const nextDay = store.getTodayStudyTask(plan.userId, plan.id, '2026-07-11');
+
+  assert.ok(retry);
+  assert.equal(nextDay.id, plan.task.id);
+  assert.equal(nextDay.items.some((item) => item.id === retry.id), true);
+});
+
+test('memory provider allocates today only after every historical item is completed', () => {
+  const plan = createAdaptivePlan();
+  plan.task.items.forEach((item, index) => {
+    store.completeStudyTaskItem({
+      itemId: item.id,
+      userId: plan.userId,
+      grade: 'good',
+      idempotencyKey: uniqueKey(`finish-history-${index}`),
+      reviewedAt: '2026-07-10T08:00:00.000Z'
+    });
+  });
+
+  const today = store.getTodayStudyTask(plan.userId, plan.id, '2026-07-11');
+  assert.notEqual(today.id, plan.task.id);
+  assert.equal(today.taskDate, '2026-07-11');
+  assert.equal(today.newUnitCount, 6);
+});
+
+test('repository completion only grants stable cross-day success to clean recall', () => {
+  const content = {
+    id: uniqueKey('stable-content'),
+    title: 'Stable qualification content',
+    body: 'Unit',
+    preview: 'Unit',
+    publishStatus: 'published',
+    publishedVersion: { id: uniqueKey('stable-version'), reviewStatus: 'approved' },
+    sections: [{
+      id: uniqueKey('stable-section'),
+      title: 'Stable section',
+      sortOrder: 1,
+      units: [{ id: uniqueKey('stable-unit'), text: 'Unit', sortOrder: 1 }]
+    }]
+  };
+  contents.push(content);
+
+  try {
+    const plan = createAdaptivePlan({
+      contentId: content.id,
+      contentVersionId: content.publishedVersion.id,
+      targetDays: 3,
+      dailyMinutes: 5
+    });
+    store.completeStudyTaskItem({
+      itemId: plan.task.items[0].id,
+      userId: plan.userId,
+      grade: 'good',
+      idempotencyKey: uniqueKey('stable-clean-first'),
+      reviewedAt: '2026-07-10T08:00:00.000Z'
+    });
+    const reviewTask = store.getTodayStudyTask(plan.userId, plan.id, '2026-07-13');
+    const hinted = store.completeStudyTaskItem({
+      itemId: reviewTask.items[0].id,
+      userId: plan.userId,
+      grade: 'good',
+      hintCount: 1,
+      mistakeCount: 0,
+      idempotencyKey: uniqueKey('stable-hinted-second'),
+      reviewedAt: '2026-07-13T08:00:00.000Z'
+    });
+
+    assert.equal(hinted.state.crossDaySuccessCount, 0);
+    assert.notEqual(hinted.state.phase, 'stable');
+    assert.equal(hinted.state.hintCount, 1);
+  } finally {
+    contents.splice(contents.indexOf(content), 1);
+  }
 });
 
 test('again appends one weak retry, duplicate source completion is inert, and task stays pending', () => {
@@ -470,6 +596,21 @@ test('again appends one weak retry, duplicate source completion is inert, and ta
   assert.equal(first.task.status, 'pending');
   assert.equal(duplicate.task.items.filter((item) => item.taskType === 'weak_review').length, 1);
   assert.equal(duplicate.state.lapseCount, 1);
+});
+
+test('same-session again retry never raises the task estimate above daily minutes', () => {
+  const plan = createAdaptivePlan({ dailyMinutes: 9 });
+  const result = store.completeStudyTaskItem({
+    itemId: plan.task.items[0].id,
+    userId: plan.userId,
+    grade: 'again',
+    idempotencyKey: uniqueKey('again-budget-cap'),
+    reviewedAt: '2026-07-10T08:00:00.000Z'
+  });
+
+  assert.equal(plan.task.estimatedMinutes, 9);
+  assert.ok(result.task.estimatedMinutes <= plan.dailyMinutes);
+  assert.equal(result.task.items.some((item) => item.taskType === 'weak_review'), true);
 });
 
 test('a final-unit again leaves one weak retry and blocks initial completion until it succeeds', () => {
@@ -589,6 +730,7 @@ test('postgres generates later daily tasks lazily and enforces plan ownership', 
 }, () => {
   const postgresStore = getGatedPostgresStore();
   const plan = createPostgresAdaptivePlan(postgresStore);
+  completePostgresTask(postgresStore, plan);
   const later = postgresStore.getTodayStudyTask(plan.userId, plan.id, '2026-07-11');
   const session = createPracticeSession(later, { startAt: 1000 });
   const expectedUnit = postgresStore
@@ -612,6 +754,118 @@ test('postgres generates later daily tasks lazily and enforces plan ownership', 
     code: 'STUDY_TASK_NOT_FOUND',
     statusCode: 404
   });
+});
+
+test('postgres concurrent today reads return the same earliest historical task with ownership parity', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, async () => {
+  const postgresStore = getGatedPostgresStore();
+  const userId = createPostgresTestUser();
+  const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+
+  try {
+    const [first, second] = await Promise.all([
+      runPostgresStoreChild('getTodayStudyTask', [userId, plan.id, '2026-07-11']),
+      runPostgresStoreChild('getTodayStudyTask', [userId, plan.id, '2026-07-11'])
+    ]);
+    const [counts] = queryPostgresRows(`
+      select count(*)::int as "taskCount"
+      from daily_study_tasks
+      where plan_id = ${sqlValue(plan.id)}
+    `);
+
+    assert.equal(first.id, plan.task.id);
+    assert.equal(second.id, plan.task.id);
+    assert.equal(first.taskDate, '2026-07-10');
+    assert.equal(counts.taskCount, 1);
+    assert.throws(() => postgresStore.getTodayStudyTask(crypto.randomUUID(), plan.id, '2026-07-11'), {
+      code: 'STUDY_TASK_NOT_FOUND',
+      statusCode: 404
+    });
+  } finally {
+    cleanupPostgresAdaptiveUser(userId);
+  }
+});
+
+test('postgres repository does not grant stable cross-day success to hinted good recall', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const userId = createPostgresTestUser();
+  const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+
+  try {
+    plan.task.items.forEach((item, index) => {
+      postgresStore.completeStudyTaskItem({
+        userId,
+        itemId: item.id,
+        grade: 'good',
+        reviewedAt: '2026-07-10T08:00:00.000Z',
+        idempotencyKey: uniqueKey(`postgres-stable-first-${index}`)
+      });
+    });
+    const reviewTask = postgresStore.getTodayStudyTask(userId, plan.id, '2026-07-13');
+    const reviewItem = reviewTask.items.find((item) => item.memoryUnitId === plan.task.items[0].memoryUnitId);
+    const hinted = postgresStore.completeStudyTaskItem({
+      userId,
+      itemId: reviewItem.id,
+      grade: 'good',
+      hintCount: 1,
+      mistakeCount: 0,
+      reviewedAt: '2026-07-13T08:00:00.000Z',
+      idempotencyKey: uniqueKey('postgres-stable-hinted')
+    });
+
+    assert.equal(hinted.state.crossDaySuccessCount, 0);
+    assert.notEqual(hinted.state.phase, 'stable');
+    assert.equal(hinted.state.hintCount, 1);
+  } finally {
+    cleanupPostgresAdaptiveUser(userId);
+  }
+});
+
+test('postgres large due backlog matches pure allocation and stays within daily budget', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const { allocateDailyUnits } = require('../../common/adaptive-memory');
+  const userId = createPostgresTestUser();
+  const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+
+  try {
+    runPostgresSql(`
+      update daily_study_task_items set status = 'completed', updated_at = now()
+      where plan_id = ${sqlValue(plan.id)};
+      update daily_study_tasks set status = 'completed', updated_at = now()
+      where plan_id = ${sqlValue(plan.id)};
+      update memory_item_states
+      set phase = 'reviewing', due_at = '2026-07-09'::date,
+        last_grade = 'good', updated_at = now()
+      where plan_id = ${sqlValue(plan.id)};
+    `);
+    const states = Array.from({ length: 84 }, (_, index) => ({
+      memoryUnitId: `unit-${index + 1}`,
+      phase: 'reviewing',
+      dueAt: '2026-07-09',
+      lastGrade: 'good'
+    }));
+    const expected = allocateDailyUnits({
+      states,
+      date: '2026-07-10',
+      dailyMinutes: 15,
+      targetDays: 14
+    });
+    const task = postgresStore.getTodayStudyTask(userId, plan.id, '2026-07-11');
+
+    assert.equal(task.reviewUnitCount, expected.reviewUnitCount);
+    assert.equal(task.weakUnitCount, expected.weakUnitCount);
+    assert.equal(task.newUnitCount, expected.newUnitCount);
+    assert.equal(task.estimatedMinutes, expected.estimatedMinutes);
+    assert.equal(task.items.length, 30);
+    assert.ok(task.estimatedMinutes <= plan.dailyMinutes);
+  } finally {
+    cleanupPostgresAdaptiveUser(userId);
+  }
 });
 
 test('postgres item completion is idempotent and binds keys to one item', {
@@ -724,6 +978,29 @@ test('postgres again leaves exactly one pending weak retry and duplicate complet
   assert.equal(first.plan.adaptiveStatus, 'active');
   assert.equal(duplicate.state.lapseCount, 1);
   assert.equal(duplicate.task.items.filter((item) => item.taskType === 'weak_review').length, 1);
+});
+
+test('postgres same-session again retry preserves the daily estimate cap', {
+  skip: process.env.RUN_POSTGRES_ADAPTIVE_PLAN_TEST !== '1'
+}, () => {
+  const postgresStore = getGatedPostgresStore();
+  const userId = createPostgresTestUser();
+  const plan = createPostgresAdaptivePlan(postgresStore, { userId, dailyMinutes: 9 });
+
+  try {
+    const result = postgresStore.completeStudyTaskItem({
+      itemId: plan.task.items[0].id,
+      userId,
+      grade: 'again',
+      idempotencyKey: uniqueKey('postgres-again-budget-cap'),
+      reviewedAt: '2026-07-10T08:00:00.000Z'
+    });
+
+    assert.ok(result.task.estimatedMinutes <= plan.dailyMinutes);
+    assert.equal(result.task.items.some((item) => item.taskType === 'weak_review'), true);
+  } finally {
+    cleanupPostgresAdaptiveUser(userId);
+  }
 });
 
 test('postgres concurrent same-key plan creation persists exactly one entity set', {
@@ -879,6 +1156,7 @@ test('postgres cross-task final-item completion converges plan status after stal
   const postgresStore = getGatedPostgresStore();
   const userId = createPostgresTestUser();
   const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+  completePostgresTask(postgresStore, plan);
   const secondTask = postgresStore.getTodayStudyTask(userId, plan.id, '2026-07-11');
   const finalItems = [plan.task.items.at(-1), secondTask.items.at(-1)];
   const completionKeys = [
@@ -904,6 +1182,9 @@ test('postgres cross-task final-item completion converges plan status after stal
       updated_at = now()
     where plan_id = ${sqlValue(plan.id)}
       and id not in (${finalItems.map((item) => sqlValue(item.id)).join(',')});
+    update daily_study_task_items
+    set status = 'pending', result = null, updated_at = now()
+    where id in (${finalItems.map((item) => sqlValue(item.id)).join(',')});
     update daily_study_tasks set status = 'pending', updated_at = now()
       where id in (${[plan.task.id, secondTask.id].map(sqlValue).join(',')});
     update memory_plans set adaptive_status = 'active', updated_at = now()
@@ -987,6 +1268,7 @@ test('postgres concurrent different-date allocation never overlaps pending new u
   const postgresStore = getGatedPostgresStore();
   const userId = createPostgresTestUser();
   const plan = createPostgresAdaptivePlan(postgresStore, { userId });
+  completePostgresTask(postgresStore, plan);
   installTaskInsertDelayTrigger();
 
   try {

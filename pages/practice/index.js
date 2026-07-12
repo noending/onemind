@@ -33,13 +33,6 @@ const ADAPTIVE_STEP_TITLES = {
   grade: "本次评分"
 };
 
-function todayDate() {
-  const date = new Date();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
 function isAdaptivePlan(plan) {
   return Boolean(plan && plan.contentVersionId && plan.adaptiveStatus);
 }
@@ -439,7 +432,7 @@ Page({
       adaptiveCompleted: false
     });
     ensureLogin({ message: "请先在我的页面完成微信授权，再开始今日训练" })
-      .then(() => getTodayStudyTaskApi(planId, todayDate()))
+      .then(() => getTodayStudyTaskApi(planId))
       .then((task) => {
         if (!task || !Array.isArray(task.items)) throw new Error("今日任务数据无效，请重试");
         this.startAdaptiveSession(task);

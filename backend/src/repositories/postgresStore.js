@@ -6,6 +6,7 @@ const {
   applyReviewGrade,
   recommendPlan
 } = require('../../../common/adaptive-memory');
+const { businessDate } = require('../../../common/business-date');
 const { ensureAdaptiveSchema } = require('./adaptiveSchema');
 
 const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空复现', '整段复诵', '抽查巩固'];
@@ -336,7 +337,7 @@ function ensureFeatureSchema() {
 }
 
 function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return businessDate();
 }
 
 function addDays(dateString, days) {
@@ -598,15 +599,47 @@ function enrichContentSummary(content) {
     recommendedRecitationTime: null,
     recitationTheme: null
   };
+  const publishedVersion = queryOne(`
+    select
+      id::text as "id",
+      content_id::text as "contentId",
+      version_no as "versionNo",
+      review_status as "reviewStatus",
+      source_note as "sourceNote",
+      version_note as "versionNote",
+      snapshot_json as "snapshotJson"
+    from content_versions
+    where content_id = ${sqlValue(content.id)}
+      and review_status = 'approved'
+      and published_at is not null
+    order by version_no desc, published_at desc
+    limit 1
+  `);
+  const versionSnapshot = publishedVersion?.snapshotJson || {};
   return {
     ...content,
     segments,
+    publishedVersionId: publishedVersion ? publicPublishedVersionId(publishedVersion) : '',
+    publishedVersionNo: publishedVersion ? Number(publishedVersion.versionNo) : null,
+    reviewStatus: publishedVersion?.reviewStatus || 'draft',
+    sourceNote: publishedVersion?.sourceNote || '',
+    versionNote: publishedVersion?.versionNote || '',
+    sourceContentId: versionSnapshot.sourceContentId || content.sourceContentId || '',
+    sourceVersionNo: versionSnapshot.sourceVersionNo || content.sourceVersionNo || null,
     defaultMode: modeConfig.defaultMode || 'scientific',
     supportedModes: normalizeSupportedModes(modeConfig.supportedModes, modeConfig.defaultMode || 'scientific'),
     supportsRecitation: Boolean(modeConfig.supportsRecitation),
     recommendedRecitationTime: modeConfig.recommendedRecitationTime || '',
     recitationTheme: modeConfig.recitationTheme || ''
   };
+}
+
+function publicPublishedVersionId(version) {
+  const match = Object.entries(CONTENT_VERSION_ALIASES).find(([, alias]) => (
+    alias.contentId === version.contentId
+    && Number(alias.versionNo) === Number(version.versionNo)
+  ));
+  return match?.[0] || version.id;
 }
 
 function matchesContentMode(content, mode) {
@@ -1766,6 +1799,23 @@ function getTodayStudyTask(userId, planId, date = todayDate()) {
     const plan = getAdaptivePlanById(planId, normalizedUserId);
     if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
 
+    const historicalTaskDate = queryScalar(`
+      select task.task_date::text
+      from daily_study_tasks task
+      where task.plan_id = ${sqlValue(plan.id)}
+        and task.task_date <= ${sqlValue(taskDate)}::date
+        and task.status in ('pending', 'in_progress')
+        and exists (
+          select 1
+          from daily_study_task_items item
+          where item.task_id = task.id
+            and item.status = 'pending'
+        )
+      order by task.task_date asc, task.created_at asc
+      limit 1
+    `);
+    if (historicalTaskDate) return getAdaptiveDailyTask(plan.id, historicalTaskDate);
+
     const existing = getAdaptiveDailyTask(plan.id, taskDate);
     if (existing) return existing;
 
@@ -2028,10 +2078,11 @@ function reconcileAdaptiveCompletion(planId, taskId, now) {
       update daily_study_tasks task
       set
         status = case when task_counts.pending_count = 0 then 'completed' else 'pending' end,
-        estimated_minutes = ceil(
+        estimated_minutes = least(
+          (select plan.daily_minutes from memory_plans plan where plan.id = task.plan_id),
           task_counts.new_count * 1.5
-          + (task_counts.review_count + task_counts.weak_count) * 0.5
-        )::int,
+            + (task_counts.review_count + task_counts.weak_count) * 0.5
+        ),
         new_unit_count = task_counts.new_count,
         review_unit_count = task_counts.review_count,
         weak_unit_count = task_counts.weak_count,
@@ -4743,7 +4794,25 @@ function seedContent(content) {
 
 function seedGreatCompassionStructure() {
   const contentId = IDS.contents['great-compassion-opening'];
-  let version = queryReturningOne(`
+  const existingVersion = queryOne(`
+    select
+      id::text as "id",
+      review_status as "reviewStatus",
+      source_note as "sourceNote",
+      version_note as "versionNote",
+      published_at as "publishedAt"
+    from content_versions
+    where content_id = ${sqlValue(contentId)}
+      and version_no = ${GREAT_COMPASSION_VERSION.versionNo}
+    limit 1
+  `);
+  const canonicalConflict = existingVersion && (
+    existingVersion.reviewStatus !== GREAT_COMPASSION_VERSION.reviewStatus
+    || existingVersion.sourceNote !== GREAT_COMPASSION_VERSION.sourceNote
+    || existingVersion.versionNote !== GREAT_COMPASSION_VERSION.versionNote
+    || !existingVersion.publishedAt
+  );
+  const version = queryReturningOne(`
     insert into content_versions (
       content_id,
       version_no,
@@ -4776,20 +4845,37 @@ function seedGreatCompassionStructure() {
       now(),
       now()
     )
-    on conflict (content_id, version_no) do nothing
+    on conflict (content_id, version_no) do update set
+      snapshot_json = excluded.snapshot_json,
+      change_note = excluded.change_note,
+      review_status = excluded.review_status,
+      source_note = excluded.source_note,
+      version_note = excluded.version_note,
+      reviewed_by = excluded.reviewed_by,
+      reviewed_at = coalesce(content_versions.reviewed_at, excluded.reviewed_at),
+      published_at = coalesce(content_versions.published_at, excluded.published_at)
     returning id::text as "id"
   `);
 
-  if (!version) {
-    version = queryOne(`
-      select id::text as "id"
-      from content_versions
-      where content_id = ${sqlValue(contentId)}
-        and version_no = ${GREAT_COMPASSION_VERSION.versionNo}
-      limit 1
-    `);
-  }
   if (!version) return;
+
+  if (canonicalConflict) {
+    appendAuditLog({
+      action: 'content.version.seed_reconciled',
+      organizationId: IDS.organization,
+      targetType: 'content_version',
+      targetId: version.id,
+      detail: {
+        before: existingVersion,
+        after: {
+          reviewStatus: GREAT_COMPASSION_VERSION.reviewStatus,
+          sourceNote: GREAT_COMPASSION_VERSION.sourceNote,
+          versionNote: GREAT_COMPASSION_VERSION.versionNote,
+          published: true
+        }
+      }
+    });
+  }
 
   const sectionValues = GREAT_COMPASSION_STRUCTURE_SECTIONS.map((section) => `(
     ${sqlValue(version.id)},
@@ -4799,7 +4885,8 @@ function seedGreatCompassionStructure() {
   queryScalar(`
     insert into content_sections (content_version_id, title, sort_order)
     values ${sectionValues}
-    on conflict (content_version_id, sort_order) do nothing
+    on conflict (content_version_id, sort_order) do update set
+      title = excluded.title
   `);
 
   const sections = queryRows(`
@@ -4826,7 +4913,11 @@ function seedGreatCompassionStructure() {
       estimated_seconds,
       sort_order
     ) values ${unitValues}
-    on conflict (section_id, sort_order) do nothing
+    on conflict (section_id, sort_order) do update set
+      text = excluded.text,
+      phonetic_text = excluded.phonetic_text,
+      first_character_cue = excluded.first_character_cue,
+      estimated_seconds = excluded.estimated_seconds
   `);
 }
 
