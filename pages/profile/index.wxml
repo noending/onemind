@@ -110,7 +110,7 @@
 
       <view class="curve-block">
         <text class="curve-title">记忆曲线</text>
-        <text class="curve-desc">基于艾宾浩斯遗忘曲线，红点为复习节点。</text>
+        <text class="curve-desc">{{selectedPlanIsAdaptive ? '按分句记忆状态显示真实进度。' : '基于艾宾浩斯遗忘曲线，红点为复习节点。'}}</text>
       </view>
 
       <scroll-view wx:if="{{plans.length}}" class="curve-plan-scroll" scroll-x="true" show-scrollbar="false">
@@ -119,11 +119,26 @@
         </view>
       </scroll-view>
 
-      <view wx:if="{{curveData.length}}" class="curve-card card">
+      <view wx:if="{{selectedPlanIsAdaptive && adaptiveProgress}}" class="curve-card card adaptive-progress-card">
+        <view class="curve-head">
+          <text class="curve-plan-title">{{selectedPlanTitle}}</text>
+          <text class="curve-plan-day">稳定 {{adaptiveProgress.percent}}%</text>
+        </view>
+        <view class="adaptive-progress-grid">
+          <view class="adaptive-progress-item"><text class="adaptive-progress-value">{{adaptiveProgress.stableUnitCount}}/{{adaptiveProgress.totalUnitCount}}</text><text class="adaptive-progress-label">稳定句段</text></view>
+          <view class="adaptive-progress-item"><text class="adaptive-progress-value">{{adaptiveProgress.dueTodayCount}}</text><text class="adaptive-progress-label">今日到期</text></view>
+          <view class="adaptive-progress-item"><text class="adaptive-progress-value">{{adaptiveProgress.weakUnitCount}}</text><text class="adaptive-progress-label">薄弱句段</text></view>
+        </view>
+        <view class="adaptive-date-row"><text>预计首轮完成</text><text>{{adaptiveProgress.expectedFinishDate}}</text></view>
+        <view class="adaptive-date-row"><text>下次复习</text><text>{{adaptiveProgress.nextReviewDate}}</text></view>
+      </view>
+
+      <view wx:elif="{{curveData.length}}" class="curve-card card">
         <view class="curve-head">
           <text class="curve-plan-title">{{selectedPlanTitle}}</text>
           <text class="curve-plan-day">第 {{curveCurrentDay}}/{{curveTotalDays}} 天</text>
         </view>
+        <button wx:if="{{selectedPlanMigrationRequired}}" class="legacy-migration-button" bindtap="migrateLegacyPlan">升级为新的分句计划</button>
         <view class="curve-chart-shell">
           <view class="curve-y-axis">
             <text wx:for="{{curveChart.yTicks}}" wx:key="id" class="curve-y-label" style="{{item.style}}">{{item.value}}%</text>

@@ -664,6 +664,54 @@
   font-size: 21rpx;
 }
 
+.adaptive-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+
+.adaptive-progress-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  padding: 18rpx 8rpx;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1rpx solid rgba(126, 42, 28, 0.12);
+  border-radius: 14rpx;
+}
+
+.adaptive-progress-value {
+  color: #7e2a1c;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.adaptive-progress-label {
+  margin-top: 6rpx;
+  color: var(--color-ink-3);
+  font-size: 20rpx;
+}
+
+.adaptive-date-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding-top: 16rpx;
+  color: var(--color-ink-2);
+  font-size: 22rpx;
+}
+
+.legacy-migration-button {
+  width: 100%;
+  margin: 18rpx 0 4rpx;
+  border: 1rpx solid rgba(126, 42, 28, 0.28);
+  background: rgba(255, 255, 255, 0.62);
+  color: #7e2a1c;
+  font-size: 23rpx;
+}
+
 .curve-chart-shell {
   margin-top: 16rpx;
   display: flex;

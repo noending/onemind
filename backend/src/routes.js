@@ -3,6 +3,7 @@ const {
   archiveAsset,
   archiveContent,
   archiveFestival,
+  archiveLegacyPlan,
   createNotificationJob,
   createMemoryAssessment,
   createRecitationSession,
@@ -524,6 +525,19 @@ async function handleRequest(req, res, body) {
       meta: {
         isNew: result.isNew
       }
+    });
+  }
+
+  if (req.method === 'POST' && pathname.startsWith('/api/memory-plans/') && pathname.endsWith('/archive')) {
+    if (!userSession) return sendJson(res, 401, { error: 'AUTH_REQUIRED' });
+    const planId = decodeURIComponent(pathname.replace('/api/memory-plans/', '').replace('/archive', ''));
+    const idempotencyKey = getIdempotencyKey(req);
+    return sendJson(res, 200, {
+      data: archiveLegacyPlan({
+        userId: userSession.id,
+        planId,
+        idempotencyKey
+      })
     });
   }
 

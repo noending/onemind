@@ -1,5 +1,6 @@
 const { findContent } = require("./content");
 const {
+  archiveMemoryPlanApi,
   completeReviewTaskApi,
   createMemoryPlanApi,
   createRecitationSessionApi,
@@ -12,6 +13,11 @@ const {
   listTodayFocusApi,
   upsertRecitationGoalApi
 } = require("./api");
+const {
+  isAdaptivePlan,
+  summarizeAdaptiveProgress,
+  withLegacyMigrationFlag
+} = require("./adaptive-progress");
 
 const PLAN_STORAGE_KEY = "sutra-memo-store-v2";
 const RECITATION_GOAL_KEY = "sutra-recitation-goals-v1";
@@ -139,7 +145,8 @@ function createMemoryPlan(content, mode = "scientific") {
       defaultMode: content.defaultMode || "scientific",
       supportsRecitation: content.supportsRecitation !== false,
       recommendedRecitationTime: content.recommendedRecitationTime || "",
-      recitationTheme: content.recitationTheme || ""
+      recitationTheme: content.recitationTheme || "",
+      publishedVersionId: content.publishedVersionId || ""
     },
     tier: content.lengthTier,
     startDate,
@@ -364,7 +371,7 @@ function hasPlans() {
 
 function normalizePlan(plan) {
   const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
-  return {
+  const normalized = withLegacyMigrationFlag({
     ...plan,
     growthStage: growthStageFromScore(plan.masteryScore),
     taskRows: tasks.map((task) => ({
@@ -373,6 +380,12 @@ function normalizePlan(plan) {
       title: `第 ${task.dayIndex + 1} 天 · ${task.method}`,
       done: task.done
     }))
+  });
+  if (!isAdaptivePlan(plan)) return normalized;
+  return {
+    ...normalized,
+    ...summarizeAdaptiveProgress(plan.itemStates, todayDate()),
+    expectedFinishDate: plan.expectedFinishDate || ""
   };
 }
 
@@ -393,7 +406,9 @@ function getProgressItems() {
 
   return plans.reduce((acc, plan) => {
     const content = findContent(plan.contentId) || plan.contentSnapshot;
-    const progress = planProgress(plan);
+    const progress = isAdaptivePlan(plan)
+      ? summarizeAdaptiveProgress(plan.itemStates, todayDate())
+      : planProgress(plan);
     const item = {
       id: plan.id,
       contentId: plan.contentId,
@@ -401,8 +416,8 @@ function getProgressItems() {
       mode: normalizeMode(plan.mode),
       growthStage: growthStageFromScore(plan.masteryScore),
       scene: content ? content.scene : "按计划修持",
-      current: progress.current,
-      total: progress.total,
+      current: isAdaptivePlan(plan) ? progress.stableUnitCount : progress.current,
+      total: isAdaptivePlan(plan) ? progress.totalUnitCount : progress.total,
       percent: progress.percent
     };
 
@@ -521,7 +536,8 @@ function mapRemotePlan(plan) {
       defaultMode: snapshot.defaultMode,
       supportsRecitation: snapshot.supportsRecitation,
       recommendedRecitationTime: snapshot.recommendedRecitationTime,
-      recitationTheme: snapshot.recitationTheme
+      recitationTheme: snapshot.recitationTheme,
+      publishedVersionId: snapshot.publishedVersionId || ""
     } : {
       id: plan.contentId,
       title: plan.title,
@@ -605,6 +621,27 @@ function syncPlansFromBackend() {
       return setPlans(mappedPlans);
     })
     .catch(() => getPlans());
+}
+
+function archiveLocalPlan(planId) {
+  const plans = getPlans();
+  const exists = plans.some((plan) => plan.id === planId);
+  if (!exists) return { id: planId, archived: true };
+  savePlans(plans.filter((plan) => plan.id !== planId));
+  return { id: planId, archived: true };
+}
+
+function archiveLegacyPlanWithFallback(planId, idempotencyKey) {
+  if (!isBackendEnabled()) {
+    return Promise.resolve(archiveLocalPlan(planId));
+  }
+  return requireBackendSession()
+    .then(() => archiveMemoryPlanApi(planId, idempotencyKey))
+    .then((result) => {
+      if (!result || !result.archived) throw new Error("旧计划归档结果无效");
+      archiveLocalPlan(planId);
+      return result;
+    });
 }
 
 function createPlanWithFallback(content, mode = "scientific") {
@@ -833,6 +870,7 @@ module.exports = {
   completeTask,
   firstOpenTask,
   syncPlansFromBackend,
+  archiveLegacyPlanWithFallback,
   createPlanWithFallback,
   completeTaskWithFallback,
   growthStageFromScore

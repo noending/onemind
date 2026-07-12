@@ -594,6 +594,13 @@ function createMemoryPlanApi(payload = {}) {
   }).then((response) => response.data || null);
 }
 
+function archiveMemoryPlanApi(planId, idempotencyKey) {
+  return request(`/api/memory-plans/${encodeURIComponent(planId)}/archive`, {
+    method: "POST",
+    header: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}
+  }).then((response) => response.data || null);
+}
+
 function getTodayStudyTaskApi(planId, date) {
   const query = [`planId=${encodeURIComponent(planId)}`];
   if (date) query.push(`date=${encodeURIComponent(date)}`);
@@ -719,6 +726,7 @@ module.exports = {
   loginWithUserInfo,
   logout,
   refreshToken,
+  archiveMemoryPlanApi,
   listMemoryPlansApi,
   createMemoryAssessmentApi,
   createMemoryPlanApi,

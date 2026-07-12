@@ -5,6 +5,7 @@ const {
   listRecitationGoalsWithFallback,
   syncPlansFromBackend
 } = require("../../common/memory");
+const { isAdaptivePlan } = require("../../common/adaptive-progress");
 const {
   getPlatformInfo,
   getPlatformLabel,
@@ -495,6 +496,9 @@ Page({
     donePlans: [],
     selectedPlanId: "",
     selectedPlanTitle: "",
+    selectedPlanIsAdaptive: false,
+    selectedPlanMigrationRequired: false,
+    adaptiveProgress: null,
     curveData: [],
     curveReviewDays: [1, 3, 7, 14, 30],
     curveChart: {
@@ -865,6 +869,32 @@ Page({
     });
   },
 
+  migrateLegacyPlan() {
+    const plan = (this.data.plans || []).find((item) => item.id === this.data.selectedPlanId);
+    if (!plan || !plan.migrationRequired) return;
+    const versionId = plan.contentVersionId
+      || (plan.contentSnapshot && plan.contentSnapshot.publishedVersionId)
+      || "";
+    if (!versionId) {
+      wx.showToast({ title: "当前内容缺少可迁移版本", icon: "none" });
+      return;
+    }
+    wx.showModal({
+      title: "升级为新的分句计划",
+      content: "新计划创建成功后才会归档当前旧计划。是否继续？",
+      confirmText: "开始升级",
+      success: (result) => {
+        if (!result.confirm) return;
+        const query = [
+          `contentId=${encodeURIComponent(plan.contentId)}`,
+          `versionId=${encodeURIComponent(versionId)}`,
+          `legacyPlanId=${encodeURIComponent(plan.id)}`
+        ].join("&");
+        wx.navigateTo({ url: `/pages/assessment/index?${query}` });
+      }
+    });
+  },
+
   goLibrary() {
     wx.reLaunch({ url: "/pages/library/index" });
   },
@@ -977,6 +1007,9 @@ Page({
     if (!plan) {
       this.setData({
         selectedPlanTitle: "",
+        selectedPlanIsAdaptive: false,
+        selectedPlanMigrationRequired: false,
+        adaptiveProgress: null,
         curveData: [],
         curveChart: {
           points: [],
@@ -992,10 +1025,34 @@ Page({
       return;
     }
 
+    if (isAdaptivePlan(plan)) {
+      this.setData({
+        selectedPlanTitle: plan.title || "",
+        selectedPlanIsAdaptive: true,
+        selectedPlanMigrationRequired: false,
+        adaptiveProgress: {
+          stableUnitCount: Number(plan.stableUnitCount || 0),
+          totalUnitCount: Number(plan.totalUnitCount || 0),
+          dueTodayCount: Number(plan.dueTodayCount || 0),
+          weakUnitCount: Number(plan.weakUnitCount || 0),
+          expectedFinishDate: plan.expectedFinishDate || "待生成",
+          nextReviewDate: plan.nextReviewDate || "待首次复习",
+          percent: Number(plan.percent || 0)
+        },
+        curveData: [],
+        curveCurrentDay: 0,
+        curveTotalDays: 0
+      });
+      return;
+    }
+
     const normalized = normalizeCurveProgress(plan);
     const built = buildCurveData(normalized.totalDay);
     this.setData({
       selectedPlanTitle: plan.title || "",
+      selectedPlanIsAdaptive: false,
+      selectedPlanMigrationRequired: Boolean(plan.migrationRequired),
+      adaptiveProgress: null,
       curveData: built.points,
       curveReviewDays: built.reviewDays,
       curveCurrentDay: normalized.currentDay,

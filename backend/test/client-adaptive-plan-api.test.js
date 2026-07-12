@@ -77,3 +77,19 @@ test('item-completion client encodes the item path and forwards its key only in 
     reviewedAt: '2026-07-10T08:00:00.000Z'
   });
 });
+
+test('legacy archive client encodes the plan path and sends its idempotency key only in headers', async () => {
+  api.setBaseUrl('https://api.example.test');
+  storage.set('oneMind.auth.token', 'signed-user-token');
+
+  await api.archiveMemoryPlanApi('legacy plan /?#', 'legacy-archive-key');
+
+  const request = requests.at(-1);
+  assert.equal(
+    request.url,
+    'https://api.example.test/api/memory-plans/legacy%20plan%20%2F%3F%23/archive'
+  );
+  assert.equal(request.method, 'POST');
+  assert.equal(request.header['Idempotency-Key'], 'legacy-archive-key');
+  assert.deepEqual(request.data, {});
+});

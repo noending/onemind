@@ -52,6 +52,7 @@ Page({
   data: {
     contentId: "",
     versionId: "",
+    legacyPlanId: "",
     attemptId: "",
     loading: true,
     error: "",
@@ -77,11 +78,12 @@ Page({
   onLoad(options = {}) {
     const contentId = String(options.contentId || "").trim();
     const versionId = String(options.versionId || "").trim();
+    const legacyPlanId = String(options.legacyPlanId || "").trim();
     if (!contentId || !versionId) {
       this.setData({ loading: false, error: "缺少内容或版本信息", errorStage: "structure" });
       return;
     }
-    this.setData({ contentId, versionId, attemptId: createAttemptId() });
+    this.setData({ contentId, versionId, legacyPlanId, attemptId: createAttemptId() });
     this.loadStructure();
   },
 
@@ -284,7 +286,8 @@ Page({
             scopeType: scope.scopeType || "full",
             scopeId: scope.scopeId || null,
             unitCount: Number(scope.unitCount || 0),
-            timedOut: pendingTimedOut
+            timedOut: pendingTimedOut,
+            legacyPlanId: this.data.legacyPlanId || ""
           }
         });
         const query = [
@@ -292,7 +295,8 @@ Page({
           `contentId=${encodeURIComponent(this.data.contentId)}`,
           `versionId=${encodeURIComponent(this.data.versionId)}`,
           `scopeType=${encodeURIComponent(scope.scopeType || "full")}`,
-          `scopeId=${encodeURIComponent(scope.scopeId || "")}`
+          `scopeId=${encodeURIComponent(scope.scopeId || "")}`,
+          `legacyPlanId=${encodeURIComponent(this.data.legacyPlanId || "")}`
         ].join("&");
         wx.redirectTo({ url: `/pages/plan-setup/index?${query}` });
       })

@@ -162,6 +162,68 @@ test('legacy short-plan creation remains valid without an idempotency key', asyn
   assert.equal(Array.isArray(response.body.data.tasks), true);
 });
 
+test('legacy long-plan archive enforces auth ownership and idempotent replay', async () => {
+  const unauthenticated = await request({
+    method: 'POST',
+    pathname: '/api/memory-plans/unused/archive',
+    headers: { 'idempotency-key': uniqueKey('unauthenticated-archive') }
+  });
+  assert.equal(unauthenticated.statusCode, 401);
+
+  const owner = await login();
+  const otherUser = await login();
+  const created = await request({
+    method: 'POST',
+    pathname: '/api/memory-plans',
+    headers: authorization(owner.token),
+    payload: {
+      contentId: 'great-compassion-opening',
+      startDate: '2026-07-10',
+      mode: 'scientific'
+    }
+  });
+  const planId = created.body.data.id;
+  const missingKey = await request({
+    method: 'POST',
+    pathname: `/api/memory-plans/${encodeURIComponent(planId)}/archive`,
+    headers: authorization(owner.token)
+  });
+  const wrongOwner = await request({
+    method: 'POST',
+    pathname: `/api/memory-plans/${encodeURIComponent(planId)}/archive`,
+    headers: {
+      ...authorization(otherUser.token),
+      'idempotency-key': uniqueKey('wrong-owner-archive')
+    }
+  });
+  const idempotencyKey = uniqueKey('owner-archive');
+  const headers = {
+    ...authorization(owner.token),
+    'idempotency-key': idempotencyKey
+  };
+  const first = await request({
+    method: 'POST',
+    pathname: `/api/memory-plans/${encodeURIComponent(planId)}/archive`,
+    headers
+  });
+  const replay = await request({
+    method: 'POST',
+    pathname: `/api/memory-plans/${encodeURIComponent(planId)}/archive`,
+    headers
+  });
+  const listed = await request({
+    pathname: '/api/memory-plans',
+    headers: authorization(owner.token)
+  });
+
+  assert.equal(missingKey.statusCode, 400);
+  assert.equal(missingKey.body.error, 'IDEMPOTENCY_KEY_REQUIRED');
+  assert.equal(wrongOwner.statusCode, 404);
+  assert.equal(first.statusCode, 200);
+  assert.deepEqual(replay.body.data, first.body.data);
+  assert.equal(listed.body.data.some((plan) => plan.id === planId), false);
+});
+
 test('today study task requires auth, planId, and plan ownership', async () => {
   const unauthenticated = await request({
     pathname: '/api/study-tasks/today?planId=unused'

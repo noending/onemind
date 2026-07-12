@@ -22,6 +22,7 @@ const GROWTH_STAGES = ['初见', '熟悉', '稳定', '通顺', '已持诵'];
 const MAX_IDEMPOTENCY_KEY_LENGTH = 180;
 const ADAPTIVE_PLAN_CREATE_OPERATION = 'adaptive_plan_create';
 const STUDY_TASK_ITEM_COMPLETE_OPERATION = 'study_task_item_complete';
+const LEGACY_PLAN_ARCHIVE_OPERATION = 'legacy_plan_archive';
 
 const state = {
   users: [
@@ -886,6 +887,38 @@ function listPlans(userId = 'demo-user') {
     .filter((plan) => plan.userId === userId)
     .map(toAdaptivePlan);
   return [...legacyPlans, ...adaptivePlans];
+}
+
+function archiveLegacyPlan(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const planId = String(payload.planId || '').trim();
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+  const responseKey = `${userId}:${idempotencyKey}`;
+  const cached = state.adaptiveIdempotencyResponses[responseKey];
+
+  if (cached) {
+    if (cached.operationType !== LEGACY_PLAN_ARCHIVE_OPERATION || cached.entityId !== planId) {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(cached.response);
+  }
+
+  const index = state.plans.findIndex((plan) => plan.id === planId && plan.userId === userId);
+  if (index < 0) throw adaptivePlanError('MEMORY_PLAN_NOT_FOUND', 404);
+  const content = contents.find((item) => item.id === state.plans[index].contentId);
+  if (!content || content.lengthTier !== 'long') {
+    throw adaptivePlanError('MEMORY_PLAN_NOT_MIGRATABLE', 409);
+  }
+
+  state.plans.splice(index, 1);
+  state.tasks = state.tasks.filter((task) => task.planId !== planId);
+  const response = { id: planId, archived: true };
+  state.adaptiveIdempotencyResponses[responseKey] = {
+    operationType: LEGACY_PLAN_ARCHIVE_OPERATION,
+    entityId: planId,
+    response: cloneJson(response)
+  };
+  return response;
 }
 
 function listOrganizations() {
@@ -1972,6 +2005,28 @@ function listTodayFocus(userId = 'demo-user') {
   const today = todayDate();
   const grouped = { scientificTasks: [], playfulTasks: [] };
   plans.forEach((plan) => {
+    if (plan.contentVersionId || plan.adaptiveStatus || Array.isArray(plan.itemStates)) {
+      const task = getTodayStudyTask(userId, plan.id, today);
+      if (task.status === 'completed') return;
+      const content = contents.find((item) => item.id === plan.contentId) || {};
+      grouped.scientificTasks.push({
+        planId: plan.id,
+        taskId: task.id,
+        contentId: plan.contentId,
+        contentVersionId: plan.contentVersionId,
+        title: plan.title || content.title || '',
+        mode: 'scientific',
+        isAdaptive: true,
+        newUnitCount: task.newUnitCount,
+        reviewUnitCount: task.reviewUnitCount,
+        weakUnitCount: task.weakUnitCount,
+        estimatedMinutes: task.estimatedMinutes,
+        body: content.preview || '',
+        preview: content.preview || '',
+        scene: content.scene || ''
+      });
+      return;
+    }
     const task = (plan.tasks || []).find((item) => item.status !== 'completed' && String(item.dueDate) <= today);
     if (!task) return;
     const content = contents.find((item) => item.id === plan.contentId) || {};
@@ -2249,6 +2304,7 @@ module.exports = {
   archiveAsset,
   archiveContent,
   archiveFestival,
+  archiveLegacyPlan,
   copyContentAsNewVersion,
   createFestival,
   listAdminContents,

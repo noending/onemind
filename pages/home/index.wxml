@@ -69,7 +69,7 @@
         </view>
 
         <view wx:if="{{item.tasks.length > 0}}">
-          <view wx:for="{{item.tasks}}" wx:key="contentId" wx:for-item="task" class="review-card card" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}" bindtap="openDueItem" hover-class="review-card-hover">
+          <view wx:for="{{item.tasks}}" wx:key="contentId" wx:for-item="task" class="review-card card" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-task-id="{{task.taskId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}" bindtap="openDueItem" hover-class="review-card-hover">
             <view class="review-head">
               <view class="tag-row">
                 <text class="tag-primary">{{task.modeTag}}</text>
@@ -81,8 +81,12 @@
             <text class="review-title">{{task.title}}</text>
             <text class="review-body">{{task.body}}</text>
             <view class="review-foot">
-              <text class="review-meta">◷ {{task.meta}}</text>
-              <button class="review-action" catchtap="openDueItem" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}">{{task.actionText}}</button>
+              <view wx:if="{{task.isAdaptive}}">
+                <text class="review-meta">新学 {{task.newUnitCount}} · 复习 {{task.reviewUnitCount}} · 薄弱 {{task.weakUnitCount}}</text>
+                <text class="review-meta">预计 {{task.estimatedMinutes}} 分钟</text>
+              </view>
+              <text wx:else class="review-meta">◷ {{task.meta}}</text>
+              <button class="review-action" catchtap="openDueItem" data-id="{{task.contentId}}" data-plan-id="{{task.planId}}" data-task-id="{{task.taskId}}" data-goal-id="{{task.goalId}}" data-period="{{task.preferredPeriod}}" data-open-type="{{task.openType}}">{{task.actionText}}</button>
             </view>
           </view>
         </view>

@@ -1,4 +1,5 @@
 const { createMemoryPlanApi, ensureLogin } = require("../../common/api");
+const { archiveLegacyPlanWithFallback } = require("../../common/memory");
 const { buildRecommendationCards, normalizeCustomTargetDays } = require("../../common/plan-setup");
 const { normalizeTargetDays, recommendPlan } = require("../../common/adaptive-memory");
 
@@ -35,6 +36,7 @@ Page({
     authRequired: false,
     routeContentId: "",
     routeVersionId: "",
+    legacyPlanId: "",
     recommendation: null,
     assessmentContext: null,
     cards: [],
@@ -49,7 +51,8 @@ Page({
   onLoad(options = {}) {
     const routeContentId = String(options.contentId || "");
     const routeVersionId = String(options.versionId || "");
-    this.setData({ routeContentId, routeVersionId });
+    const legacyPlanId = String(options.legacyPlanId || "");
+    this.setData({ routeContentId, routeVersionId, legacyPlanId });
     const stored = readStoredContext();
     const context = stored && stored.assessmentContext;
     const unitCount = Number(context && context.unitCount);
@@ -72,6 +75,7 @@ Page({
       loading: false,
       recommendation,
       assessmentContext: workloadContext,
+      legacyPlanId: String(context.legacyPlanId || legacyPlanId || ""),
       cards: buildRecommendationCards({ ...recommendation, dailyMinutes }),
       dailyMinutes,
       targetDays,
@@ -163,13 +167,27 @@ Page({
       }))
       .then((plan) => {
       if (!plan || !plan.id) throw new Error("计划创建结果无效");
+      const legacyPlanId = this.data.legacyPlanId || assessmentContext.legacyPlanId || "";
+      const archiveAction = legacyPlanId
+        ? archiveLegacyPlanWithFallback(
+          legacyPlanId,
+          stableKey("legacy-plan-archive", [legacyPlanId, plan.id])
+        ).catch((error) => {
+          const archiveError = new Error(`新计划已创建，但旧计划归档失败，请重试：${error.message || "未知错误"}`);
+          archiveError.code = error.code;
+          archiveError.statusCode = error.statusCode;
+          throw archiveError;
+        })
+        : Promise.resolve(null);
+      return archiveAction.then(() => plan);
+    }).then((plan) => {
       wx.redirectTo({
-        url: `/pages/practice/index?id=${encodeURIComponent(assessmentContext.contentId)}&planId=${encodeURIComponent(plan.id)}`
+        url: `/pages/practice/index?id=${encodeURIComponent(assessmentContext.contentId)}&planId=${encodeURIComponent(plan.id)}&taskId=${encodeURIComponent(plan.task && plan.task.id || "")}`
       });
     }).catch((error) => {
       this.setData({
         isSubmitting: false,
-        submitError: error.message || "计划创建失败，请重试",
+        submitError: error.message || "计划创建或旧计划归档失败，请重试",
         authRequired: isAuthRequired(error)
       });
     });

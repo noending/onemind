@@ -17,6 +17,7 @@ const MAX_ADAPTIVE_TASK_ALLOCATION_ATTEMPTS = 3;
 const MAX_ADAPTIVE_RECONCILIATION_ATTEMPTS = 5;
 const ADAPTIVE_PLAN_CREATE_OPERATION = 'adaptive_plan_create';
 const STUDY_TASK_ITEM_COMPLETE_OPERATION = 'study_task_item_complete';
+const LEGACY_PLAN_ARCHIVE_OPERATION = 'legacy_plan_archive';
 const PENDING_NEW_INDEX = 'daily_study_task_items_pending_new_uidx';
 
 const DB_CONFIG = {
@@ -2662,6 +2663,68 @@ function listPlans(userId = IDS.demoUser) {
   });
 }
 
+function archiveLegacyPlan(payload = {}) {
+  const normalizedUserId = normalizeUserId(payload.userId);
+  const planId = String(payload.planId || '').trim();
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+  const cached = getAdaptiveIdempotencyRecord(normalizedUserId, idempotencyKey);
+
+  if (cached) {
+    if (cached.operationType !== LEGACY_PLAN_ARCHIVE_OPERATION || cached.entityId !== planId) {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cached.responsePayload;
+  }
+  if (!isUuid(planId)) throw adaptivePlanError('MEMORY_PLAN_NOT_FOUND', 404);
+  const targetPlan = queryOne(`
+    select
+      plan.adaptive_status as "adaptiveStatus",
+      content.length_tier as "lengthTier"
+    from memory_plans plan
+    join contents content on content.id = plan.content_id
+    where plan.id = ${sqlValue(planId)}
+      and plan.user_id = ${sqlValue(normalizedUserId)}
+      and plan.deleted_at is null
+    limit 1
+  `);
+  if (!targetPlan) throw adaptivePlanError('MEMORY_PLAN_NOT_FOUND', 404);
+  if (targetPlan.adaptiveStatus || targetPlan.lengthTier !== 'long') {
+    throw adaptivePlanError('MEMORY_PLAN_NOT_MIGRATABLE', 409);
+  }
+
+  const response = { id: planId, archived: true };
+  const persisted = queryScalar(`
+    with target as (
+      select id
+      from memory_plans
+      where id = ${sqlValue(planId)}
+        and user_id = ${sqlValue(normalizedUserId)}
+        and adaptive_status is null
+        and deleted_at is null
+      for update
+    ), archived as (
+      update memory_plans
+      set state = 'archived', deleted_at = now(), updated_at = now()
+      where id in (select id from target)
+      returning id
+    ), recorded as (
+      insert into idempotency_records (
+        user_id, idempotency_key, operation_type, entity_id,
+        request_payload, response_payload
+      )
+      select
+        ${sqlValue(normalizedUserId)}, ${sqlValue(idempotencyKey)},
+        ${sqlValue(LEGACY_PLAN_ARCHIVE_OPERATION)}, archived.id::text,
+        ${sqlJson({ planId })}::jsonb, ${sqlJson(response)}::jsonb
+      from archived
+      returning response_payload
+    )
+    select response_payload::text from recorded
+  `);
+  if (!persisted) throw adaptivePlanError('MEMORY_PLAN_NOT_FOUND', 404);
+  return JSON.parse(persisted);
+}
+
 function createPlan({ userId = IDS.demoUser, contentId, startDate = todayDate(), mode = 'scientific' }) {
   const normalizedUserId = ensureUser(userId);
   const normalizedContentId = normalizeId(contentId);
@@ -4195,8 +4258,29 @@ function listTodayFocus(userId = IDS.demoUser) {
   const normalizedUserId = ensureUser(userId);
   const today = todayDate();
   const plans = listPlans(normalizedUserId);
-  const duePlans = plans.filter((plan) => (plan.tasks || []).some((task) => task.status !== 'completed' && String(task.dueDate) <= today));
-  const grouped = duePlans.reduce((acc, plan) => {
+  const grouped = plans.reduce((acc, plan) => {
+    if (plan.contentVersionId || plan.adaptiveStatus || Array.isArray(plan.itemStates)) {
+      const task = getTodayStudyTask(normalizedUserId, plan.id, today);
+      if (task.status === 'completed') return acc;
+      const content = getContent(plan.contentId) || {};
+      acc.scientificTasks.push({
+        planId: plan.id,
+        taskId: task.id,
+        contentId: plan.contentId,
+        contentVersionId: plan.contentVersionId,
+        title: plan.title || content.title || '',
+        mode: 'scientific',
+        isAdaptive: true,
+        newUnitCount: task.newUnitCount,
+        reviewUnitCount: task.reviewUnitCount,
+        weakUnitCount: task.weakUnitCount,
+        estimatedMinutes: task.estimatedMinutes,
+        body: content.preview || '',
+        preview: content.preview || '',
+        scene: content.scene || ''
+      });
+      return acc;
+    }
     const nextTask = (plan.tasks || []).find((task) => task.status !== 'completed' && String(task.dueDate) <= today);
     if (!nextTask) return acc;
     const content = getContent(plan.contentId) || {};
@@ -4919,6 +5003,7 @@ module.exports = {
   archiveAsset,
   archiveContent,
   archiveFestival,
+  archiveLegacyPlan,
   completeTask,
   copyContentAsNewVersion,
   createAsset,

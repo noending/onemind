@@ -1,4 +1,5 @@
 const { listFestivals } = require("../../common/api");
+const { buildAdaptiveTaskCard } = require("../../common/adaptive-progress");
 const {
   getGrowthOverviewWithFallback,
   hasPlans,
@@ -53,7 +54,20 @@ function buildDueList(focus) {
   const recitationTasks = focus.recitationTasks || [];
 
   return []
-    .concat(scientificTasks.map((item) => ({
+    .concat(scientificTasks.map((item) => item.isAdaptive || item.newUnitCount !== undefined
+      ? ({
+        ...buildAdaptiveTaskCard(item),
+        openType: "practice",
+        groupKey: "scientific",
+        groupTitle: "科学背诵",
+        groupDesc: "按今日分句任务推进与回稳",
+        actionText: "去训练",
+        modeTag: item.category || "长咒",
+        metaTag: "今日分句",
+        methodTag: `预计 ${Number(item.estimatedMinutes || 0)} 分钟`,
+        body: item.body || item.preview || "按今日任务完成新学、复习与薄弱回练。"
+      })
+      : ({
       ...item,
       openType: "practice",
       groupKey: "scientific",
@@ -250,7 +264,12 @@ Page({
   openPractice(event) {
     const id = event.currentTarget.dataset.id;
     const planId = event.currentTarget.dataset.planId;
-    const query = planId ? `id=${id}&planId=${planId}` : `id=${id}`;
+    const taskId = event.currentTarget.dataset.taskId;
+    const query = [
+      `id=${encodeURIComponent(id)}`,
+      planId ? `planId=${encodeURIComponent(planId)}` : "",
+      taskId ? `taskId=${encodeURIComponent(taskId)}` : ""
+    ].filter(Boolean).join("&");
     wx.navigateTo({ url: `/pages/practice/index?${query}` });
   },
 
@@ -267,7 +286,7 @@ Page({
       return;
     }
     wx.navigateTo({
-      url: `/pages/practice/index?id=${first.contentId}&planId=${first.planId || ""}`
+      url: `/pages/practice/index?id=${first.contentId}&planId=${first.planId || ""}&taskId=${first.taskId || ""}`
     });
   },
 
@@ -285,7 +304,7 @@ Page({
     }
 
     wx.navigateTo({
-      url: `/pages/practice/index?id=${first.contentId}&planId=${first.planId || ""}`
+      url: `/pages/practice/index?id=${first.contentId}&planId=${first.planId || ""}&taskId=${first.taskId || ""}`
     });
   },
 
@@ -299,7 +318,7 @@ Page({
       return;
     }
     wx.navigateTo({
-      url: `/pages/practice/index?id=${contentId}&planId=${event.currentTarget.dataset.planId || ""}`
+      url: `/pages/practice/index?id=${contentId}&planId=${event.currentTarget.dataset.planId || ""}&taskId=${event.currentTarget.dataset.taskId || ""}`
     });
   },
 
