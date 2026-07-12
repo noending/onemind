@@ -13,7 +13,8 @@ function createWechatAccessTokenProvider({
   appSecret = process.env.WECHAT_APP_SECRET || '',
   fetch = globalThis.fetch,
   now = Date.now,
-  expirySkewMs = 60_000
+  expirySkewMs = 60_000,
+  requestTimeoutMs = 10_000
 } = {}) {
   let cachedToken = '';
   let expiresAt = 0;
@@ -32,16 +33,18 @@ function createWechatAccessTokenProvider({
     url.searchParams.set('secret', appSecret);
 
     let response;
-    try {
-      response = await fetch(url.toString(), { method: 'GET' });
-    } catch (error) {
-      throw tokenError('WECHAT_TOKEN_NETWORK_ERROR', error.message);
-    }
     let body;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Math.max(1, Number(requestTimeoutMs || 10_000)));
     try {
+      response = await fetch(url.toString(), { method: 'GET', signal: controller.signal });
       body = await response.json();
     } catch (error) {
-      throw tokenError('WECHAT_TOKEN_INVALID_RESPONSE', 'WeChat token response is not JSON');
+      if (controller.signal.aborted) throw tokenError('WECHAT_TOKEN_TIMEOUT', 'WeChat token request timed out');
+      if (response) throw tokenError('WECHAT_TOKEN_INVALID_RESPONSE', 'WeChat token response is not JSON');
+      throw tokenError('WECHAT_TOKEN_NETWORK_ERROR', error.message);
+    } finally {
+      clearTimeout(timeout);
     }
     if (!response.ok || !body.access_token) {
       throw tokenError('WECHAT_TOKEN_FAILED', body.errmsg || `WeChat token HTTP ${response.status}`, body);

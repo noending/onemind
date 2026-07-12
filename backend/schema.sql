@@ -506,6 +506,7 @@ create table if not exists notification_subscription_idempotency (
 );
 
 alter table notification_jobs add column if not exists attempt_count int not null default 0;
+alter table notification_jobs add column if not exists provider_attempt_count int not null default 0;
 alter table notification_jobs add column if not exists next_retry_at timestamptz;
 alter table notification_jobs add column if not exists last_error text;
 alter table notification_jobs add column if not exists provider_message_id varchar(180);

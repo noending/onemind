@@ -82,7 +82,8 @@ test('memory success is the only path to sent and consumes one accepted subscrip
   assert.equal(sent.providerMessageId, 'msg-1');
   assert.equal(memoryStore.findAvailableNotificationSubscription({ userId, templateId }), null);
   assert.ok(memoryStore.getNotificationSubscription({ userId, templateId }).consumedAt);
-  assert.equal(memoryStore.getNotificationSettings(userId).find((item) => item.channel === 'wechat_subscribe').enabled, false);
+  assert.equal(memoryStore.getNotificationSettings(userId, '2026-07-12T00:00:10.000Z')
+    .find((item) => item.channel === 'wechat_subscribe').enabled, false);
 });
 
 test('memory failures retry twice with backoff and become failed on the third attempt', () => {
@@ -195,7 +196,7 @@ test('memory enabled only counts accepted, unconsumed, and unreserved authorizat
   assert.equal(rejected.setting.enabled, false);
 });
 
-test('memory lease recovery reclaims processing job and releases its subscription reservation', () => {
+test('memory lease recovery fails unknown job and consumes its reserved subscription', () => {
   const userId = unique('memory-lease-user');
   const templateId = unique('memory-lease-template');
   memoryStore.saveNotificationSubscriptionResult({
@@ -223,22 +224,108 @@ test('memory lease recovery reclaims processing job and releases its subscriptio
     leaseUntil: firstClaim.leaseUntil
   });
   assert.ok(firstReservation);
-  assert.equal(memoryStore.getNotificationSettings(userId).find((item) => item.channel === 'wechat_subscribe').enabled, false);
+  assert.equal(memoryStore.getNotificationSettings(userId, '2026-07-12T00:00:10.000Z')
+    .find((item) => item.channel === 'wechat_subscribe').enabled, false);
 
   const recovered = memoryStore.claimDueNotificationJobs({
     dueBefore: '2026-07-12T00:01:00.000Z',
+    claimedAt: '2026-07-12T00:01:00.000Z',
     leaseUntil: '2026-07-12T00:02:00.000Z'
   }).find((item) => item.id === job.id);
-  assert.ok(recovered);
-  assert.notEqual(recovered.claimToken, firstClaim.claimToken);
-  assert.equal(memoryStore.getNotificationSettings(userId).find((item) => item.channel === 'wechat_subscribe').enabled, true);
-  const recoveredReservation = memoryStore.reserveNotificationSubscription({
+  assert.equal(recovered, undefined);
+  const storedJob = memoryStore.listNotificationJobs({ userId }).find((item) => item.id === job.id);
+  assert.equal(storedJob.status, 'failed');
+  assert.equal(storedJob.lastError, 'DELIVERY_OUTCOME_UNKNOWN');
+  const storedSubscription = memoryStore.getNotificationSubscription({ userId, templateId });
+  assert.equal(storedSubscription.consumedAt, '2026-07-12T00:01:00.000Z');
+  assert.equal(storedSubscription.reservedJobId, null);
+  assert.equal(memoryStore.getNotificationSettings(userId, '2026-07-12T00:01:00.000Z')
+    .find((item) => item.channel === 'wechat_subscribe').enabled, false);
+  assert.throws(() => memoryStore.recordNotificationJobSuccess({
     jobId: job.id,
-    claimToken: recovered.claimToken,
+    claimToken: firstClaim.claimToken,
+    subscriptionId: firstReservation.id,
+    sentAt: '2026-07-12T00:01:01.000Z'
+  }), /NOTIFICATION_JOB_CLAIM_INVALID/);
+});
+
+test('memory provider attempts are atomically counted before HTTP and stale claims cannot renew or reserve', () => {
+  const userId = unique('memory-provider-attempt-user');
+  const job = memoryStore.createNotificationJob({
+    userId,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+  const claimed = memoryStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:00.000Z',
+    claimedAt: '2026-07-12T00:00:00.000Z',
+    leaseUntil: '2026-07-12T00:00:30.000Z'
+  }).find((item) => item.id === job.id);
+
+  assert.equal(memoryStore.renewNotificationJobLease({
+    jobId: job.id,
+    claimToken: 'stale-token',
+    renewedAt: '2026-07-12T00:00:10.000Z',
+    leaseUntil: '2026-07-12T00:01:10.000Z'
+  }), null);
+  assert.equal(memoryStore.reserveProviderAttempt({ jobId: job.id, claimToken: 'stale-token', maxAttempts: 3 }), null);
+  const renewed = memoryStore.renewNotificationJobLease({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    renewedAt: '2026-07-12T00:00:10.000Z',
+    leaseUntil: '2026-07-12T00:01:10.000Z'
+  });
+  assert.equal(renewed.leaseUntil, '2026-07-12T00:01:10.000Z');
+  for (let expected = 1; expected <= 3; expected += 1) {
+    const reserved = memoryStore.reserveProviderAttempt({
+      jobId: job.id,
+      claimToken: claimed.claimToken,
+      maxAttempts: 3,
+      attemptedAt: `2026-07-12T00:00:1${expected}.000Z`
+    });
+    assert.equal(reserved.providerAttemptCount, expected);
+  }
+  assert.equal(memoryStore.reserveProviderAttempt({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    maxAttempts: 3
+  }), null);
+  assert.equal(memoryStore.listNotificationJobs({ userId }).find((item) => item.id === job.id).providerAttemptCount, 3);
+});
+
+test('memory wechat enabled projection treats expired reservations as available without a cleanup write', () => {
+  const userId = unique('memory-dynamic-enabled-user');
+  const templateId = unique('memory-dynamic-enabled-template');
+  memoryStore.saveNotificationSubscriptionResult({
+    userId,
+    templateKey: 'review',
+    templateId,
+    status: 'accept',
+    idempotencyKey: unique('memory-dynamic-enabled-accept')
+  });
+  const job = memoryStore.createNotificationJob({
+    userId,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+  const claimed = memoryStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:00.000Z',
+    claimedAt: '2026-07-12T00:00:00.000Z',
+    leaseUntil: '2026-07-12T00:01:00.000Z'
+  }).find((item) => item.id === job.id);
+  memoryStore.reserveNotificationSubscription({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
     templateId,
     templateKey: 'review',
-    leaseUntil: recovered.leaseUntil
+    leaseUntil: claimed.leaseUntil,
+    reservedAt: '2026-07-12T00:00:00.000Z'
   });
-  assert.equal(recoveredReservation.id, firstReservation.id);
-  assert.equal(memoryStore.getNotificationSettings(userId).find((item) => item.channel === 'wechat_subscribe').enabled, false);
+
+  assert.equal(memoryStore.getNotificationSettings(userId, '2026-07-12T00:00:59.000Z')
+    .find((item) => item.channel === 'wechat_subscribe').enabled, false);
+  assert.equal(memoryStore.getNotificationSettings(userId, '2026-07-12T00:01:00.000Z')
+    .find((item) => item.channel === 'wechat_subscribe').enabled, true);
 });

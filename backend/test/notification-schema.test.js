@@ -26,4 +26,5 @@ test('notification runtime migration is present in schema.sql and wired into pos
 
   const postgresSource = fs.readFileSync(path.join(__dirname, '..', 'src/repositories/postgresStore.js'), 'utf8');
   assert.match(postgresSource, /ensureNotificationSchema\(queryScalar\)/);
+  assert.match(schemaSql, /provider_attempt_count int not null default 0/);
 });

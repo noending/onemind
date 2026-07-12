@@ -63,7 +63,9 @@ WECHAT_SUBSCRIBE_TEMPLATES_JSON='{"review":{"templateId":"WECHAT_REVIEW_TEMPLATE
 
 provider 只有在模板配置有效、`WECHAT_APP_ID`、`WECHAT_APP_SECRET` 均非空且 `WECHAT_LOGIN_MODE=real` 时才 ready。capabilities 与授权保存共用该判断，不回传任何配置值。
 
-dispatcher 每次仅 claim 一个到期任务为 `processing`，写入 `claim_token/claimed_at/lease_until` 后才允许外发。授权也会按 job 和 claim token 原子 reservation；成功时原子 `sent + consume`，失败时释放 reservation 并按最多 3 次退避，过期 lease 会在下次 claim 时恢复。
+dispatcher 每次仅 claim 一个到期任务为 `processing`，写入 `claim_token/claimed_at/lease_until` 后才允许外发。授权也会按 job 和 claim token 原子 reservation。每次微信消息 POST 前必须续租并原子递增 `provider_attempt_count`，实际 HTTP 最多 3 次，token 无效刷新后的 POST 同样计数。消息请求和响应体读取使用 10 秒 AbortController 超时，显著短于 5 分钟 lease。
+
+只有微信明确返回且证明未送达的可重试错误才进入退避。消息 POST 的 timeout/network/invalid response 统一记为 `DELIVERY_OUTCOME_UNKNOWN`，job 直接 `failed` 等待人工复核并消费已 reservation 的授权；过期 `processing` lease 也按 unknown 失败，绝不重新 `pending` 或复用授权。
 
 三层验证入口：
 

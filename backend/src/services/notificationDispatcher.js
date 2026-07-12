@@ -30,13 +30,14 @@ function createNotificationDispatcher({ repository, templateConfig, sender, prov
   });
   if (!sender || typeof sender.send !== 'function') throw new TypeError('sender.send is required');
 
-  async function recordFailure(stats, job, { error, retryable, providerResponse = null }) {
+  async function recordFailure(stats, job, { error, retryable, deliveryOutcome, providerResponse = null }) {
     const attemptedAt = now().toISOString();
     const updated = repository.recordNotificationJobFailure({
       jobId: job.id,
       claimToken: job.claimToken,
       error,
-      retryable: Boolean(retryable),
+      retryable: deliveryOutcome === 'unknown' ? false : Boolean(retryable),
+      deliveryOutcome: deliveryOutcome || 'known',
       providerResponse,
       attemptedAt
     });
@@ -98,6 +99,7 @@ function createNotificationDispatcher({ repository, templateConfig, sender, prov
       return recordFailure(stats, job, {
         error: outcome && outcome.error ? outcome.error : 'WECHAT_SEND_FAILED',
         retryable: Boolean(outcome && outcome.retryable),
+        deliveryOutcome: outcome && outcome.deliveryOutcome,
         providerResponse: outcome ? outcome.providerResponse : null
       });
     }

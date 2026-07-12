@@ -3871,8 +3871,9 @@ function updateUserProfile(userId, payload = {}) {
   return user;
 }
 
-function getNotificationSettings(userId = IDS.demoUser) {
+function getNotificationSettings(userId = IDS.demoUser, at = new Date().toISOString()) {
   const normalizedUserId = ensureUser(userId);
+  const projectionTime = String(at || new Date().toISOString());
   const rows = queryRows(`
     select
       id::text as "id",
@@ -3891,16 +3892,30 @@ function getNotificationSettings(userId = IDS.demoUser) {
     { channel: 'app_push', enabled: true, quietHours: { start: '22:00', end: '07:00' } },
     { channel: 'sms', enabled: false, quietHours: { start: '22:00', end: '07:00' } }
   ];
+  const wechatEnabled = queryScalar(`
+    select exists (
+      select 1
+      from notification_subscriptions subscription
+      where subscription.user_id = ${sqlValue(normalizedUserId)}
+        and subscription.status = 'accept'
+        and subscription.consumed_at is null
+        and (
+          subscription.reserved_job_id is null
+          or subscription.reservation_lease_until <= ${sqlValue(projectionTime)}
+        )
+    )::text
+  `) === 'true';
 
   return defaults.map((item) => {
     const existing = rows.find((row) => row.channel === item.channel);
-    return existing || {
+    const projected = existing || {
       id: `${normalizedUserId}-${item.channel}`,
       userId: normalizedUserId,
       channel: item.channel,
       enabled: item.enabled,
       quietHours: item.quietHours
     };
+    return item.channel === 'wechat_subscribe' ? { ...projected, enabled: wechatEnabled } : projected;
   });
 }
 
@@ -4162,16 +4177,9 @@ function getNotificationDeliveryTarget(userId) {
 }
 
 function isNotificationChannelEnabled(userId, channel) {
-  const normalizedUserId = normalizeUserId(userId);
-  const value = queryScalar(`
-    select coalesce((
-      select enabled::text from notification_settings
-      where user_id = ${sqlValue(normalizedUserId)}
-        and channel = ${sqlValue(String(channel || '').trim())}
-      limit 1
-    ), 'false')
-  `);
-  return value === 'true';
+  return getNotificationSettings(userId).some((setting) =>
+    setting.channel === String(channel || '').trim() && setting.enabled === true
+  );
 }
 
 function createNotificationJob({ userId = IDS.demoUser, taskId = null, channel, scheduledAt, payload }) {
@@ -4209,6 +4217,7 @@ function createNotificationJob({ userId = IDS.demoUser, taskId = null, channel, 
       status,
       payload,
       attempt_count as "attemptCount",
+      provider_attempt_count as "providerAttemptCount",
       next_retry_at as "nextRetryAt",
       last_error as "lastError",
       provider_message_id as "providerMessageId",
@@ -4378,6 +4387,7 @@ function listNotificationJobs({ userId, limit = 20, status, startAt, endAt, orga
       nj.status,
       nj.payload,
       nj.attempt_count as "attemptCount",
+      nj.provider_attempt_count as "providerAttemptCount",
       nj.next_retry_at as "nextRetryAt",
       nj.last_error as "lastError",
       nj.provider_message_id as "providerMessageId",
@@ -4413,6 +4423,7 @@ function listDueNotificationJobs({ dueBefore = new Date().toISOString(), limit =
       status,
       payload,
       attempt_count as "attemptCount",
+      provider_attempt_count as "providerAttemptCount",
       next_retry_at as "nextRetryAt",
       last_error as "lastError",
       provider_message_id as "providerMessageId",
@@ -4438,52 +4449,51 @@ function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claime
   const normalizedLeaseUntil = String(leaseUntil || new Date(Date.parse(normalizedClaimedAt) + 30_000).toISOString());
   const normalizedLimit = Math.max(0, Math.min(200, Number(limit || 20)));
   const rawClaimed = queryScalar(`
-    with candidates as materialized (
-      select id, user_id, status
+    with expired as materialized (
+      select id, user_id
       from notification_jobs
-      where (
-        status = 'pending'
-        and scheduled_at <= ${sqlValue(dueAt)}
-        and (next_retry_at is null or next_retry_at <= ${sqlValue(dueAt)})
-      ) or (
-        status = 'processing'
+      where status = 'processing'
         and lease_until is not null
         and lease_until <= ${sqlValue(normalizedClaimedAt)}
-      )
-      order by scheduled_at asc
-      limit ${normalizedLimit}
       for update skip locked
-    ), released as (
+    ), consumed as (
       update notification_subscriptions subscription
       set
+        consumed_at = ${sqlValue(normalizedClaimedAt)},
         reserved_job_id = null,
         reservation_token = null,
         reserved_at = null,
         reservation_lease_until = null,
         updated_at = ${sqlValue(normalizedClaimedAt)}
       where subscription.reserved_job_id in (
-        select id from candidates where status = 'processing'
+        select id from expired
       )
       returning subscription.id, subscription.user_id
-    ), recovered_settings as (
-      update notification_settings setting
+    ), recovered as (
+      update notification_jobs job
       set
-        enabled = exists (
-          select 1
-          from notification_subscriptions subscription
-          where subscription.user_id = setting.user_id
-            and subscription.status = 'accept'
-            and subscription.consumed_at is null
-            and (
-              subscription.reserved_job_id is null
-              or subscription.id in (select id from released)
-              or subscription.reservation_lease_until <= ${sqlValue(normalizedClaimedAt)}
-            )
-        ),
+        status = 'failed',
+        attempt_count = attempt_count + 1,
+        next_retry_at = null,
+        last_error = 'DELIVERY_OUTCOME_UNKNOWN',
+        provider_response = jsonb_build_object('recovery', 'lease_expired', 'deliveryOutcome', 'unknown'),
+        claim_token = null,
+        claimed_at = null,
+        lease_until = null,
         updated_at = ${sqlValue(normalizedClaimedAt)}
-      where setting.channel = 'wechat_subscribe'
-        and setting.user_id in (select user_id from released)
-      returning setting.id
+      where job.id in (select id from expired)
+        and (select count(*) from consumed) >= 0
+      returning job.id
+    ), candidates as materialized (
+      select id
+      from notification_jobs
+      where status = 'pending'
+        and scheduled_at <= ${sqlValue(dueAt)}
+        and (next_retry_at is null or next_retry_at <= ${sqlValue(dueAt)})
+        and (select count(*) from recovered) >= 0
+      order by scheduled_at asc
+      limit ${normalizedLimit}
+      for update skip locked
     ), claimed as (
       update notification_jobs job
       set
@@ -4493,7 +4503,6 @@ function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claime
         lease_until = ${sqlValue(normalizedLeaseUntil)},
         updated_at = ${sqlValue(normalizedClaimedAt)}
       where job.id in (select id from candidates)
-        and (select count(*) from recovered_settings) >= 0
       returning
         job.id::text as "id",
         job.user_id::text as "userId",
@@ -4503,6 +4512,7 @@ function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claime
         job.status,
         job.payload,
         job.attempt_count as "attemptCount",
+        job.provider_attempt_count as "providerAttemptCount",
         job.next_retry_at as "nextRetryAt",
         job.last_error as "lastError",
         job.provider_message_id as "providerMessageId",
@@ -4518,6 +4528,59 @@ function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claime
     from claimed
   `);
   return JSON.parse(rawClaimed || '[]');
+}
+
+function renewNotificationJobLease({ jobId, claimToken, renewedAt, leaseUntil } = {}) {
+  const renewalTime = String(renewedAt || new Date().toISOString());
+  const rawRenewed = queryScalar(`
+    with renewed as (
+      update notification_jobs job
+      set
+        lease_until = ${sqlValue(String(leaseUntil || ''))},
+        updated_at = ${sqlValue(renewalTime)}
+      where job.id = ${sqlValue(normalizeId(jobId))}
+        and job.status = 'processing'
+        and job.claim_token = ${sqlValue(String(claimToken || '').trim())}
+        and job.lease_until > ${sqlValue(renewalTime)}
+      returning job.id, job.claim_token, job.lease_until, job.updated_at
+    ), renewed_subscription as (
+      update notification_subscriptions subscription
+      set
+        reservation_lease_until = (select lease_until from renewed),
+        updated_at = ${sqlValue(renewalTime)}
+      where subscription.reserved_job_id = (select id from renewed)
+        and subscription.reservation_token = ${sqlValue(String(claimToken || '').trim())}
+      returning subscription.id
+    )
+    select row_to_json(renewed) from renewed
+    where (select count(*) from renewed_subscription) >= 0
+  `);
+  return rawRenewed ? JSON.parse(rawRenewed) : null;
+}
+
+function reserveProviderAttempt({ jobId, claimToken, maxAttempts = 3, attemptedAt } = {}) {
+  const normalizedMax = Math.max(1, Number(maxAttempts || 3));
+  const attemptTime = String(attemptedAt || new Date().toISOString());
+  const rawReserved = queryScalar(`
+    with reserved as (
+      update notification_jobs job
+      set
+        provider_attempt_count = provider_attempt_count + 1,
+        updated_at = ${sqlValue(attemptTime)}
+      where job.id = ${sqlValue(normalizeId(jobId))}
+        and job.status = 'processing'
+        and job.claim_token = ${sqlValue(String(claimToken || '').trim())}
+        and job.lease_until > ${sqlValue(attemptTime)}
+        and job.provider_attempt_count < ${normalizedMax}
+      returning
+        job.id::text as "id",
+        job.claim_token as "claimToken",
+        job.lease_until as "leaseUntil",
+        job.provider_attempt_count as "providerAttemptCount"
+    )
+    select row_to_json(reserved) from reserved
+  `);
+  return rawReserved ? JSON.parse(rawReserved) : null;
 }
 
 function reserveNotificationSubscription({ jobId, claimToken, templateId, templateKey, leaseUntil, reservedAt } = {}) {
@@ -4544,10 +4607,7 @@ function reserveNotificationSubscription({ jobId, claimToken, templateId, templa
         and (${templateKey ? `subscription.template_key = ${sqlValue(String(templateKey).trim())}` : 'true'})
         and subscription.status = 'accept'
         and subscription.consumed_at is null
-        and (
-          subscription.reserved_job_id is null
-          or subscription.reservation_lease_until <= job_claim.reservation_time
-        )
+        and subscription.reserved_job_id is null
       order by subscription.granted_at asc
       limit 1
       for update skip locked
@@ -4655,6 +4715,7 @@ function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, provi
         status,
         payload,
         attempt_count as "attemptCount",
+        provider_attempt_count as "providerAttemptCount",
         next_retry_at as "nextRetryAt",
         last_error as "lastError",
         provider_message_id as "providerMessageId",
@@ -4692,17 +4753,18 @@ function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, provi
   return updated;
 }
 
-function recordNotificationJobFailure({ jobId, claimToken, error, retryable, providerResponse, attemptedAt }) {
+function recordNotificationJobFailure({ jobId, claimToken, error, retryable, deliveryOutcome, providerResponse, attemptedAt }) {
   const failedAt = String(attemptedAt || new Date().toISOString());
-  const retryableSql = retryable ? 'true' : 'false';
+  const outcomeUnknown = deliveryOutcome === 'unknown' || error === 'DELIVERY_OUTCOME_UNKNOWN';
+  const retryableSql = retryable && !outcomeUnknown ? 'true' : 'false';
   const rawUpdated = queryScalar(`
     with updated_job as (
       update notification_jobs
       set
-        status = case when ${retryableSql} and attempt_count + 1 < 3 then 'pending' else 'failed' end,
+        status = case when ${retryableSql} and attempt_count + 1 < 3 and provider_attempt_count < 3 then 'pending' else 'failed' end,
         attempt_count = attempt_count + 1,
         next_retry_at = case
-          when ${retryableSql} and attempt_count + 1 < 3 then
+          when ${retryableSql} and attempt_count + 1 < 3 and provider_attempt_count < 3 then
             ${sqlValue(failedAt)}::timestamptz + case attempt_count
               when 0 then interval '1 minute'
               when 1 then interval '5 minutes'
@@ -4728,6 +4790,7 @@ function recordNotificationJobFailure({ jobId, claimToken, error, retryable, pro
       status,
       payload,
       attempt_count as "attemptCount",
+      provider_attempt_count as "providerAttemptCount",
       next_retry_at as "nextRetryAt",
       last_error as "lastError",
       provider_message_id as "providerMessageId",
@@ -4741,6 +4804,7 @@ function recordNotificationJobFailure({ jobId, claimToken, error, retryable, pro
     ), released as (
       update notification_subscriptions subscription
       set
+        consumed_at = case when ${outcomeUnknown ? 'true' : 'false'} then ${sqlValue(failedAt)} else consumed_at end,
         reserved_job_id = null,
         reservation_token = null,
         reserved_at = null,
@@ -5827,6 +5891,8 @@ module.exports = {
   listNotificationJobs,
   listDueNotificationJobs,
   claimDueNotificationJobs,
+  renewNotificationJobLease,
+  reserveProviderAttempt,
   isNotificationChannelEnabled,
   listOrganizationAssets,
   listOrganizations,

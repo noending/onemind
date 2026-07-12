@@ -61,7 +61,7 @@
   - 内容：`listContents(filters)` / `createContent(payload)` / `updateContent(contentId, payload)` / `archiveContent(contentId)` / `getContent(contentId)` / `listFestivals()`。
   - 计划与任务：`listPlans(userId)` / `createPlan({ userId, contentId, startDate, mode })` / `completeTask({ taskId, result, selfRating, latencyBand, mistakeCount, note })`。
   - 用户与会话：`loginByWechatCode(payload)` / `getUserById(userId)`。
-  - 通知：repository 负责 claim/lease、授权 reservation、到期恢复和原子成功/失败状态；`notificationDispatcher` 每次 claim 一个任务后编排真实微信发送。
+  - 通知：repository 负责 claim/lease、授权 reservation、真实 provider POST 原子计数和成功/失败状态；`notificationDispatcher` 每次 claim 一个任务后编排真实微信发送。每次 POST 前续租并计数，transport unknown 与 lease recovery 均直接 failed/manual review，禁止自动重发。
   - 成长 / 读诵：`getGrowthOverview(userId)` / `listRecitationGoals(userId)` / `upsertRecitationGoal({ userId, contentId, goalType, preferredPeriod, dailyTargetCount })` / `createRecitationSession({ ... })`。
   - 今日：`listTodayFocus(userId)`。
   - 仪表盘：`getDashboard()`。

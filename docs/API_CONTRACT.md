@@ -484,7 +484,7 @@ Idempotency-Key: <unique-key, max 180 chars>
 
 `status` 仅支持 `accept | reject | ban`。相同幂等键和相同请求安全重放；同一键复用到不同请求返回 `409 IDEMPOTENCY_KEY_CONFLICT`。PostgreSQL 使用同一连接事务和 user+idempotencyKey advisory xact lock，在事务内完成重放/冲突校验、授权 upsert、setting 计算和响应记录。provider 未 ready 返回 `503`；用户没有真实服务端 openid 返回 `409 WECHAT_REAL_LOGIN_REQUIRED`。
 
-`wechat_subscribe.enabled` 仅统计 `accept`、未消费且未被有效 reservation 占用的授权。消费一个模板后如仍有可用授权则保持开启；最后一份可用授权 reject/ban/consume 后关闭。
+`wechat_subscribe.enabled` 是读取时动态投影，不直接信任持久 setting：仅统计 `accept`、未消费，且未 reservation 或 `reservationLeaseUntil <= 当前时间` 的授权。有效 reservation 返回 `false`，过期 reservation 即使尚未清理也返回 `true`。消费一个模板后如仍有可用授权则保持开启；最后一份可用授权 reject/ban/consume 后关闭。
 
 ### 创建提醒任务
 
@@ -578,7 +578,9 @@ Authorization: Bearer <admin-token>
 - `dueBefore`
 - `limit`
 
-路由会 await 异步 dispatcher。每轮仅将一个到期 `pending` 任务原子 claim 为 `processing`，写入不可猜测的 `claimToken` 和 5 分钟 `leaseUntil`；随后原子 reservation 一份同用户、同模板、未消费 `accept` 授权，再调用微信。竞争失败的 dispatcher 不调用 provider。过期 lease 在后续 claim 时恢复为 `pending` 并释放 reservation。返回：
+路由会 await 异步 dispatcher。每轮仅将一个到期 `pending` 任务原子 claim 为 `processing`，写入不可猜测的 `claimToken` 和 5 分钟 `leaseUntil`；随后原子 reservation 一份同用户、同模板、未消费 `accept` 授权。每次微信消息 POST 前先用当前 claim token 续租，再原子 `reserveProviderAttempt(max=3)`；token 无效刷新产生的第二个 POST 也单独计数。竞争失败、stale claim 或实际 POST 已达 3 次时不调用 provider。
+
+微信消息 fetch 使用 AbortController，默认 10 秒超时并覆盖响应体读取。timeout、network error 或不可解析响应属于 `DELIVERY_OUTCOME_UNKNOWN`：job 直接 `failed` 等待人工复核，已 reservation 授权标记 consumed。worker crash 后的过期 `processing` lease 使用同一 unknown 规则恢复，不重新 `pending`，后续 dispatcher 不再为该 job 调用 provider。返回：
 
 ```json
 {
@@ -595,7 +597,7 @@ Authorization: Bearer <admin-token>
 }
 ```
 
-微信返回非零 `errcode` 时不会标记 `sent`。可重试失败写入 `attemptCount/nextRetryAt/lastError/providerResponse`，最多尝试 3 次；永久失败或第 3 次失败标记 `failed`。
+微信返回非零 `errcode` 时不会标记 `sent`。只有微信明确返回、可重试且证明消息未送达的错误才写入 `attemptCount/nextRetryAt/lastError/providerResponse` 并退避；`providerAttemptCount` 是 crash-safe 的真实 POST 计数，上限 3。永久失败、unknown outcome 或实际第 3 次 POST 后标记 `failed`。
 
 该路由要求 `notification.dispatch` 权限。
 

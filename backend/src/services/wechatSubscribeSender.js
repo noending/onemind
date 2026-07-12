@@ -24,22 +24,70 @@ function classifyProviderFailure(body = {}, response = {}) {
   const errorCode = Number(body.errcode);
   return {
     ok: false,
-    retryable: response.status === 429 || response.status >= 500 || RETRYABLE_CODES.has(errorCode),
+    retryable: Number.isFinite(errorCode) && RETRYABLE_CODES.has(errorCode),
     error: body.errmsg || `WECHAT_SEND_FAILED_${Number.isFinite(errorCode) ? errorCode : response.status || 'UNKNOWN'}`,
     errorCode: Number.isFinite(errorCode) ? errorCode : null,
     providerResponse: body
   };
 }
 
-function createWechatSubscribeSender({ accessTokenProvider, fetch = globalThis.fetch } = {}) {
+function unknownOutcome(cause) {
+  return {
+    ok: false,
+    retryable: false,
+    deliveryOutcome: 'unknown',
+    error: 'DELIVERY_OUTCOME_UNKNOWN',
+    providerResponse: { cause: String(cause || 'unknown') }
+  };
+}
+
+function createWechatSubscribeSender({
+  accessTokenProvider,
+  repository,
+  fetch = globalThis.fetch,
+  now = () => new Date(),
+  leaseMs = 5 * 60_000,
+  requestTimeoutMs = 10_000,
+  maxProviderAttempts = 3
+} = {}) {
   if (!accessTokenProvider || typeof accessTokenProvider.getToken !== 'function') {
     throw new TypeError('accessTokenProvider.getToken is required');
+  }
+  for (const method of ['renewNotificationJobLease', 'reserveProviderAttempt']) {
+    if (!repository || typeof repository[method] !== 'function') throw new TypeError(`repository.${method} is required`);
+  }
+
+  function currentDate() {
+    const value = now();
+    return value instanceof Date ? value : new Date(value);
+  }
+
+  function prepareProviderAttempt(job) {
+    const renewedAt = currentDate();
+    const leaseUntil = new Date(renewedAt.getTime() + leaseMs).toISOString();
+    const renewed = repository.renewNotificationJobLease({
+      jobId: job.id,
+      claimToken: job.claimToken,
+      renewedAt: renewedAt.toISOString(),
+      leaseUntil
+    });
+    if (!renewed) return { ok: false, retryable: false, error: 'NOTIFICATION_JOB_CLAIM_INVALID' };
+    const reserved = repository.reserveProviderAttempt({
+      jobId: job.id,
+      claimToken: job.claimToken,
+      maxAttempts: maxProviderAttempts,
+      attemptedAt: renewedAt.toISOString()
+    });
+    if (!reserved) return { ok: false, retryable: false, error: 'PROVIDER_ATTEMPT_LIMIT_REACHED' };
+    return null;
   }
 
   async function sendOnce({ token, openid, job, template }) {
     if (typeof fetch !== 'function') {
       return { ok: false, retryable: true, error: 'WECHAT_FETCH_UNAVAILABLE', providerResponse: null };
     }
+    const blocked = prepareProviderAttempt(job);
+    if (blocked) return blocked;
     const url = new URL(SEND_ENDPOINT);
     url.searchParams.set('access_token', token);
     const requestBody = {
@@ -49,20 +97,22 @@ function createWechatSubscribeSender({ accessTokenProvider, fetch = globalThis.f
       data: buildTemplateData(job, template.fields)
     };
     let response;
+    let body;
+    const controller = new AbortController();
+    const safeTimeoutMs = Math.max(1, Math.min(Number(requestTimeoutMs || 10_000), Math.floor(leaseMs / 4)));
+    const timeout = setTimeout(() => controller.abort(), safeTimeoutMs);
     try {
       response = await fetch(url.toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
       });
-    } catch (error) {
-      return { ok: false, retryable: true, error: error.message || 'WECHAT_SEND_NETWORK_ERROR', providerResponse: null };
-    }
-    let body;
-    try {
       body = await response.json();
     } catch (error) {
-      return { ok: false, retryable: true, error: 'WECHAT_SEND_INVALID_RESPONSE', providerResponse: null };
+      return unknownOutcome(controller.signal.aborted ? 'timeout' : (error.message || 'network_error'));
+    } finally {
+      clearTimeout(timeout);
     }
     if (response.ok && Number(body.errcode) === 0) {
       return {

@@ -203,9 +203,11 @@
 - `notification_subscriptions.status` 为 `accept | reject | ban`，`granted_at/consumed_at` 区分授权和单次消费。
 - `notification_subscriptions.reserved_job_id/reservation_token/reserved_at/reservation_lease_until` 记录外发前的单 job 授权 reservation。
 - `notification_jobs.payload` 为 jsonb。
-- `notification_jobs.attempt_count/next_retry_at/last_error` 记录最多 3 次派发状态。
-- `notification_jobs.claim_token/claimed_at/lease_until` 记录 `processing` claim；过期 lease 可恢复并释放 reservation。
+- `notification_jobs.attempt_count/next_retry_at/last_error` 记录逻辑派发与退避状态。
+- `notification_jobs.provider_attempt_count` 在每次微信消息 POST 前原子递增，真实 HTTP 上限为 3，进程崩溃不会丢计数。
+- `notification_jobs.claim_token/claimed_at/lease_until` 记录 `processing` claim；每次 POST 前续租并验证 token。过期 lease 直接 `failed + DELIVERY_OUTCOME_UNKNOWN`，已 reservation 授权标记 consumed，不重新 pending。
 - `provider_message_id/provider_response` 保存微信回执；只有 `errcode=0` 才写 `sent_at` 和 `status=sent`。
+- `wechat_subscribe.enabled` 读取时按 accept、未消费和 reservation lease 动态投影，过期 reservation 无需先清理即可显示可用。
 
 ## 5.9 audit_logs
 

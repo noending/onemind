@@ -73,3 +73,42 @@
 
 - 必须同时配置：`WECHAT_LOGIN_MODE=real`、`WECHAT_APP_ID`、`WECHAT_APP_SECRET`、有效的 `WECHAT_SUBSCRIBE_TEMPLATES_JSON`。
 - 微信公众平台必须存在并启用对应订阅消息模板，字段名和小程序 page 必须与 JSON 一致。
+
+---
+
+## 通知复审剩余 3 项修复增补
+
+日期：2026-07-12
+
+### At-most-once 状态机
+
+- 微信 token GET 与订阅消息 POST 都使用 AbortController，默认 10 秒超时；计时覆盖 fetch 和响应体 JSON 读取，显著短于 5 分钟 claim lease。
+- 每次订阅消息 POST 前，sender 先调用 repository 续租并验证 claim token，再原子 `reserveProviderAttempt(max=3)`。`provider_attempt_count` 在 memory/PG 中持久保存；invalid-token 刷新后的第二个 POST 同样先计数。
+- timeout、network error 和不可解析响应统一为 `DELIVERY_OUTCOME_UNKNOWN`，job 直接 `failed` 等待人工复核，不进入自动 retry；已 reservation 授权标记 consumed。
+- worker crash 后，过期 `processing` lease 直接恢复为 `failed + DELIVERY_OUTCOME_UNKNOWN`，消费 reservation 且不重新 pending。stale claim 无法续租、reserve provider attempt 或 finalize，恢复后 dispatcher 不再调用 provider。
+- 只有微信明确返回、可重试且证明消息未送达的错误允许逻辑 retry；HTTP 429/5xx 本身不再作为自动 retry 依据。真实 provider POST 总数上限为 3，进程崩溃不会重置。
+
+### Enabled 动态投影
+
+- `getNotificationSettings` 和 channel-enabled 判断对 `wechat_subscribe` 按读取时间动态计算：`accept + unconsumed + (unreserved || reservationLeaseUntil <= now)`。
+- 有效 reservation 返回 `enabled=false`；过期 reservation 在清理前即返回 `enabled=true`。memory 与 PostgreSQL 使用相同投影语义；实际 reservation 不会直接复用旧过期占用，后续 recovery 仍按 unknown 消费。
+
+### TDD 与真实 PG 证据
+
+- RED：新增测试最初出现 10 个预期失败，覆盖缺少 AbortController signal、unknown 被 retry、lease recovery 重新 claim、缺少 provider attempt 原子接口、动态 enabled 读取仍依赖持久 setting。
+- GREEN 定向：client/dispatcher/memory/schema 共 27/27 通过，包含慢 fetch、慢响应体、worker crash 后 provider 0 调用、stale finalize 和 memory parity。
+- GREEN 真实 PG：`node --test test/notification-postgres-gate.test.js` 完整 5/5 通过，包含 invalid-token 两次 POST、多轮逻辑 retry、crash-safe 实际 POST 上限 3、lease recovery unknown、stale finalize、动态 enabled parity。
+- 外部 HTTP 仍全部使用注入 fake fetch；没有访问真实微信端点。
+
+### 最终门禁
+
+- `npm test`：235 tests，204 pass，31 skip，0 fail；通知真实 PG gate 在本次运行中实际执行。
+- `npm run check`：通过。
+- touched files 显式 `node --check`：通过。
+- `npm run admin:build`：通过，生产后台 bundle 构建完成。
+- `node tools/check-ui-parity.mjs`：六页 89/89 通过。
+- `git diff --check`：提交前单独执行并记录在交付回复。
+
+### 提交
+
+- 提交信息：`fix: enforce at-most-once notification delivery`

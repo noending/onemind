@@ -14,6 +14,7 @@ const {
   createAdaptivePlan,
   createPlan,
   claimDueNotificationJobs,
+  renewNotificationJobLease,
   completeTask,
   findAdminByCredentials,
   getAdminById,
@@ -51,6 +52,7 @@ const {
   recordNotificationJobFailure,
   recordNotificationJobSuccess,
   reserveNotificationSubscription,
+  reserveProviderAttempt,
   saveNotificationSubscriptionResult,
   completeStudyTaskItem
 } = require('./repositories/store');
@@ -89,7 +91,11 @@ const wechatAccessTokenProvider = createWechatAccessTokenProvider({
   appSecret: WECHAT_APP_SECRET
 });
 const wechatSubscribeSender = createWechatSubscribeSender({
-  accessTokenProvider: wechatAccessTokenProvider
+  accessTokenProvider: wechatAccessTokenProvider,
+  repository: {
+    renewNotificationJobLease,
+    reserveProviderAttempt
+  }
 });
 const notificationDispatcher = createNotificationDispatcher({
   repository: {

@@ -213,8 +213,9 @@
 ### 3.14 notification_settings & notification_jobs
 
 - `notification_settings`：`(user_id, channel)` 唯一，`quiet_hours` jsonb。
-- `notification_jobs`：`status` 支持 `pending/processing/sent/failed/cancelled`；`claim_token/claimed_at/lease_until` 保护并发外发。
-- `notification_subscriptions`：`reserved_job_id/reservation_token/reservation_lease_until` 保证一份未消费授权只分配给一个 job。
+- `notification_jobs`：`status` 支持 `pending/processing/sent/failed/cancelled`；`claim_token/claimed_at/lease_until` 保护并发外发，`provider_attempt_count` 在 POST 前持久递增并限制真实 HTTP 最多 3 次。
+- `notification_subscriptions`：`reserved_job_id/reservation_token/reservation_lease_until` 保证一份未消费授权只分配给一个 job；unknown outcome 或 lease recovery 会消费 reservation，防止重复外发。
+- `wechat_subscribe.enabled` 按当前时间动态投影：accept、未消费且未 reservation 或 reservation 已过期时为 true。
 
 ### 3.15 assets / content_assets / festivals / festival_contents / audit_logs
 

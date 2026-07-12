@@ -278,3 +278,101 @@ test('dispatcher reports retry separately and never records provider failure as 
   assert.equal(repository.calls.success.length, 0);
   assert.deepEqual(result.providers.wechat_subscribe, { sent: 0, failed: 0, retrying: 1 });
 });
+
+test('dispatcher permanently fails unknown delivery outcomes for manual review', async () => {
+  const dispatcherModule = loadDispatcher();
+  const job = { id: 'job-unknown', userId: 'user-1', channel: 'wechat_subscribe', payload: { type: 'review' } };
+  const repository = createRepository(job);
+  const dispatcher = dispatcherModule.createNotificationDispatcher({
+    repository,
+    templateConfig,
+    sender: { send: async () => ({
+      ok: false,
+      retryable: true,
+      deliveryOutcome: 'unknown',
+      error: 'DELIVERY_OUTCOME_UNKNOWN',
+      providerResponse: { cause: 'timeout' }
+    }) }
+  });
+
+  const result = await dispatcher.dispatchDue({});
+
+  assert.equal(result.failed, 1);
+  assert.equal(result.retrying, 0);
+  assert.equal(repository.calls.failure[0].retryable, false);
+  assert.equal(repository.calls.failure[0].deliveryOutcome, 'unknown');
+  assert.equal(repository.calls.success.length, 0);
+});
+
+test('dispatcher does not count a stale-token success as sent when repository rejects finalize', async () => {
+  const dispatcherModule = loadDispatcher();
+  const job = { id: 'job-stale-finalize', userId: 'user-1', channel: 'wechat_subscribe', payload: { type: 'review' } };
+  const repository = createRepository(job, {
+    recordNotificationJobSuccess() {
+      const error = new Error('NOTIFICATION_JOB_CLAIM_INVALID');
+      error.code = 'NOTIFICATION_JOB_CLAIM_INVALID';
+      throw error;
+    }
+  });
+  const dispatcher = dispatcherModule.createNotificationDispatcher({
+    repository,
+    templateConfig,
+    sender: { send: async () => ({ ok: true, providerResponse: { errcode: 0 } }) }
+  });
+
+  await assert.rejects(dispatcher.dispatchDue({}), /NOTIFICATION_JOB_CLAIM_INVALID/);
+});
+
+test('memory dispatcher recovers a crashed worker as unknown without calling provider again', async () => {
+  const memoryStore = require('../src/repositories/memoryStore');
+  const user = memoryStore.loginByWechatCode({
+    code: `crash-recovery-${Date.now()}`,
+    wechatOpenid: `real_crash_recovery_${Date.now()}`,
+    userInfo: { nickName: '崩溃恢复' }
+  });
+  memoryStore.saveNotificationSubscriptionResult({
+    userId: user.id,
+    templateKey: 'review',
+    templateId: 'tmpl-review',
+    status: 'accept',
+    idempotencyKey: `crash-recovery-accept-${Date.now()}`
+  });
+  const job = memoryStore.createNotificationJob({
+    userId: user.id,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+  const claim = memoryStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:00.000Z',
+    claimedAt: '2026-07-12T00:00:00.000Z',
+    leaseUntil: '2026-07-12T00:00:30.000Z'
+  }).find((item) => item.id === job.id);
+  memoryStore.reserveNotificationSubscription({
+    jobId: job.id,
+    claimToken: claim.claimToken,
+    templateId: 'tmpl-review',
+    templateKey: 'review',
+    leaseUntil: claim.leaseUntil,
+    reservedAt: '2026-07-12T00:00:00.000Z'
+  });
+  memoryStore.reserveProviderAttempt({
+    jobId: job.id,
+    claimToken: claim.claimToken,
+    maxAttempts: 3,
+    attemptedAt: '2026-07-12T00:00:01.000Z'
+  });
+  let providerCalls = 0;
+  const dispatcher = loadDispatcher().createNotificationDispatcher({
+    repository: memoryStore,
+    templateConfig,
+    sender: { send: async () => { providerCalls += 1; return { ok: true }; } },
+    now: () => new Date('2026-07-12T00:01:00.000Z')
+  });
+
+  const result = await dispatcher.dispatchDue({ dueBefore: '2026-07-12T00:01:00.000Z', limit: 1 });
+
+  assert.equal(providerCalls, 0);
+  assert.equal(result.processed, 0);
+  assert.equal(memoryStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === job.id).status, 'failed');
+});

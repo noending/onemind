@@ -28,6 +28,14 @@ function unique(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body
+  };
+}
+
 function runSubscriptionSave(payload) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [
@@ -262,9 +270,10 @@ test('postgres claim and reservation prevent duplicate provider calls for same j
   assert.equal(result.failed, 1);
 });
 
-test('postgres lease recovery releases reservation and HTTP retries stop at three', { skip: !canUsePostgres }, async () => {
+test('postgres lease recovery fails unknown and durable provider POST count never exceeds three', { skip: !canUsePostgres }, async () => {
   const postgresStore = require('../src/repositories/postgresStore');
   const { createNotificationDispatcher } = require('../src/services/notificationDispatcher');
+  const { createWechatSubscribeSender } = require('../src/services/wechatSubscribeSender');
   postgresStore.initializeDatabase();
   const user = postgresStore.loginByWechatCode({
     code: unique('pg-lease-user'),
@@ -295,29 +304,33 @@ test('postgres lease recovery releases reservation and HTTP retries stop at thre
     templateKey: 'review',
     leaseUntil: firstClaim.leaseUntil
   });
-  assert.equal(postgresStore.getNotificationSettings(user.id).find((item) => item.channel === 'wechat_subscribe').enabled, false);
+  const firstProviderAttempt = postgresStore.reserveProviderAttempt({
+    jobId: leaseJob.id,
+    claimToken: firstClaim.claimToken,
+    maxAttempts: 3,
+    attemptedAt: '2026-07-12T00:00:01.000Z'
+  });
+  assert.equal(firstProviderAttempt.providerAttemptCount, 1);
+  assert.equal(postgresStore.getNotificationSettings(user.id, '2026-07-12T00:00:10.000Z')
+    .find((item) => item.channel === 'wechat_subscribe').enabled, false);
   const recovered = postgresStore.claimDueNotificationJobs({
     dueBefore: '2026-07-12T00:01:00.000Z',
+    claimedAt: '2026-07-12T00:01:00.000Z',
     leaseUntil: '2026-07-12T00:02:00.000Z'
   }).find((item) => item.id === leaseJob.id);
-  assert.ok(recovered);
-  assert.notEqual(recovered.claimToken, firstClaim.claimToken);
-  assert.equal(postgresStore.getNotificationSettings(user.id).find((item) => item.channel === 'wechat_subscribe').enabled, true);
-  assert.equal(postgresStore.reserveNotificationSubscription({
-    jobId: leaseJob.id,
-    claimToken: recovered.claimToken,
-    templateId: 'pg-dispatch-template',
-    templateKey: 'review',
-    leaseUntil: recovered.leaseUntil
-  }).id, accepted.subscription.id);
+  assert.equal(recovered, undefined);
+  const recoveredJob = postgresStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === leaseJob.id);
+  assert.equal(recoveredJob.status, 'failed');
+  assert.equal(recoveredJob.lastError, 'DELIVERY_OUTCOME_UNKNOWN');
+  assert.equal(recoveredJob.providerAttemptCount, 1);
+  assert.ok(postgresStore.getNotificationSubscription({ userId: user.id, templateId: 'pg-dispatch-template' }).consumedAt);
   assert.equal(postgresStore.getNotificationSettings(user.id).find((item) => item.channel === 'wechat_subscribe').enabled, false);
-  postgresStore.recordNotificationJobFailure({
+  assert.throws(() => postgresStore.recordNotificationJobSuccess({
     jobId: leaseJob.id,
-    claimToken: recovered.claimToken,
-    error: 'LEASE_TEST_RESET',
-    retryable: false,
-    attemptedAt: '2026-07-12T00:01:01.000Z'
-  });
+    claimToken: firstClaim.claimToken,
+    subscriptionId: accepted.subscription.id,
+    sentAt: '2026-07-12T00:01:01.000Z'
+  }), /NOTIFICATION_JOB_CLAIM_INVALID|WECHAT_SUBSCRIPTION_REQUIRED/);
 
   postgresStore.saveNotificationSubscriptionResult({
     userId: user.id,
@@ -334,15 +347,23 @@ test('postgres lease recovery releases reservation and HTTP retries stop at thre
   });
   let clock = Date.parse('2026-07-12T00:00:00.000Z');
   let providerCalls = 0;
+  const sender = createWechatSubscribeSender({
+    accessTokenProvider: {
+      getToken: async ({ forceRefresh } = {}) => forceRefresh ? 'fresh-token' : 'stale-token'
+    },
+    repository: postgresStore,
+    now: () => new Date(clock),
+    fetch: async () => {
+      providerCalls += 1;
+      return jsonResponse(providerCalls === 1
+        ? { errcode: 40001, errmsg: 'invalid credential' }
+        : { errcode: -1, errmsg: 'system busy' });
+    }
+  });
   const dispatcher = createNotificationDispatcher({
     repository: postgresStore,
     templateConfig,
-    sender: {
-      async send() {
-        providerCalls += 1;
-        return { ok: false, retryable: true, error: 'WECHAT_SYSTEM_BUSY', providerResponse: { errcode: -1 } };
-      }
-    },
+    sender,
     now: () => new Date(clock)
   });
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -353,5 +374,47 @@ test('postgres lease recovery releases reservation and HTTP retries stop at thre
   const stored = postgresStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === retryJob.id);
   assert.equal(providerCalls, 3);
   assert.equal(stored.status, 'failed');
-  assert.equal(stored.attemptCount, 3);
+  assert.equal(stored.providerAttemptCount, 3);
+});
+
+test('postgres wechat enabled projection is dynamic for active and expired reservations', { skip: !canUsePostgres }, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+  postgresStore.initializeDatabase();
+  const user = postgresStore.loginByWechatCode({
+    code: unique('pg-enabled-user'),
+    wechatOpenid: unique('pg-enabled-openid'),
+    userInfo: { nickName: 'PG 动态 enabled' }
+  });
+  const templateId = unique('pg-enabled-template');
+  postgresStore.saveNotificationSubscriptionResult({
+    userId: user.id,
+    templateKey: 'review',
+    templateId,
+    status: 'accept',
+    idempotencyKey: unique('pg-enabled-accept')
+  });
+  const job = postgresStore.createNotificationJob({
+    userId: user.id,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+  const claimed = postgresStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:00.000Z',
+    claimedAt: '2026-07-12T00:00:00.000Z',
+    leaseUntil: '2026-07-12T00:01:00.000Z'
+  }).find((item) => item.id === job.id);
+  postgresStore.reserveNotificationSubscription({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    templateId,
+    templateKey: 'review',
+    leaseUntil: claimed.leaseUntil,
+    reservedAt: '2026-07-12T00:00:00.000Z'
+  });
+
+  assert.equal(postgresStore.getNotificationSettings(user.id, '2026-07-12T00:00:59.000Z')
+    .find((item) => item.channel === 'wechat_subscribe').enabled, false);
+  assert.equal(postgresStore.getNotificationSettings(user.id, '2026-07-12T00:01:00.000Z')
+    .find((item) => item.channel === 'wechat_subscribe').enabled, true);
 });
