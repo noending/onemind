@@ -112,3 +112,29 @@
 ### 提交
 
 - 提交信息：`fix: enforce at-most-once notification delivery`
+
+---
+
+## 最终 Important 修复：过期租约禁止 finalize
+
+日期：2026-07-12
+
+### 修复内容
+
+- memory 的 success/failure finalize 在写入前使用服务端完成时间校验 `leaseUntil > completedAt/failedAt`；相等也按过期处理，返回 `NOTIFICATION_CLAIM_STALE`，不写 sent/failed，也不消费或释放 reservation。
+- PostgreSQL 的 success/failure 最终 DML 加入同一 lease 条件；success 的授权消费子查询也受该条件保护，避免过期 token 在 job 更新前消费授权。未更新时会明确识别过期 processing claim 并返回 `NOTIFICATION_CLAIM_STALE`。
+- recovery 保持既有 unknown 策略：过期 processing job 才会被标为 `failed + DELIVERY_OUTCOME_UNKNOWN` 并消费对应 reservation。
+
+### TDD 与真实 PG 证据
+
+- RED：新增 memory success/failure 与真实 PG success/failure 四项边界用例，均令 `leaseUntil === finalizeAt`；改动前四项都因缺少异常而失败。
+- GREEN memory：`node --test test/notification-repository.test.js`，9/9 通过。
+- GREEN 真实 PostgreSQL：`node --test --test-name-pattern='postgres rejects an expired' test/notification-postgres-gate.test.js`，2/2 通过。每项都断言 finalize 拒绝后 job 仍为 `processing`、claimToken/lease/reservation 不变；随后 recovery 统一消费授权并写入 `DELIVERY_OUTCOME_UNKNOWN`。
+
+### 最终门禁
+
+- `PGPORT=1 npm test`：239 tests，201 pass，38 条条件性 PostgreSQL skip，0 fail。
+- `npm run check`：通过。
+- `node tools/check-ui-parity.mjs`：89/89 通过。
+- 显式 `node --check`：memoryStore、postgresStore 与两份通知测试均通过。
+- 真实 PG 全文件在当前 runner 中执行至既有首项 gate 后未输出 TAP 汇总；本次新增的真实 PG gate 已单独完整通过。

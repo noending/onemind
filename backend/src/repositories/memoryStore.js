@@ -2123,14 +2123,17 @@ function reserveNotificationSubscription({ jobId, claimToken, templateId, templa
 function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, providerMessageId, providerResponse, sentAt }) {
   const job = state.notificationJobs.find((item) => item.id === jobId);
   const subscription = state.notificationSubscriptions.find((item) => item.id === subscriptionId);
+  const completedAt = String(sentAt || new Date().toISOString());
   if (!job || job.status !== 'processing' || job.claimToken !== claimToken) {
     throw notificationError('NOTIFICATION_JOB_CLAIM_INVALID', 409);
+  }
+  if (!job.leaseUntil || String(job.leaseUntil) <= completedAt) {
+    throw notificationError('NOTIFICATION_CLAIM_STALE', 409);
   }
   if (!subscription || subscription.userId !== job.userId || subscription.status !== 'accept' || subscription.consumedAt ||
     subscription.reservedJobId !== job.id || subscription.reservationToken !== claimToken) {
     throw notificationError('WECHAT_SUBSCRIPTION_REQUIRED', 409);
   }
-  const completedAt = String(sentAt || new Date().toISOString());
   subscription.consumedAt = completedAt;
   clearNotificationSubscriptionReservation(subscription, completedAt);
   subscription.updatedAt = completedAt;
@@ -2153,10 +2156,13 @@ function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, provi
 
 function recordNotificationJobFailure({ jobId, claimToken, error, retryable, deliveryOutcome, providerResponse, attemptedAt }) {
   const job = state.notificationJobs.find((item) => item.id === jobId);
+  const failedAt = String(attemptedAt || new Date().toISOString());
   if (!job || job.status !== 'processing' || job.claimToken !== claimToken) {
     throw notificationError('NOTIFICATION_JOB_CLAIM_INVALID', 409);
   }
-  const failedAt = String(attemptedAt || new Date().toISOString());
+  if (!job.leaseUntil || String(job.leaseUntil) <= failedAt) {
+    throw notificationError('NOTIFICATION_CLAIM_STALE', 409);
+  }
   const outcomeUnknown = deliveryOutcome === 'unknown' || error === 'DELIVERY_OUTCOME_UNKNOWN';
   state.notificationSubscriptions.forEach((subscription) => {
     if (subscription.reservedJobId === job.id && subscription.reservationToken === claimToken) {

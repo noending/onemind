@@ -249,6 +249,121 @@ test('memory lease recovery fails unknown job and consumes its reserved subscrip
   }), /NOTIFICATION_JOB_CLAIM_INVALID/);
 });
 
+test('memory rejects an expired success finalize without consuming its reservation, then recovery marks it unknown', () => {
+  const userId = unique('memory-expired-success-user');
+  const templateId = unique('memory-expired-success-template');
+  const accepted = memoryStore.saveNotificationSubscriptionResult({
+    userId,
+    templateKey: 'review',
+    templateId,
+    status: 'accept',
+    idempotencyKey: unique('memory-expired-success-accept')
+  });
+  const job = memoryStore.createNotificationJob({
+    userId,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+  const claimed = memoryStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:00.000Z',
+    claimedAt: '2026-07-12T00:00:00.000Z',
+    leaseUntil: '2026-07-12T00:00:30.000Z'
+  }).find((item) => item.id === job.id);
+  memoryStore.reserveNotificationSubscription({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    templateId,
+    templateKey: 'review',
+    leaseUntil: claimed.leaseUntil,
+    reservedAt: '2026-07-12T00:00:00.000Z'
+  });
+
+  assert.throws(() => memoryStore.recordNotificationJobSuccess({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    subscriptionId: accepted.subscription.id,
+    sentAt: '2026-07-12T00:00:30.000Z'
+  }), /NOTIFICATION_CLAIM_STALE/);
+  const processing = memoryStore.listNotificationJobs({ userId }).find((item) => item.id === job.id);
+  const reserved = memoryStore.getNotificationSubscription({ userId, templateId });
+  assert.equal(processing.status, 'processing');
+  assert.equal(processing.claimToken, claimed.claimToken);
+  assert.equal(processing.leaseUntil, '2026-07-12T00:00:30.000Z');
+  assert.equal(reserved.consumedAt, null);
+  assert.equal(reserved.reservedJobId, job.id);
+  assert.equal(reserved.reservationToken, claimed.claimToken);
+
+  memoryStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:31.000Z',
+    claimedAt: '2026-07-12T00:00:31.000Z'
+  });
+  const recovered = memoryStore.listNotificationJobs({ userId }).find((item) => item.id === job.id);
+  const consumed = memoryStore.getNotificationSubscription({ userId, templateId });
+  assert.equal(recovered.status, 'failed');
+  assert.equal(recovered.lastError, 'DELIVERY_OUTCOME_UNKNOWN');
+  assert.equal(consumed.consumedAt, '2026-07-12T00:00:31.000Z');
+  assert.equal(consumed.reservedJobId, null);
+});
+
+test('memory rejects an expired failure finalize without releasing its reservation, then recovery marks it unknown', () => {
+  const userId = unique('memory-expired-failure-user');
+  const templateId = unique('memory-expired-failure-template');
+  memoryStore.saveNotificationSubscriptionResult({
+    userId,
+    templateKey: 'review',
+    templateId,
+    status: 'accept',
+    idempotencyKey: unique('memory-expired-failure-accept')
+  });
+  const job = memoryStore.createNotificationJob({
+    userId,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+  const claimed = memoryStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:00.000Z',
+    claimedAt: '2026-07-12T00:00:00.000Z',
+    leaseUntil: '2026-07-12T00:00:30.000Z'
+  }).find((item) => item.id === job.id);
+  memoryStore.reserveNotificationSubscription({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    templateId,
+    templateKey: 'review',
+    leaseUntil: claimed.leaseUntil,
+    reservedAt: '2026-07-12T00:00:00.000Z'
+  });
+
+  assert.throws(() => memoryStore.recordNotificationJobFailure({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    error: 'WECHAT_SYSTEM_BUSY',
+    retryable: true,
+    attemptedAt: '2026-07-12T00:00:30.000Z'
+  }), /NOTIFICATION_CLAIM_STALE/);
+  const processing = memoryStore.listNotificationJobs({ userId }).find((item) => item.id === job.id);
+  const reserved = memoryStore.getNotificationSubscription({ userId, templateId });
+  assert.equal(processing.status, 'processing');
+  assert.equal(processing.claimToken, claimed.claimToken);
+  assert.equal(processing.leaseUntil, '2026-07-12T00:00:30.000Z');
+  assert.equal(reserved.consumedAt, null);
+  assert.equal(reserved.reservedJobId, job.id);
+  assert.equal(reserved.reservationToken, claimed.claimToken);
+
+  memoryStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:31.000Z',
+    claimedAt: '2026-07-12T00:00:31.000Z'
+  });
+  const recovered = memoryStore.listNotificationJobs({ userId }).find((item) => item.id === job.id);
+  const consumed = memoryStore.getNotificationSubscription({ userId, templateId });
+  assert.equal(recovered.status, 'failed');
+  assert.equal(recovered.lastError, 'DELIVERY_OUTCOME_UNKNOWN');
+  assert.equal(consumed.consumedAt, '2026-07-12T00:00:31.000Z');
+  assert.equal(consumed.reservedJobId, null);
+});
+
 test('memory provider attempts are atomically counted before HTTP and stale claims cannot renew or reserve', () => {
   const userId = unique('memory-provider-attempt-user');
   const job = memoryStore.createNotificationJob({

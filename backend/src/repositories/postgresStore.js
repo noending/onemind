@@ -4686,6 +4686,7 @@ function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, provi
           where job.id = ${sqlValue(normalizeId(jobId))}
             and job.status = 'processing'
             and job.claim_token = ${sqlValue(String(claimToken || '').trim())}
+            and job.lease_until > ${sqlValue(completedAt)}
         )
       returning id
     ), updated as (
@@ -4705,6 +4706,7 @@ function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, provi
       where id = ${sqlValue(normalizeId(jobId))}
         and status = 'processing'
         and claim_token = ${sqlValue(String(claimToken || '').trim())}
+        and lease_until > ${sqlValue(completedAt)}
         and exists (select 1 from consumed)
       returning
         id::text as "id",
@@ -4749,7 +4751,12 @@ function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, provi
     where (select count(*) from channel_setting) >= 0
   `);
   const updated = rawUpdated ? JSON.parse(rawUpdated) : null;
-  if (!updated) throw notificationError('WECHAT_SUBSCRIPTION_REQUIRED', 409);
+  if (!updated) {
+    if (isNotificationClaimStale({ jobId, claimToken, at: completedAt })) {
+      throw notificationError('NOTIFICATION_CLAIM_STALE', 409);
+    }
+    throw notificationError('WECHAT_SUBSCRIPTION_REQUIRED', 409);
+  }
   return updated;
 }
 
@@ -4781,6 +4788,7 @@ function recordNotificationJobFailure({ jobId, claimToken, error, retryable, del
       where id = ${sqlValue(normalizeId(jobId))}
         and status = 'processing'
         and claim_token = ${sqlValue(String(claimToken || '').trim())}
+        and lease_until > ${sqlValue(failedAt)}
       returning
       id::text as "id",
       user_id::text as "userId",
@@ -4837,8 +4845,26 @@ function recordNotificationJobFailure({ jobId, claimToken, error, retryable, del
     where (select count(*) from channel_setting) >= 0
   `);
   const updated = rawUpdated ? JSON.parse(rawUpdated) : null;
-  if (!updated) throw notificationError('NOTIFICATION_JOB_CLAIM_INVALID', 409);
+  if (!updated) {
+    if (isNotificationClaimStale({ jobId, claimToken, at: failedAt })) {
+      throw notificationError('NOTIFICATION_CLAIM_STALE', 409);
+    }
+    throw notificationError('NOTIFICATION_JOB_CLAIM_INVALID', 409);
+  }
   return updated;
+}
+
+function isNotificationClaimStale({ jobId, claimToken, at }) {
+  return queryScalar(`
+    select exists (
+      select 1
+      from notification_jobs job
+      where job.id = ${sqlValue(normalizeId(jobId))}
+        and job.status = 'processing'
+        and job.claim_token = ${sqlValue(String(claimToken || '').trim())}
+        and (job.lease_until is null or job.lease_until <= ${sqlValue(String(at || new Date().toISOString()))})
+    )::text
+  `) === 'true';
 }
 
 function getGrowthOverview(userId = IDS.demoUser) {

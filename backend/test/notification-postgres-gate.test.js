@@ -377,6 +377,133 @@ test('postgres lease recovery fails unknown and durable provider POST count neve
   assert.equal(stored.providerAttemptCount, 3);
 });
 
+test('postgres rejects an expired success finalize without consuming its reservation, then recovery marks it unknown', { skip: !canUsePostgres }, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+  postgresStore.initializeDatabase();
+  const user = postgresStore.loginByWechatCode({
+    code: unique('pg-expired-success-user'),
+    wechatOpenid: unique('pg-expired-success-openid'),
+    userInfo: { nickName: 'PG Expired Success' }
+  });
+  const templateId = unique('pg-expired-success-template');
+  const accepted = postgresStore.saveNotificationSubscriptionResult({
+    userId: user.id,
+    templateKey: 'review',
+    templateId,
+    status: 'accept',
+    idempotencyKey: unique('pg-expired-success-accept')
+  });
+  const job = postgresStore.createNotificationJob({
+    userId: user.id,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+  const claimed = postgresStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:00.000Z',
+    claimedAt: '2026-07-12T00:00:00.000Z',
+    leaseUntil: '2026-07-12T00:00:30.000Z'
+  }).find((item) => item.id === job.id);
+  postgresStore.reserveNotificationSubscription({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    templateId,
+    templateKey: 'review',
+    leaseUntil: claimed.leaseUntil,
+    reservedAt: '2026-07-12T00:00:00.000Z'
+  });
+
+  assert.throws(() => postgresStore.recordNotificationJobSuccess({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    subscriptionId: accepted.subscription.id,
+    sentAt: '2026-07-12T00:00:30.000Z'
+  }), /NOTIFICATION_CLAIM_STALE/);
+  const processing = postgresStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === job.id);
+  const reserved = postgresStore.getNotificationSubscription({ userId: user.id, templateId });
+  assert.equal(processing.status, 'processing');
+  assert.equal(processing.claimToken, claimed.claimToken);
+  assert.equal(new Date(processing.leaseUntil).toISOString(), '2026-07-12T00:00:30.000Z');
+  assert.equal(reserved.consumedAt, null);
+  assert.equal(reserved.reservedJobId, job.id);
+  assert.equal(reserved.reservationToken, claimed.claimToken);
+
+  postgresStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:31.000Z',
+    claimedAt: '2026-07-12T00:00:31.000Z'
+  });
+  const recovered = postgresStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === job.id);
+  const consumed = postgresStore.getNotificationSubscription({ userId: user.id, templateId });
+  assert.equal(recovered.status, 'failed');
+  assert.equal(recovered.lastError, 'DELIVERY_OUTCOME_UNKNOWN');
+  assert.equal(new Date(consumed.consumedAt).toISOString(), '2026-07-12T00:00:31.000Z');
+  assert.equal(consumed.reservedJobId, null);
+});
+
+test('postgres rejects an expired failure finalize without releasing its reservation, then recovery marks it unknown', { skip: !canUsePostgres }, () => {
+  const postgresStore = require('../src/repositories/postgresStore');
+  postgresStore.initializeDatabase();
+  const user = postgresStore.loginByWechatCode({
+    code: unique('pg-expired-failure-user'),
+    wechatOpenid: unique('pg-expired-failure-openid'),
+    userInfo: { nickName: 'PG Expired Failure' }
+  });
+  const templateId = unique('pg-expired-failure-template');
+  postgresStore.saveNotificationSubscriptionResult({
+    userId: user.id,
+    templateKey: 'review',
+    templateId,
+    status: 'accept',
+    idempotencyKey: unique('pg-expired-failure-accept')
+  });
+  const job = postgresStore.createNotificationJob({
+    userId: user.id,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+  const claimed = postgresStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:00.000Z',
+    claimedAt: '2026-07-12T00:00:00.000Z',
+    leaseUntil: '2026-07-12T00:00:30.000Z'
+  }).find((item) => item.id === job.id);
+  postgresStore.reserveNotificationSubscription({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    templateId,
+    templateKey: 'review',
+    leaseUntil: claimed.leaseUntil,
+    reservedAt: '2026-07-12T00:00:00.000Z'
+  });
+
+  assert.throws(() => postgresStore.recordNotificationJobFailure({
+    jobId: job.id,
+    claimToken: claimed.claimToken,
+    error: 'WECHAT_SYSTEM_BUSY',
+    retryable: true,
+    attemptedAt: '2026-07-12T00:00:30.000Z'
+  }), /NOTIFICATION_CLAIM_STALE/);
+  const processing = postgresStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === job.id);
+  const reserved = postgresStore.getNotificationSubscription({ userId: user.id, templateId });
+  assert.equal(processing.status, 'processing');
+  assert.equal(processing.claimToken, claimed.claimToken);
+  assert.equal(new Date(processing.leaseUntil).toISOString(), '2026-07-12T00:00:30.000Z');
+  assert.equal(reserved.consumedAt, null);
+  assert.equal(reserved.reservedJobId, job.id);
+  assert.equal(reserved.reservationToken, claimed.claimToken);
+
+  postgresStore.claimDueNotificationJobs({
+    dueBefore: '2026-07-12T00:00:31.000Z',
+    claimedAt: '2026-07-12T00:00:31.000Z'
+  });
+  const recovered = postgresStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === job.id);
+  const consumed = postgresStore.getNotificationSubscription({ userId: user.id, templateId });
+  assert.equal(recovered.status, 'failed');
+  assert.equal(recovered.lastError, 'DELIVERY_OUTCOME_UNKNOWN');
+  assert.equal(new Date(consumed.consumedAt).toISOString(), '2026-07-12T00:00:31.000Z');
+  assert.equal(consumed.reservedJobId, null);
+});
+
 test('postgres wechat enabled projection is dynamic for active and expired reservations', { skip: !canUsePostgres }, () => {
   const postgresStore = require('../src/repositories/postgresStore');
   postgresStore.initializeDatabase();
