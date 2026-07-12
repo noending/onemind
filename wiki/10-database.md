@@ -213,7 +213,8 @@
 ### 3.14 notification_settings & notification_jobs
 
 - `notification_settings`：`(user_id, channel)` 唯一，`quiet_hours` jsonb。
-- `notification_jobs`：`status` / `scheduled_at` / `sent_at` / `payload` jsonb。
+- `notification_jobs`：`status` 支持 `pending/processing/sent/failed/cancelled`；`claim_token/claimed_at/lease_until` 保护并发外发。
+- `notification_subscriptions`：`reserved_job_id/reservation_token/reservation_lease_until` 保证一份未消费授权只分配给一个 job。
 
 ### 3.15 assets / content_assets / festivals / festival_contents / audit_logs
 

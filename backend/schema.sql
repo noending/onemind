@@ -469,6 +469,9 @@ create table if not exists notification_jobs (
   status varchar(32) not null default 'pending',
   payload jsonb not null default '{}'::jsonb,
   sent_at timestamptz,
+  claim_token varchar(180),
+  claimed_at timestamptz,
+  lease_until timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -483,6 +486,10 @@ create table if not exists notification_subscriptions (
   status varchar(20) not null,
   granted_at timestamptz,
   consumed_at timestamptz,
+  reserved_job_id uuid,
+  reservation_token varchar(180),
+  reserved_at timestamptz,
+  reservation_lease_until timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, template_id)
@@ -503,9 +510,20 @@ alter table notification_jobs add column if not exists next_retry_at timestamptz
 alter table notification_jobs add column if not exists last_error text;
 alter table notification_jobs add column if not exists provider_message_id varchar(180);
 alter table notification_jobs add column if not exists provider_response jsonb;
+alter table notification_jobs add column if not exists claim_token varchar(180);
+alter table notification_jobs add column if not exists claimed_at timestamptz;
+alter table notification_jobs add column if not exists lease_until timestamptz;
+alter table notification_subscriptions add column if not exists reserved_job_id uuid;
+alter table notification_subscriptions add column if not exists reservation_token varchar(180);
+alter table notification_subscriptions add column if not exists reserved_at timestamptz;
+alter table notification_subscriptions add column if not exists reservation_lease_until timestamptz;
 
 create index if not exists notification_jobs_due_idx
   on notification_jobs (status, scheduled_at, next_retry_at);
+create index if not exists notification_jobs_lease_idx
+  on notification_jobs (status, lease_until);
+create index if not exists notification_subscriptions_reservation_idx
+  on notification_subscriptions (reserved_job_id, reservation_lease_until);
 
 create table if not exists review_records (
   id uuid primary key default gen_random_uuid(),

@@ -3940,7 +3940,7 @@ function upsertNotificationSetting({ userId = IDS.demoUser, channel, enabled, qu
 }
 
 function saveNotificationSubscriptionResult({ userId, templateKey, templateId, status, idempotencyKey }) {
-  const normalizedUserId = ensureUser(userId);
+  const normalizedUserId = normalizeUserId(userId);
   const normalizedTemplateKey = String(templateKey || '').trim();
   const normalizedTemplateId = String(templateId || '').trim();
   const normalizedStatus = String(status || '').trim();
@@ -3956,90 +3956,143 @@ function saveNotificationSubscriptionResult({ userId, templateKey, templateId, s
     templateId: normalizedTemplateId,
     status: normalizedStatus
   };
-  const existingIdempotency = queryOne(`
-    select
-      request_payload as "requestPayload",
-      response_payload as "responsePayload"
-    from notification_subscription_idempotency
-    where user_id = ${sqlValue(normalizedUserId)}
-      and idempotency_key = ${sqlValue(normalizedKey)}
-    limit 1
-  `);
-  if (existingIdempotency) {
-    if (!sameNotificationSubscriptionRequest(existingIdempotency.requestPayload, requestPayload)) {
-      throw notificationError('IDEMPOTENCY_KEY_CONFLICT', 409);
-    }
-    return { ...existingIdempotency.responsePayload, replayed: true };
-  }
-
-  const subscription = queryReturningOne(`
-    insert into notification_subscriptions (
-      user_id, template_key, template_id, status, granted_at, consumed_at
-    ) values (
-      ${sqlValue(normalizedUserId)},
-      ${sqlValue(normalizedTemplateKey)},
-      ${sqlValue(normalizedTemplateId)},
-      ${sqlValue(normalizedStatus)},
-      ${normalizedStatus === 'accept' ? 'now()' : 'null'},
-      null
-    )
-    on conflict (user_id, template_id) do update set
-      template_key = excluded.template_key,
-      status = excluded.status,
-      granted_at = excluded.granted_at,
-      consumed_at = null,
-      updated_at = now()
-    returning
-      id::text as "id",
-      user_id::text as "userId",
-      template_key as "templateKey",
-      template_id as "templateId",
-      status,
-      granted_at as "grantedAt",
-      consumed_at as "consumedAt",
-      created_at as "createdAt",
-      updated_at as "updatedAt"
-  `);
-  const enabled = queryScalar(`
-    select exists (
-      select 1 from notification_subscriptions
-      where user_id = ${sqlValue(normalizedUserId)} and status = 'accept'
-    )
-  `) === 't';
-  const currentSetting = getNotificationSettings(normalizedUserId)
-    .find((item) => item.channel === 'wechat_subscribe');
-  const setting = upsertNotificationSetting({
-    userId: normalizedUserId,
-    channel: 'wechat_subscribe',
-    enabled,
-    quietHours: currentSetting ? currentSetting.quietHours : null
-  });
-  const responsePayload = { subscription, setting };
-  const inserted = queryScalar(`
-    insert into notification_subscription_idempotency (
-      user_id, idempotency_key, request_payload, response_payload
-    ) values (
-      ${sqlValue(normalizedUserId)},
-      ${sqlValue(normalizedKey)},
-      ${sqlJson(requestPayload)}::jsonb,
-      ${sqlJson(responsePayload)}::jsonb
-    )
-    on conflict (user_id, idempotency_key) do nothing
-    returning id::text
-  `);
-  if (!inserted) {
-    const replay = queryOne(`
-      select request_payload as "requestPayload", response_payload as "responsePayload"
-      from notification_subscription_idempotency
-      where user_id = ${sqlValue(normalizedUserId)} and idempotency_key = ${sqlValue(normalizedKey)}
+  const rawResult = queryTransactionScalar(`
+    begin;
+    create temporary table notification_save_result (payload jsonb) on commit preserve rows;
+    select pg_advisory_xact_lock(hashtextextended(
+      ${sqlValue(`${normalizedUserId}:${normalizedKey}`)}, 0
+    ));
+    with input as materialized (
+      select
+        ${sqlValue(normalizedUserId)}::uuid as user_id,
+        ${sqlValue(normalizedKey)}::text as idempotency_key,
+        ${sqlValue(normalizedTemplateKey)}::text as template_key,
+        ${sqlValue(normalizedTemplateId)}::text as template_id,
+        ${sqlValue(normalizedStatus)}::text as subscription_status,
+        ${sqlJson(requestPayload)}::jsonb as request_payload
+    ), existing as materialized (
+      select record.request_payload, record.response_payload
+      from notification_subscription_idempotency record
+      cross join input
+      where record.user_id = input.user_id
+        and record.idempotency_key = input.idempotency_key
       limit 1
-    `);
-    if (!replay || !sameNotificationSubscriptionRequest(replay.requestPayload, requestPayload)) {
-      throw notificationError('IDEMPOTENCY_KEY_CONFLICT', 409);
-    }
-    return { ...replay.responsePayload, replayed: true };
-  }
-  return responsePayload;
+    ), subscription as (
+      insert into notification_subscriptions (
+        user_id, template_key, template_id, status, granted_at, consumed_at,
+        reserved_job_id, reservation_token, reserved_at, reservation_lease_until
+      )
+      select
+        input.user_id,
+        input.template_key,
+        input.template_id,
+        input.subscription_status,
+        case when input.subscription_status = 'accept' then now() else null end,
+        null,
+        null,
+        null,
+        null,
+        null
+      from input
+      where not exists (select 1 from existing)
+      on conflict (user_id, template_id) do update set
+        template_key = excluded.template_key,
+        status = excluded.status,
+        granted_at = excluded.granted_at,
+        consumed_at = null,
+        reserved_job_id = null,
+        reservation_token = null,
+        reserved_at = null,
+        reservation_lease_until = null,
+        updated_at = now()
+      returning
+        id::text as "id",
+        user_id::text as "userId",
+        template_key as "templateKey",
+        template_id as "templateId",
+        status,
+        granted_at as "grantedAt",
+        consumed_at as "consumedAt",
+        reserved_job_id::text as "reservedJobId",
+        reservation_lease_until as "reservationLeaseUntil",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+    ), availability as materialized (
+      select (
+        input.subscription_status = 'accept'
+        or exists (
+          select 1
+          from notification_subscriptions current_subscription
+          where current_subscription.user_id = input.user_id
+            and current_subscription.template_id <> input.template_id
+            and current_subscription.status = 'accept'
+            and current_subscription.consumed_at is null
+            and (
+              current_subscription.reserved_job_id is null
+              or current_subscription.reservation_lease_until <= now()
+            )
+        )
+      ) as enabled
+      from input
+      cross join subscription
+    ), setting as (
+      insert into notification_settings (user_id, channel, enabled, quiet_hours)
+      select
+        input.user_id,
+        'wechat_subscribe',
+        availability.enabled,
+        (select quiet_hours from notification_settings current_setting
+          where current_setting.user_id = input.user_id and current_setting.channel = 'wechat_subscribe'
+          limit 1)
+      from input
+      cross join availability
+      on conflict (user_id, channel) do update set
+        enabled = excluded.enabled,
+        quiet_hours = excluded.quiet_hours,
+        updated_at = now()
+      returning
+        id::text as "id",
+        user_id::text as "userId",
+        channel,
+        enabled,
+        quiet_hours as "quietHours",
+        updated_at as "updatedAt"
+    ), response as materialized (
+      select jsonb_build_object(
+        'subscription', to_jsonb(subscription),
+        'setting', to_jsonb(setting)
+      ) as payload
+      from subscription
+      cross join setting
+    ), recorded as (
+      insert into notification_subscription_idempotency (
+        user_id, idempotency_key, request_payload, response_payload
+      )
+      select input.user_id, input.idempotency_key, input.request_payload, response.payload
+      from input
+      cross join response
+      returning response_payload
+    )
+    insert into notification_save_result (payload)
+    select jsonb_build_object(
+      'outcome', case
+        when exists (select 1 from existing where request_payload <> (select request_payload from input)) then 'conflict'
+        when exists (select 1 from existing) then 'replay'
+        else 'created'
+      end,
+      'response', coalesce(
+        (select response_payload || jsonb_build_object('replayed', true) from existing
+          where request_payload = (select request_payload from input)),
+        (select response_payload from recorded)
+      )
+    );
+    commit;
+    select payload from notification_save_result limit 1;
+  `);
+  const result = rawResult ? JSON.parse(rawResult) : null;
+  if (!result || result.outcome === 'conflict') throw notificationError('IDEMPOTENCY_KEY_CONFLICT', 409);
+  if (!result.response) throw notificationError('NOTIFICATION_SUBSCRIPTION_INVALID', 400);
+  return result.response;
 }
 
 function getNotificationSubscription({ userId, templateId }) {
@@ -4053,6 +4106,10 @@ function getNotificationSubscription({ userId, templateId }) {
       status,
       granted_at as "grantedAt",
       consumed_at as "consumedAt",
+      reserved_job_id::text as "reservedJobId",
+      reservation_token as "reservationToken",
+      reserved_at as "reservedAt",
+      reservation_lease_until as "reservationLeaseUntil",
       created_at as "createdAt",
       updated_at as "updatedAt"
     from notification_subscriptions
@@ -4068,7 +4125,8 @@ function findAvailableNotificationSubscription({ userId, templateId, templateKey
     `user_id = ${sqlValue(normalizedUserId)}`,
     `template_id = ${sqlValue(String(templateId || '').trim())}`,
     "status = 'accept'",
-    'consumed_at is null'
+    'consumed_at is null',
+    'reserved_job_id is null'
   ];
   if (templateKey) where.push(`template_key = ${sqlValue(String(templateKey).trim())}`);
   return queryOne(`
@@ -4080,6 +4138,10 @@ function findAvailableNotificationSubscription({ userId, templateId, templateKey
       status,
       granted_at as "grantedAt",
       consumed_at as "consumedAt",
+      reserved_job_id::text as "reservedJobId",
+      reservation_token as "reservationToken",
+      reserved_at as "reservedAt",
+      reservation_lease_until as "reservationLeaseUntil",
       created_at as "createdAt",
       updated_at as "updatedAt"
     from notification_subscriptions
@@ -4151,6 +4213,9 @@ function createNotificationJob({ userId = IDS.demoUser, taskId = null, channel, 
       last_error as "lastError",
       provider_message_id as "providerMessageId",
       provider_response as "providerResponse",
+      claim_token as "claimToken",
+      claimed_at as "claimedAt",
+      lease_until as "leaseUntil",
       sent_at as "sentAt",
       created_at as "createdAt",
       updated_at as "updatedAt"
@@ -4317,6 +4382,9 @@ function listNotificationJobs({ userId, limit = 20, status, startAt, endAt, orga
       nj.last_error as "lastError",
       nj.provider_message_id as "providerMessageId",
       nj.provider_response as "providerResponse",
+      nj.claim_token as "claimToken",
+      nj.claimed_at as "claimedAt",
+      nj.lease_until as "leaseUntil",
       nj.sent_at as "sentAt",
       nj.created_at as "createdAt",
       nj.updated_at as "updatedAt",
@@ -4349,6 +4417,9 @@ function listDueNotificationJobs({ dueBefore = new Date().toISOString(), limit =
       last_error as "lastError",
       provider_message_id as "providerMessageId",
       provider_response as "providerResponse",
+      claim_token as "claimToken",
+      claimed_at as "claimedAt",
+      lease_until as "leaseUntil",
       sent_at as "sentAt",
       created_at as "createdAt",
       updated_at as "updatedAt"
@@ -4361,37 +4432,201 @@ function listDueNotificationJobs({ dueBefore = new Date().toISOString(), limit =
   `);
 }
 
-function recordNotificationJobSuccess({ jobId, subscriptionId, providerMessageId, providerResponse, sentAt }) {
+function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claimedAt, leaseUntil, limit = 20 } = {}) {
+  const dueAt = String(dueBefore || new Date().toISOString());
+  const normalizedClaimedAt = String(claimedAt || dueAt);
+  const normalizedLeaseUntil = String(leaseUntil || new Date(Date.parse(normalizedClaimedAt) + 30_000).toISOString());
+  const normalizedLimit = Math.max(0, Math.min(200, Number(limit || 20)));
+  const rawClaimed = queryScalar(`
+    with candidates as materialized (
+      select id, user_id, status
+      from notification_jobs
+      where (
+        status = 'pending'
+        and scheduled_at <= ${sqlValue(dueAt)}
+        and (next_retry_at is null or next_retry_at <= ${sqlValue(dueAt)})
+      ) or (
+        status = 'processing'
+        and lease_until is not null
+        and lease_until <= ${sqlValue(normalizedClaimedAt)}
+      )
+      order by scheduled_at asc
+      limit ${normalizedLimit}
+      for update skip locked
+    ), released as (
+      update notification_subscriptions subscription
+      set
+        reserved_job_id = null,
+        reservation_token = null,
+        reserved_at = null,
+        reservation_lease_until = null,
+        updated_at = ${sqlValue(normalizedClaimedAt)}
+      where subscription.reserved_job_id in (
+        select id from candidates where status = 'processing'
+      )
+      returning subscription.id, subscription.user_id
+    ), recovered_settings as (
+      update notification_settings setting
+      set
+        enabled = exists (
+          select 1
+          from notification_subscriptions subscription
+          where subscription.user_id = setting.user_id
+            and subscription.status = 'accept'
+            and subscription.consumed_at is null
+            and (
+              subscription.reserved_job_id is null
+              or subscription.id in (select id from released)
+              or subscription.reservation_lease_until <= ${sqlValue(normalizedClaimedAt)}
+            )
+        ),
+        updated_at = ${sqlValue(normalizedClaimedAt)}
+      where setting.channel = 'wechat_subscribe'
+        and setting.user_id in (select user_id from released)
+      returning setting.id
+    ), claimed as (
+      update notification_jobs job
+      set
+        status = 'processing',
+        claim_token = gen_random_uuid()::text,
+        claimed_at = ${sqlValue(normalizedClaimedAt)},
+        lease_until = ${sqlValue(normalizedLeaseUntil)},
+        updated_at = ${sqlValue(normalizedClaimedAt)}
+      where job.id in (select id from candidates)
+        and (select count(*) from recovered_settings) >= 0
+      returning
+        job.id::text as "id",
+        job.user_id::text as "userId",
+        job.task_id::text as "taskId",
+        job.channel,
+        job.scheduled_at as "scheduledAt",
+        job.status,
+        job.payload,
+        job.attempt_count as "attemptCount",
+        job.next_retry_at as "nextRetryAt",
+        job.last_error as "lastError",
+        job.provider_message_id as "providerMessageId",
+        job.provider_response as "providerResponse",
+        job.claim_token as "claimToken",
+        job.claimed_at as "claimedAt",
+        job.lease_until as "leaseUntil",
+        job.sent_at as "sentAt",
+        job.created_at as "createdAt",
+        job.updated_at as "updatedAt"
+    )
+    select coalesce(json_agg(row_to_json(claimed) order by "scheduledAt"), '[]'::json)
+    from claimed
+  `);
+  return JSON.parse(rawClaimed || '[]');
+}
+
+function reserveNotificationSubscription({ jobId, claimToken, templateId, templateKey, leaseUntil, reservedAt } = {}) {
+  const normalizedJobId = normalizeId(jobId);
+  const normalizedClaimToken = String(claimToken || '').trim();
+  const rawReserved = queryScalar(`
+    with job_claim as materialized (
+      select
+        job.id,
+        job.user_id,
+        coalesce(${sqlValue(reservedAt)}::timestamptz, job.claimed_at, now()) as reservation_time,
+        coalesce(${sqlValue(leaseUntil)}::timestamptz, job.lease_until) as reservation_lease_until
+      from notification_jobs job
+      where job.id = ${sqlValue(normalizedJobId)}
+        and job.status = 'processing'
+        and job.claim_token = ${sqlValue(normalizedClaimToken)}
+      for update
+    ), candidate as materialized (
+      select subscription.id
+      from notification_subscriptions subscription
+      cross join job_claim
+      where subscription.user_id = job_claim.user_id
+        and subscription.template_id = ${sqlValue(String(templateId || '').trim())}
+        and (${templateKey ? `subscription.template_key = ${sqlValue(String(templateKey).trim())}` : 'true'})
+        and subscription.status = 'accept'
+        and subscription.consumed_at is null
+        and (
+          subscription.reserved_job_id is null
+          or subscription.reservation_lease_until <= job_claim.reservation_time
+        )
+      order by subscription.granted_at asc
+      limit 1
+      for update skip locked
+    ), reserved as (
+      update notification_subscriptions subscription
+      set
+        reserved_job_id = job_claim.id,
+        reservation_token = ${sqlValue(normalizedClaimToken)},
+        reserved_at = job_claim.reservation_time,
+        reservation_lease_until = job_claim.reservation_lease_until,
+        updated_at = job_claim.reservation_time
+      from job_claim
+      where subscription.id in (select id from candidate)
+      returning
+        subscription.id::text as "id",
+        subscription.user_id::text as "userId",
+        subscription.template_key as "templateKey",
+        subscription.template_id as "templateId",
+        subscription.status,
+        subscription.granted_at as "grantedAt",
+        subscription.consumed_at as "consumedAt",
+        subscription.reserved_job_id::text as "reservedJobId",
+        subscription.reservation_token as "reservationToken",
+        subscription.reserved_at as "reservedAt",
+        subscription.reservation_lease_until as "reservationLeaseUntil",
+        subscription.created_at as "createdAt",
+        subscription.updated_at as "updatedAt"
+    ), channel_setting as (
+      update notification_settings setting
+      set
+        enabled = exists (
+          select 1
+          from notification_subscriptions subscription
+          cross join job_claim
+          where subscription.user_id = job_claim.user_id
+            and subscription.status = 'accept'
+            and subscription.consumed_at is null
+            and subscription.id not in (select id::uuid from reserved)
+            and (
+              subscription.reserved_job_id is null
+              or subscription.reservation_lease_until <= job_claim.reservation_time
+            )
+        ),
+        updated_at = (select reservation_time from job_claim)
+      where setting.user_id = (select user_id from job_claim)
+        and setting.channel = 'wechat_subscribe'
+        and exists (select 1 from reserved)
+      returning setting.id
+    )
+    select row_to_json(reserved)
+    from reserved
+    where (select count(*) from channel_setting) >= 0
+  `);
+  return rawReserved ? JSON.parse(rawReserved) : null;
+}
+
+function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, providerMessageId, providerResponse, sentAt }) {
   const completedAt = String(sentAt || new Date().toISOString());
   const rawUpdated = queryScalar(`
     with consumed as (
-      update notification_subscriptions
-      set consumed_at = ${sqlValue(completedAt)}, updated_at = ${sqlValue(completedAt)}
-      where id = ${sqlValue(normalizeId(subscriptionId))}
-        and status = 'accept'
-        and consumed_at is null
-        and user_id = (
-          select user_id from notification_jobs
-          where id = ${sqlValue(normalizeId(jobId))} and status = 'pending'
-        )
-      returning id
-    ), channel_setting as (
-      update notification_settings
+      update notification_subscriptions subscription
       set
-        enabled = exists (
-          select 1 from notification_subscriptions
-          where user_id = (
-              select user_id from notification_jobs where id = ${sqlValue(normalizeId(jobId))}
-            )
-            and id <> ${sqlValue(normalizeId(subscriptionId))}
-            and status = 'accept'
-            and consumed_at is null
-        ),
+        consumed_at = ${sqlValue(completedAt)},
+        reserved_job_id = null,
+        reservation_token = null,
+        reserved_at = null,
+        reservation_lease_until = null,
         updated_at = ${sqlValue(completedAt)}
-      where user_id = (
-          select user_id from notification_jobs where id = ${sqlValue(normalizeId(jobId))}
+      where subscription.id = ${sqlValue(normalizeId(subscriptionId))}
+        and subscription.status = 'accept'
+        and subscription.consumed_at is null
+        and subscription.reserved_job_id = ${sqlValue(normalizeId(jobId))}
+        and subscription.reservation_token = ${sqlValue(String(claimToken || '').trim())}
+        and subscription.user_id = (
+          select user_id from notification_jobs job
+          where job.id = ${sqlValue(normalizeId(jobId))}
+            and job.status = 'processing'
+            and job.claim_token = ${sqlValue(String(claimToken || '').trim())}
         )
-        and channel = 'wechat_subscribe'
       returning id
     ), updated as (
       update notification_jobs
@@ -4403,11 +4638,14 @@ function recordNotificationJobSuccess({ jobId, subscriptionId, providerMessageId
         last_error = null,
         provider_message_id = ${sqlValue(String(providerMessageId || ''))},
         provider_response = ${sqlJson(providerResponse || null)}::jsonb,
+        claim_token = null,
+        claimed_at = null,
+        lease_until = null,
         updated_at = ${sqlValue(completedAt)}
       where id = ${sqlValue(normalizeId(jobId))}
-        and status = 'pending'
+        and status = 'processing'
+        and claim_token = ${sqlValue(String(claimToken || '').trim())}
         and exists (select 1 from consumed)
-        and (select count(*) from channel_setting) >= 0
       returning
         id::text as "id",
         user_id::text as "userId",
@@ -4421,39 +4659,67 @@ function recordNotificationJobSuccess({ jobId, subscriptionId, providerMessageId
         last_error as "lastError",
         provider_message_id as "providerMessageId",
         provider_response as "providerResponse",
+        claim_token as "claimToken",
+        claimed_at as "claimedAt",
+        lease_until as "leaseUntil",
         sent_at as "sentAt",
         created_at as "createdAt",
         updated_at as "updatedAt"
+    ), channel_setting as (
+      update notification_settings setting
+      set
+        enabled = exists (
+          select 1 from notification_subscriptions subscription
+          where subscription.user_id = (select "userId"::uuid from updated)
+            and subscription.id <> ${sqlValue(normalizeId(subscriptionId))}
+            and subscription.status = 'accept'
+            and subscription.consumed_at is null
+            and (
+              subscription.reserved_job_id is null
+              or subscription.reservation_lease_until <= ${sqlValue(completedAt)}
+            )
+        ),
+        updated_at = ${sqlValue(completedAt)}
+      where setting.user_id = (select "userId"::uuid from updated)
+        and setting.channel = 'wechat_subscribe'
+      returning setting.id
     )
     select row_to_json(updated) from updated
+    where (select count(*) from channel_setting) >= 0
   `);
   const updated = rawUpdated ? JSON.parse(rawUpdated) : null;
   if (!updated) throw notificationError('WECHAT_SUBSCRIPTION_REQUIRED', 409);
   return updated;
 }
 
-function recordNotificationJobFailure({ jobId, error, retryable, providerResponse, attemptedAt }) {
+function recordNotificationJobFailure({ jobId, claimToken, error, retryable, providerResponse, attemptedAt }) {
   const failedAt = String(attemptedAt || new Date().toISOString());
   const retryableSql = retryable ? 'true' : 'false';
-  const updated = queryReturningOne(`
-    update notification_jobs
-    set
-      status = case when ${retryableSql} and attempt_count + 1 < 3 then 'pending' else 'failed' end,
-      attempt_count = attempt_count + 1,
-      next_retry_at = case
-        when ${retryableSql} and attempt_count + 1 < 3 then
-          ${sqlValue(failedAt)}::timestamptz + case attempt_count
-            when 0 then interval '1 minute'
-            when 1 then interval '5 minutes'
-            else interval '30 minutes'
-          end
-        else null
-      end,
-      last_error = ${sqlValue(String(error || 'NOTIFICATION_DELIVERY_FAILED'))},
-      provider_response = ${sqlJson(providerResponse || null)}::jsonb,
-      updated_at = ${sqlValue(failedAt)}
-    where id = ${sqlValue(normalizeId(jobId))} and status = 'pending'
-    returning
+  const rawUpdated = queryScalar(`
+    with updated_job as (
+      update notification_jobs
+      set
+        status = case when ${retryableSql} and attempt_count + 1 < 3 then 'pending' else 'failed' end,
+        attempt_count = attempt_count + 1,
+        next_retry_at = case
+          when ${retryableSql} and attempt_count + 1 < 3 then
+            ${sqlValue(failedAt)}::timestamptz + case attempt_count
+              when 0 then interval '1 minute'
+              when 1 then interval '5 minutes'
+              else interval '30 minutes'
+            end
+          else null
+        end,
+        last_error = ${sqlValue(String(error || 'NOTIFICATION_DELIVERY_FAILED'))},
+        provider_response = ${sqlJson(providerResponse || null)}::jsonb,
+        claim_token = null,
+        claimed_at = null,
+        lease_until = null,
+        updated_at = ${sqlValue(failedAt)}
+      where id = ${sqlValue(normalizeId(jobId))}
+        and status = 'processing'
+        and claim_token = ${sqlValue(String(claimToken || '').trim())}
+      returning
       id::text as "id",
       user_id::text as "userId",
       task_id::text as "taskId",
@@ -4466,11 +4732,48 @@ function recordNotificationJobFailure({ jobId, error, retryable, providerRespons
       last_error as "lastError",
       provider_message_id as "providerMessageId",
       provider_response as "providerResponse",
+      claim_token as "claimToken",
+      claimed_at as "claimedAt",
+      lease_until as "leaseUntil",
       sent_at as "sentAt",
       created_at as "createdAt",
       updated_at as "updatedAt"
+    ), released as (
+      update notification_subscriptions subscription
+      set
+        reserved_job_id = null,
+        reservation_token = null,
+        reserved_at = null,
+        reservation_lease_until = null,
+        updated_at = ${sqlValue(failedAt)}
+      where subscription.reserved_job_id = ${sqlValue(normalizeId(jobId))}
+        and subscription.reservation_token = ${sqlValue(String(claimToken || '').trim())}
+        and exists (select 1 from updated_job)
+      returning subscription.id, subscription.user_id
+    ), channel_setting as (
+      update notification_settings setting
+      set
+        enabled = exists (
+          select 1 from notification_subscriptions subscription
+          where subscription.user_id = (select "userId"::uuid from updated_job)
+            and subscription.status = 'accept'
+            and subscription.consumed_at is null
+            and (
+              subscription.reserved_job_id is null
+              or subscription.id in (select id from released)
+              or subscription.reservation_lease_until <= ${sqlValue(failedAt)}
+            )
+        ),
+        updated_at = ${sqlValue(failedAt)}
+      where setting.user_id = (select "userId"::uuid from updated_job)
+        and setting.channel = 'wechat_subscribe'
+      returning setting.id
+    )
+    select row_to_json(updated_job) from updated_job
+    where (select count(*) from channel_setting) >= 0
   `);
-  if (!updated) throw notificationError('NOTIFICATION_JOB_NOT_PENDING', 409);
+  const updated = rawUpdated ? JSON.parse(rawUpdated) : null;
+  if (!updated) throw notificationError('NOTIFICATION_JOB_CLAIM_INVALID', 409);
   return updated;
 }
 
@@ -5404,6 +5707,29 @@ function queryScalar(sql) {
   return output.trim();
 }
 
+function queryTransactionScalar(sql) {
+  const output = execFileSync(PSQL_BIN, [
+    '-X',
+    '-q',
+    '-h', DB_CONFIG.host,
+    '-p', DB_CONFIG.port,
+    '-U', DB_CONFIG.user,
+    '-d', DB_CONFIG.database,
+    '-t',
+    '-A',
+    '-v', 'ON_ERROR_STOP=1',
+    '-c', sql
+  ], {
+    env: {
+      ...process.env,
+      PGPASSWORD: DB_CONFIG.password
+    },
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024 * 8
+  });
+  return output.trim();
+}
+
 function sqlValue(value) {
   if (value === null || value === undefined) return 'null';
   return `'${String(value).replace(/'/g, "''")}'`;
@@ -5432,12 +5758,6 @@ function notificationError(code, statusCode) {
   error.code = code;
   error.statusCode = statusCode;
   return error;
-}
-
-function sameNotificationSubscriptionRequest(left = {}, right = {}) {
-  return left.templateKey === right.templateKey &&
-    left.templateId === right.templateId &&
-    left.status === right.status;
 }
 
 function hashAdminPassword(password) {
@@ -5506,6 +5826,7 @@ module.exports = {
   listFestivals,
   listNotificationJobs,
   listDueNotificationJobs,
+  claimDueNotificationJobs,
   isNotificationChannelEnabled,
   listOrganizationAssets,
   listOrganizations,
@@ -5519,6 +5840,7 @@ module.exports = {
   updateFestival,
   updateAssetAccess,
   findAvailableNotificationSubscription,
+  reserveNotificationSubscription,
   recordNotificationJobFailure,
   recordNotificationJobSuccess,
   saveNotificationSubscriptionResult,

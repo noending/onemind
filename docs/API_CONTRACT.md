@@ -419,7 +419,7 @@ Idempotency-Key: <1-180 characters>
 }
 ```
 
-未配置时返回 `available=false`、空模板数组和 `WECHAT_SUBSCRIBE_NOT_CONFIGURED`。
+未配置模板时返回 `available=false`、空模板数组和 `WECHAT_SUBSCRIBE_NOT_CONFIGURED`。模板有效但缺少 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`，或 `WECHAT_LOGIN_MODE` 不是 `real` 时返回 `WECHAT_SUBSCRIBE_PROVIDER_NOT_READY`；响应不包含任何配置值。
 
 ### 读取提醒设置
 
@@ -482,7 +482,9 @@ Idempotency-Key: <unique-key, max 180 chars>
 }
 ```
 
-`status` 仅支持 `accept | reject | ban`。相同幂等键和相同请求安全重放；同一键复用到不同请求返回 `409 IDEMPOTENCY_KEY_CONFLICT`。至少一个模板为 `accept` 后 `wechat_subscribe` setting 才启用；最后一份授权发送并消费后自动关闭。
+`status` 仅支持 `accept | reject | ban`。相同幂等键和相同请求安全重放；同一键复用到不同请求返回 `409 IDEMPOTENCY_KEY_CONFLICT`。PostgreSQL 使用同一连接事务和 user+idempotencyKey advisory xact lock，在事务内完成重放/冲突校验、授权 upsert、setting 计算和响应记录。provider 未 ready 返回 `503`；用户没有真实服务端 openid 返回 `409 WECHAT_REAL_LOGIN_REQUIRED`。
+
+`wechat_subscribe.enabled` 仅统计 `accept`、未消费且未被有效 reservation 占用的授权。消费一个模板后如仍有可用授权则保持开启；最后一份可用授权 reject/ban/consume 后关闭。
 
 ### 创建提醒任务
 
@@ -576,7 +578,7 @@ Authorization: Bearer <admin-token>
 - `dueBefore`
 - `limit`
 
-路由会 await 异步 dispatcher。dispatcher 只读取到期 `pending` 任务，并校验模板配置、真实 openid、未消费 `accept` 授权后调用微信。返回：
+路由会 await 异步 dispatcher。每轮仅将一个到期 `pending` 任务原子 claim 为 `processing`，写入不可猜测的 `claimToken` 和 5 分钟 `leaseUntil`；随后原子 reservation 一份同用户、同模板、未消费 `accept` 授权，再调用微信。竞争失败的 dispatcher 不调用 provider。过期 lease 在后续 claim 时恢复为 `pending` 并释放 reservation。返回：
 
 ```json
 {
@@ -594,6 +596,8 @@ Authorization: Bearer <admin-token>
 ```
 
 微信返回非零 `errcode` 时不会标记 `sent`。可重试失败写入 `attemptCount/nextRetryAt/lastError/providerResponse`，最多尝试 3 次；永久失败或第 3 次失败标记 `failed`。
+
+该路由要求 `notification.dispatch` 权限。
 
 ### 管理后台页面
 
@@ -635,6 +639,7 @@ Authorization: Bearer <admin-token>
 - 组织成员管理：`organization.member.manage`
 - 资产可见级别变更：`asset.access.manage`
 - 内容/资产下架：`content.publish` / `asset.publish`
+- 通知手动派发：`notification.dispatch`，仅授予 `super_admin` / `platform_ops` / `organization_admin`
 
 ### 新增内容
 

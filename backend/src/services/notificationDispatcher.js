@@ -1,4 +1,4 @@
-const { resolveTemplateForJobType } = require('./wechatSubscribeConfig');
+const { isWechatServerOpenid, resolveTemplateForJobType } = require('./wechatSubscribeConfig');
 
 function createStats() {
   return {
@@ -16,16 +16,11 @@ function providerStats(stats, provider) {
   return stats.providers[provider];
 }
 
-function isDeliverableOpenid(value) {
-  const openid = String(value || '').trim();
-  return Boolean(openid && !openid.startsWith('mock_'));
-}
-
-function createNotificationDispatcher({ repository, templateConfig, sender, now = () => new Date() } = {}) {
+function createNotificationDispatcher({ repository, templateConfig, sender, providerReady = true, now = () => new Date(), leaseMs = 5 * 60_000 } = {}) {
   const requiredMethods = [
-    'listDueNotificationJobs',
+    'claimDueNotificationJobs',
     'getNotificationDeliveryTarget',
-    'findAvailableNotificationSubscription',
+    'reserveNotificationSubscription',
     'isNotificationChannelEnabled',
     'recordNotificationJobSuccess',
     'recordNotificationJobFailure'
@@ -39,6 +34,7 @@ function createNotificationDispatcher({ repository, templateConfig, sender, now 
     const attemptedAt = now().toISOString();
     const updated = repository.recordNotificationJobFailure({
       jobId: job.id,
+      claimToken: job.claimToken,
       error,
       retryable: Boolean(retryable),
       providerResponse,
@@ -61,6 +57,9 @@ function createNotificationDispatcher({ repository, templateConfig, sender, now 
     if (job.channel !== 'wechat_subscribe') {
       return recordFailure(stats, job, { error: 'NOTIFICATION_PROVIDER_UNSUPPORTED', retryable: false });
     }
+    if (!providerReady) {
+      return recordFailure(stats, job, { error: 'WECHAT_SUBSCRIBE_PROVIDER_NOT_READY', retryable: false });
+    }
     if (!repository.isNotificationChannelEnabled(job.userId, job.channel)) {
       return recordFailure(stats, job, { error: 'NOTIFICATION_CHANNEL_DISABLED', retryable: false });
     }
@@ -69,13 +68,16 @@ function createNotificationDispatcher({ repository, templateConfig, sender, now 
       return recordFailure(stats, job, { error: 'WECHAT_TEMPLATE_NOT_CONFIGURED', retryable: false });
     }
     const target = repository.getNotificationDeliveryTarget(job.userId);
-    if (!target || !isDeliverableOpenid(target.openid)) {
+    if (!target || !isWechatServerOpenid(target.openid)) {
       return recordFailure(stats, job, { error: 'WECHAT_OPENID_REQUIRED', retryable: false });
     }
-    const subscription = repository.findAvailableNotificationSubscription({
-      userId: job.userId,
+    const subscription = repository.reserveNotificationSubscription({
+      jobId: job.id,
+      claimToken: job.claimToken,
       templateId: template.templateId,
-      templateKey: template.key
+      templateKey: template.key,
+      leaseUntil: job.leaseUntil,
+      reservedAt: now().toISOString()
     });
     if (!subscription) {
       return recordFailure(stats, job, { error: 'WECHAT_SUBSCRIPTION_REQUIRED', retryable: false });
@@ -102,6 +104,7 @@ function createNotificationDispatcher({ repository, templateConfig, sender, now 
 
     const updated = repository.recordNotificationJobSuccess({
       jobId: job.id,
+      claimToken: job.claimToken,
       subscriptionId: subscription.id,
       providerMessageId: outcome.providerMessageId || '',
       providerResponse: outcome.providerResponse,
@@ -113,9 +116,19 @@ function createNotificationDispatcher({ repository, templateConfig, sender, now 
   }
 
   async function dispatchDue({ dueBefore = now().toISOString(), limit = 20 } = {}) {
-    const jobs = repository.listDueNotificationJobs({ dueBefore, limit });
     const stats = createStats();
-    for (const job of jobs) await dispatchJob(stats, job);
+    const normalizedLimit = Math.max(0, Math.min(200, Number(limit || 20)));
+    while (stats.processed < normalizedLimit) {
+      const claimedAt = now();
+      const [job] = repository.claimDueNotificationJobs({
+        dueBefore,
+        claimedAt: claimedAt.toISOString(),
+        leaseUntil: new Date(claimedAt.getTime() + leaseMs).toISOString(),
+        limit: 1
+      });
+      if (!job) break;
+      await dispatchJob(stats, job);
+    }
     return stats;
   }
 

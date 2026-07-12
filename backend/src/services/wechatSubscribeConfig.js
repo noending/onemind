@@ -61,7 +61,22 @@ function parseWechatSubscribeTemplates(rawValue = process.env.WECHAT_SUBSCRIBE_T
   return { templates };
 }
 
-function toPublicCapabilities(config = { templates: [] }) {
+function isWechatProviderReady(config = { templates: [] }, env = process.env) {
+  const templates = Array.isArray(config.templates) ? config.templates : [];
+  return Boolean(
+    templates.length &&
+    String(env.WECHAT_APP_ID || '').trim() &&
+    String(env.WECHAT_APP_SECRET || '').trim() &&
+    String(env.WECHAT_LOGIN_MODE || '').trim().toLowerCase() === 'real'
+  );
+}
+
+function isWechatServerOpenid(value) {
+  const openid = String(value || '').trim();
+  return Boolean(openid && !openid.startsWith('mock_'));
+}
+
+function toPublicCapabilities(config = { templates: [] }, env = process.env) {
   const templates = Array.isArray(config.templates) ? config.templates : [];
   if (!templates.length) {
     return {
@@ -69,6 +84,14 @@ function toPublicCapabilities(config = { templates: [] }) {
       available: false,
       templates: [],
       error: 'WECHAT_SUBSCRIBE_NOT_CONFIGURED'
+    };
+  }
+  if (!isWechatProviderReady(config, env)) {
+    return {
+      provider: 'wechat_subscribe',
+      available: false,
+      templates: [],
+      error: 'WECHAT_SUBSCRIBE_PROVIDER_NOT_READY'
     };
   }
   return {
@@ -92,6 +115,8 @@ function findTemplateById(config = { templates: [] }, templateId) {
 
 module.exports = {
   findTemplateById,
+  isWechatProviderReady,
+  isWechatServerOpenid,
   parseWechatSubscribeTemplates,
   resolveTemplateForJobType,
   toPublicCapabilities

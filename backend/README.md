@@ -61,11 +61,17 @@ WECHAT_SUBSCRIBE_TEMPLATES_JSON='{"review":{"templateId":"WECHAT_REVIEW_TEMPLATE
 
 `fields` 的值默认是 `notification_jobs.payload` 内的路径；`scheduledAt` 等 job 根字段也可直接引用。真实发送必须使用 `WECHAT_LOGIN_MODE=real` 获得的 openid，`mock_*` 登录标识会被 dispatcher 拒绝。
 
+provider 只有在模板配置有效、`WECHAT_APP_ID`、`WECHAT_APP_SECRET` 均非空且 `WECHAT_LOGIN_MODE=real` 时才 ready。capabilities 与授权保存共用该判断，不回传任何配置值。
+
+dispatcher 每次仅 claim 一个到期任务为 `processing`，写入 `claim_token/claimed_at/lease_until` 后才允许外发。授权也会按 job 和 claim token 原子 reservation；成功时原子 `sent + consume`，失败时释放 reservation 并按最多 3 次退避，过期 lease 会在下次 claim 时恢复。
+
 三层验证入口：
 
 - 队列：`GET /api/notification-jobs`
 - 授权：`GET /api/notification-capabilities` 和 `POST /api/notification-subscriptions/wechat`
 - 外发：`POST /api/admin/notification-jobs/dispatch`，返回 `sent/failed/retrying/providers`
+
+手动派发要求 `notification.dispatch`；仅 `super_admin`、`platform_ops`、`organization_admin` 拥有该权限。
 
 Default local database settings:
 

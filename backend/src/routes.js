@@ -13,7 +13,7 @@ const {
   copyContentAsNewVersion,
   createAdaptivePlan,
   createPlan,
-  findAvailableNotificationSubscription,
+  claimDueNotificationJobs,
   completeTask,
   findAdminByCredentials,
   getAdminById,
@@ -33,7 +33,6 @@ const {
   listContents,
   listFestivals,
   listNotificationJobs,
-  listDueNotificationJobs,
   isNotificationChannelEnabled,
   listOrganizationAssets,
   listOrganizations,
@@ -51,11 +50,14 @@ const {
   updateAssetAccess,
   recordNotificationJobFailure,
   recordNotificationJobSuccess,
+  reserveNotificationSubscription,
   saveNotificationSubscriptionResult,
   completeStudyTaskItem
 } = require('./repositories/store');
 const {
   findTemplateById,
+  isWechatProviderReady,
+  isWechatServerOpenid,
   parseWechatSubscribeTemplates,
   toPublicCapabilities
 } = require('./services/wechatSubscribeConfig');
@@ -91,15 +93,16 @@ const wechatSubscribeSender = createWechatSubscribeSender({
 });
 const notificationDispatcher = createNotificationDispatcher({
   repository: {
-    findAvailableNotificationSubscription,
+    claimDueNotificationJobs,
     getNotificationDeliveryTarget,
     isNotificationChannelEnabled,
-    listDueNotificationJobs,
     recordNotificationJobFailure,
-    recordNotificationJobSuccess
+    recordNotificationJobSuccess,
+    reserveNotificationSubscription
   },
   sender: wechatSubscribeSender,
-  templateConfig: WECHAT_SUBSCRIBE_CONFIG
+  templateConfig: WECHAT_SUBSCRIBE_CONFIG,
+  providerReady: isWechatProviderReady(WECHAT_SUBSCRIBE_CONFIG)
 });
 
 const ROLE_PERMISSIONS = {
@@ -110,13 +113,15 @@ const ROLE_PERMISSIONS = {
     'asset.write',
     'asset.publish',
     'asset.access.manage',
-    'organization.member.manage'
+    'organization.member.manage',
+    'notification.dispatch'
   ],
   platform_ops: [
     'admin.read',
     'content.write',
     'content.publish',
-    'asset.write'
+    'asset.write',
+    'notification.dispatch'
   ],
   content_editor: [
     'admin.read',
@@ -135,7 +140,8 @@ const ROLE_PERMISSIONS = {
     'asset.write',
     'asset.publish',
     'asset.access.manage',
-    'organization.member.manage'
+    'organization.member.manage',
+    'notification.dispatch'
   ],
   asset_maintainer: [
     'admin.read',
@@ -302,6 +308,13 @@ async function handleRequest(req, res, body) {
     if (!template) return sendJson(res, 400, { error: 'WECHAT_SUBSCRIBE_TEMPLATE_INVALID' });
     if (!['accept', 'reject', 'ban'].includes(String(payload.status || '').trim())) {
       return sendJson(res, 400, { error: 'WECHAT_SUBSCRIBE_STATUS_INVALID' });
+    }
+    if (!isWechatProviderReady(WECHAT_SUBSCRIBE_CONFIG)) {
+      return sendJson(res, 503, { error: 'WECHAT_SUBSCRIBE_PROVIDER_NOT_READY' });
+    }
+    const target = getNotificationDeliveryTarget(userSession.id);
+    if (!target || !isWechatServerOpenid(target.openid)) {
+      return sendJson(res, 409, { error: 'WECHAT_REAL_LOGIN_REQUIRED' });
     }
     return sendJson(res, 200, {
       data: saveNotificationSubscriptionResult({
@@ -976,7 +989,7 @@ function requiresAdminAuth(method, pathname) {
 function getRequiredPermission(method, pathname) {
   if (pathname.startsWith('/api/admin/')) {
     if (pathname === '/api/admin/overview' || pathname === '/api/admin/session') return 'admin.read';
-    if (pathname === '/api/admin/notification-jobs/dispatch' && method === 'POST') return 'admin.read';
+    if (pathname === '/api/admin/notification-jobs/dispatch' && method === 'POST') return 'notification.dispatch';
     if (pathname === '/api/admin/contents' && method === 'GET') return 'admin.read';
     if (pathname === '/api/admin/contents' && method === 'POST') return 'content.write';
     if (pathname.startsWith('/api/admin/contents/') && pathname.endsWith('/versions') && method === 'GET') return 'admin.read';

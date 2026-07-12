@@ -30,8 +30,8 @@
   - `requiresAdminAuth(method, pathname)` / `getRequiredPermission(method, pathname)` / `hasAdminPermission(role, permission)`。
   - `createSignedToken(payload, secret, expiresIn, type)`：基于 `crypto.createHmac('sha256', secret).update(payload + exp + type)`。
 - 角色权限矩阵（`ROLE_PERMISSIONS`）：
-  - `super_admin`：`admin.read` / `content.write` / `content.publish` / `asset.write` / `asset.publish` / `asset.access.manage` / `organization.member.manage`。
-  - `platform_ops`：`admin.read` / `content.write` / `content.publish` / `asset.write`。
+  - `super_admin`：`admin.read` / `content.write` / `content.publish` / `asset.write` / `asset.publish` / `asset.access.manage` / `organization.member.manage` / `notification.dispatch`。
+  - `platform_ops`：`admin.read` / `content.write` / `content.publish` / `asset.write` / `notification.dispatch`。
   - `content_editor`：`admin.read` / `content.write` / `asset.write`。
   - `content_reviewer`：`admin.read` / `content.publish` / `asset.publish`。
   - `organization_admin`：与 `super_admin` 同。
@@ -61,7 +61,7 @@
   - 内容：`listContents(filters)` / `createContent(payload)` / `updateContent(contentId, payload)` / `archiveContent(contentId)` / `getContent(contentId)` / `listFestivals()`。
   - 计划与任务：`listPlans(userId)` / `createPlan({ userId, contentId, startDate, mode })` / `completeTask({ taskId, result, selfRating, latencyBand, mistakeCount, note })`。
   - 用户与会话：`loginByWechatCode(payload)` / `getUserById(userId)`。
-  - 通知：repository 负责授权、到期任务和原子成功/失败状态；`notificationDispatcher` 负责异步微信发送编排，不再存在 repository mock dispatch。
+  - 通知：repository 负责 claim/lease、授权 reservation、到期恢复和原子成功/失败状态；`notificationDispatcher` 每次 claim 一个任务后编排真实微信发送。
   - 成长 / 读诵：`getGrowthOverview(userId)` / `listRecitationGoals(userId)` / `upsertRecitationGoal({ userId, contentId, goalType, preferredPeriod, dailyTargetCount })` / `createRecitationSession({ ... })`。
   - 今日：`listTodayFocus(userId)`。
   - 仪表盘：`getDashboard()`。

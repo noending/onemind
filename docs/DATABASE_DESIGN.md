@@ -37,7 +37,7 @@
 
 - `recitation_goals.goal_type`: `daily`（预留扩展）
 - `recitation_sessions.session_type`: `free | daily | themed`（按接口约定扩展）
-- `notification_jobs.status`: `pending | sent | failed | cancelled`
+- `notification_jobs.status`: `pending | processing | sent | failed | cancelled`
 
 ## 4. 实体关系总览
 
@@ -201,8 +201,10 @@
 
 - `notification_settings.quiet_hours` 为 jsonb。
 - `notification_subscriptions.status` 为 `accept | reject | ban`，`granted_at/consumed_at` 区分授权和单次消费。
+- `notification_subscriptions.reserved_job_id/reservation_token/reserved_at/reservation_lease_until` 记录外发前的单 job 授权 reservation。
 - `notification_jobs.payload` 为 jsonb。
 - `notification_jobs.attempt_count/next_retry_at/last_error` 记录最多 3 次派发状态。
+- `notification_jobs.claim_token/claimed_at/lease_until` 记录 `processing` claim；过期 lease 可恢复并释放 reservation。
 - `provider_message_id/provider_response` 保存微信回执；只有 `errcode=0` 才写 `sent_at` 和 `status=sent`。
 
 ## 5.9 audit_logs

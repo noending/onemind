@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 
 process.env.WECHAT_SUBSCRIBE_TEMPLATES_JSON = JSON.stringify({
   review: {
@@ -12,6 +13,7 @@ process.env.WECHAT_SUBSCRIBE_TEMPLATES_JSON = JSON.stringify({
 });
 process.env.WECHAT_APP_ID = 'route-test-app-id';
 process.env.WECHAT_APP_SECRET = 'route-test-app-secret';
+process.env.WECHAT_LOGIN_MODE = 'real';
 const wechatRequests = [];
 global.fetch = async (url, options = {}) => {
   wechatRequests.push({ url, options });
@@ -48,12 +50,22 @@ function request({ method = 'GET', pathname, headers = {}, payload }) {
 }
 
 async function login(overrides = {}) {
-  const response = await request({
-    method: 'POST',
-    pathname: '/api/auth/wechat/login',
-    payload: { code: `notification-${Date.now()}`, userInfo: { nickName: '通知测试用户' }, ...overrides }
+  const user = memoryStore.loginByWechatCode({
+    code: `notification-${Date.now()}-${Math.random()}`,
+    wechatOpenid: overrides.wechatOpenid || `real-route-openid-${Date.now()}-${Math.random()}`,
+    userInfo: { nickName: '通知测试用户' }
   });
-  return response.body.data;
+  return {
+    token: createTestToken('usr', { sub: user.id, platform: 'wechat' }, 'oneMind-local-user'),
+    user
+  };
+}
+
+function createTestToken(prefix, payload, secret) {
+  const body = Buffer.from(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + 3600 }))
+    .toString('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(`${prefix}.${body}`).digest('base64url');
+  return `${prefix}.${body}.${signature}`;
 }
 
 test('capabilities are public and expose only template identity fields', async () => {
@@ -114,6 +126,53 @@ test('subscription result requires auth and idempotency, replays safely, and ena
   });
   assert.equal(bypass.statusCode, 409);
   assert.equal(bypass.body.error, 'WECHAT_SUBSCRIPTION_ACCEPT_REQUIRED');
+});
+
+test('subscription result rejects a user without a real server-side openid', async () => {
+  const user = memoryStore.loginByWechatCode({
+    code: `notification-mock-${Date.now()}`,
+    wechatOpenid: `mock_notification_${Date.now()}`,
+    userInfo: { nickName: '非真实登录用户' }
+  });
+  const response = await request({
+    method: 'POST',
+    pathname: '/api/notification-subscriptions/wechat',
+    headers: {
+      authorization: `Bearer ${createTestToken('usr', { sub: user.id, platform: 'wechat' }, 'oneMind-local-user')}`,
+      'idempotency-key': `mock-openid-${Date.now()}`
+    },
+    payload: { templateId: 'route-tmpl-review', status: 'accept' }
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, 'WECHAT_REAL_LOGIN_REQUIRED');
+});
+
+test('notification dispatch permission rejects readonly member and allows platform operations role', async () => {
+  const readonlyToken = createTestToken('adm', {
+    sub: 'missing-readonly-admin',
+    username: 'readonly',
+    role: 'readonly_member'
+  }, 'oneMind-local-admin');
+  const readonlyResponse = await request({
+    method: 'POST',
+    pathname: '/api/admin/notification-jobs/dispatch?dueBefore=2010-01-01T00:00:00.000Z',
+    headers: { authorization: `Bearer ${readonlyToken}` }
+  });
+  assert.equal(readonlyResponse.statusCode, 403);
+  assert.equal(readonlyResponse.body.error, 'FORBIDDEN');
+
+  const operationsToken = createTestToken('adm', {
+    sub: 'missing-platform-ops-admin',
+    username: 'ops',
+    role: 'platform_ops'
+  }, 'oneMind-local-admin');
+  const allowedResponse = await request({
+    method: 'POST',
+    pathname: '/api/admin/notification-jobs/dispatch?dueBefore=2010-01-01T00:00:00.000Z',
+    headers: { authorization: `Bearer ${operationsToken}` }
+  });
+  assert.equal(allowedResponse.statusCode, 200);
 });
 
 test('admin dispatch awaits mocked provider and reports sent/provider statistics', async () => {

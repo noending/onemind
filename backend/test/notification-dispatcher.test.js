@@ -11,19 +11,25 @@ function loadDispatcher() {
 
 function createRepository(job, overrides = {}) {
   const calls = { success: [], failure: [] };
+  const claimedJob = { ...job, status: 'processing', claimToken: 'claim-1', leaseUntil: '2026-07-12T00:01:00.000Z' };
+  let claimed = false;
   return {
     calls,
-    listDueNotificationJobs: () => [job],
+    claimDueNotificationJobs: () => {
+      if (claimed) return [];
+      claimed = true;
+      return [claimedJob];
+    },
     getNotificationDeliveryTarget: () => ({ openid: 'openid-1' }),
     isNotificationChannelEnabled: () => true,
-    findAvailableNotificationSubscription: () => ({ id: 'subscription-1', status: 'accept' }),
+    reserveNotificationSubscription: () => ({ id: 'subscription-1', status: 'accept' }),
     recordNotificationJobSuccess(payload) {
       calls.success.push(payload);
-      return { ...job, status: 'sent', attemptCount: 1 };
+      return { ...claimedJob, status: 'sent', attemptCount: 1 };
     },
     recordNotificationJobFailure(payload) {
       calls.failure.push(payload);
-      return { ...job, status: payload.retryable ? 'pending' : 'failed', attemptCount: 1 };
+      return { ...claimedJob, status: payload.retryable ? 'pending' : 'failed', attemptCount: 1 };
     },
     ...overrides
   };
@@ -85,7 +91,7 @@ test('dispatcher permanently fails missing openid, config, or authorization with
     {
       expected: 'WECHAT_SUBSCRIPTION_REQUIRED',
       config: templateConfig,
-      repository: { findAvailableNotificationSubscription: () => null }
+      repository: { reserveNotificationSubscription: () => null }
     },
     {
       expected: 'NOTIFICATION_CHANNEL_DISABLED',
@@ -109,6 +115,139 @@ test('dispatcher permanently fails missing openid, config, or authorization with
   }
 
   assert.equal(senderCalls, 0);
+});
+
+test('two memory dispatchers claim the same due job only once and loser never calls provider', async () => {
+  const memoryStore = require('../src/repositories/memoryStore');
+  const user = memoryStore.loginByWechatCode({
+    code: `dispatcher-race-${Date.now()}`,
+    wechatOpenid: `real_dispatcher_race_${Date.now()}`,
+    userInfo: { nickName: '并发派发' }
+  });
+  memoryStore.saveNotificationSubscriptionResult({
+    userId: user.id,
+    templateKey: 'review',
+    templateId: 'tmpl-review',
+    status: 'accept',
+    idempotencyKey: `dispatcher-race-accept-${Date.now()}`
+  });
+  const job = memoryStore.createNotificationJob({
+    userId: user.id,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review', title: '并发任务' }
+  });
+  let providerCalls = 0;
+  const sender = {
+    async send() {
+      providerCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { ok: true, providerMessageId: 'race-message', providerResponse: { errcode: 0 } };
+    }
+  };
+  const options = {
+    repository: memoryStore,
+    templateConfig,
+    sender,
+    now: () => new Date('2026-07-12T00:00:00.000Z')
+  };
+
+  const results = await Promise.all([
+    loadDispatcher().createNotificationDispatcher(options).dispatchDue({ limit: 10 }),
+    loadDispatcher().createNotificationDispatcher(options).dispatchDue({ limit: 10 })
+  ]);
+
+  assert.equal(providerCalls, 1);
+  assert.equal(results.reduce((total, item) => total + item.sent, 0), 1);
+  assert.equal(memoryStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === job.id).status, 'sent');
+});
+
+test('two memory jobs competing for one subscription reserve it for only one provider call', async () => {
+  const memoryStore = require('../src/repositories/memoryStore');
+  const user = memoryStore.loginByWechatCode({
+    code: `subscription-race-${Date.now()}`,
+    wechatOpenid: `real_subscription_race_${Date.now()}`,
+    userInfo: { nickName: '授权竞争' }
+  });
+  memoryStore.saveNotificationSubscriptionResult({
+    userId: user.id,
+    templateKey: 'review',
+    templateId: 'tmpl-review',
+    status: 'accept',
+    idempotencyKey: `subscription-race-accept-${Date.now()}`
+  });
+  for (let index = 0; index < 2; index += 1) {
+    memoryStore.createNotificationJob({
+      userId: user.id,
+      channel: 'wechat_subscribe',
+      scheduledAt: `2020-01-01T00:00:0${index}.000Z`,
+      payload: { type: 'review', title: `授权竞争 ${index}` }
+    });
+  }
+  let providerCalls = 0;
+  const dispatcher = loadDispatcher().createNotificationDispatcher({
+    repository: memoryStore,
+    templateConfig,
+    sender: {
+      async send() {
+        providerCalls += 1;
+        return { ok: true, providerMessageId: 'single-subscription', providerResponse: { errcode: 0 } };
+      }
+    },
+    now: () => new Date('2026-07-12T00:00:00.000Z')
+  });
+
+  const result = await dispatcher.dispatchDue({ limit: 10 });
+
+  assert.equal(providerCalls, 1);
+  assert.equal(result.sent, 1);
+  assert.equal(result.failed, 1);
+});
+
+test('memory dispatcher stops provider HTTP attempts after the third retryable failure', async () => {
+  const memoryStore = require('../src/repositories/memoryStore');
+  const user = memoryStore.loginByWechatCode({
+    code: `http-limit-${Date.now()}`,
+    wechatOpenid: `real_http_limit_${Date.now()}`,
+    userInfo: { nickName: 'HTTP 上限' }
+  });
+  memoryStore.saveNotificationSubscriptionResult({
+    userId: user.id,
+    templateKey: 'review',
+    templateId: 'tmpl-review',
+    status: 'accept',
+    idempotencyKey: `http-limit-accept-${Date.now()}`
+  });
+  const job = memoryStore.createNotificationJob({
+    userId: user.id,
+    channel: 'wechat_subscribe',
+    scheduledAt: '2020-01-01T00:00:00.000Z',
+    payload: { type: 'review', title: 'HTTP 上限' }
+  });
+  let clock = Date.parse('2026-07-12T00:00:00.000Z');
+  let providerCalls = 0;
+  const dispatcher = loadDispatcher().createNotificationDispatcher({
+    repository: memoryStore,
+    templateConfig,
+    sender: {
+      async send() {
+        providerCalls += 1;
+        return { ok: false, retryable: true, error: 'WECHAT_SYSTEM_BUSY', providerResponse: { errcode: -1 } };
+      }
+    },
+    now: () => new Date(clock)
+  });
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await dispatcher.dispatchDue({ limit: 10 });
+    const current = memoryStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === job.id);
+    if (current.nextRetryAt) clock = Date.parse(current.nextRetryAt);
+  }
+
+  const stored = memoryStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === job.id);
+  assert.equal(providerCalls, 3);
+  assert.equal(stored.status, 'failed');
+  assert.equal(stored.attemptCount, 3);
 });
 
 test('dispatcher reports retry separately and never records provider failure as sent', async () => {

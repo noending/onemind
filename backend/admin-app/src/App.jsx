@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 const TOKEN_KEY = 'oneMind.admin.token';
 
 const ROLE_PERMISSIONS = {
-  super_admin: ['admin.read', 'content.write', 'content.publish', 'asset.write', 'asset.publish', 'asset.access.manage', 'organization.member.manage'],
-  platform_ops: ['admin.read', 'content.write', 'content.publish', 'asset.write'],
+  super_admin: ['admin.read', 'content.write', 'content.publish', 'asset.write', 'asset.publish', 'asset.access.manage', 'organization.member.manage', 'notification.dispatch'],
+  platform_ops: ['admin.read', 'content.write', 'content.publish', 'asset.write', 'notification.dispatch'],
   content_editor: ['admin.read', 'content.write', 'asset.write'],
   content_reviewer: ['admin.read', 'content.publish', 'asset.publish'],
-  organization_admin: ['admin.read', 'content.write', 'content.publish', 'asset.write', 'asset.publish', 'asset.access.manage', 'organization.member.manage'],
+  organization_admin: ['admin.read', 'content.write', 'content.publish', 'asset.write', 'asset.publish', 'asset.access.manage', 'organization.member.manage', 'notification.dispatch'],
   asset_maintainer: ['admin.read', 'asset.write'],
   readonly_member: ['admin.read']
 };
@@ -1474,7 +1474,7 @@ function App() {
               className="span-4"
               title="提醒任务"
               desc="查看 pending / sent 状态，并可直接触发一次派发。"
-              actions={<button type="button" onClick={handleDispatchNotifications} disabled={!can('admin.read') || loading}>派发提醒</button>}
+              actions={<button type="button" onClick={handleDispatchNotifications} disabled={!can('notification.dispatch') || loading}>派发提醒</button>}
             >
               <div className="timeline">
                 {notificationJobs.length ? notificationJobs.map((job) => (
