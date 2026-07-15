@@ -12,7 +12,10 @@
         <text wx:if="{{cartCount > 0}}" class="cart-count">{{cartCount}}</text>
       </view>
     </view>
-    <text class="page-subtitle">为修行而选 · 经文音频 · 唐卡视觉</text>
+    <view class="shop-subtitle-row">
+      <text class="page-subtitle">为修行而选 · 经文音频 · 唐卡视觉</text>
+      <text class="catalog-source">{{productSourceText}}</text>
+    </view>
 
     <view wx:if="{{featuredProduct}}" class="theme-card" data-id="{{featuredProduct.id}}" bindtap="openProduct">
       <text class="theme-label">{{featuredProduct.tag}}</text>

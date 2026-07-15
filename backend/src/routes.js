@@ -4,6 +4,7 @@ const {
   archiveContent,
   archiveFestival,
   archiveLegacyPlan,
+  archiveProduct,
   createNotificationJob,
   createMemoryAssessment,
   createRecitationSession,
@@ -13,6 +14,7 @@ const {
   copyContentAsNewVersion,
   createAdaptivePlan,
   createPlan,
+  createProduct,
   claimDueNotificationJobs,
   renewNotificationJobLease,
   completeTask,
@@ -29,6 +31,12 @@ const {
   getUserById,
   listAdminContents,
   listAdminFestivals,
+  listAdminOrders,
+  listAdminPlans,
+  listAdminPracticeSessions,
+  listAdminProducts,
+  listAdminRecitationSessions,
+  listAdminUsers,
   listAuditLogs,
   listContentVersions,
   listContents,
@@ -38,6 +46,7 @@ const {
   listOrganizationAssets,
   listOrganizations,
   listPlans,
+  listProducts,
   listRecitationGoals,
   listTodayFocus,
   loginByWechatCode,
@@ -48,6 +57,8 @@ const {
   updateAsset,
   updateContent,
   updateFestival,
+  updateOrderStatus,
+  updateProduct,
   updateAssetAccess,
   recordNotificationJobFailure,
   recordNotificationJobSuccess,
@@ -120,14 +131,18 @@ const ROLE_PERMISSIONS = {
     'asset.publish',
     'asset.access.manage',
     'organization.member.manage',
-    'notification.dispatch'
+    'notification.dispatch',
+    'commerce.write',
+    'commerce.order.manage'
   ],
   platform_ops: [
     'admin.read',
     'content.write',
     'content.publish',
     'asset.write',
-    'notification.dispatch'
+    'notification.dispatch',
+    'commerce.write',
+    'commerce.order.manage'
   ],
   content_editor: [
     'admin.read',
@@ -147,7 +162,9 @@ const ROLE_PERMISSIONS = {
     'asset.publish',
     'asset.access.manage',
     'organization.member.manage',
-    'notification.dispatch'
+    'notification.dispatch',
+    'commerce.write',
+    'commerce.order.manage'
   ],
   asset_maintainer: [
     'admin.read',
@@ -396,6 +413,73 @@ async function handleRequest(req, res, body) {
     });
   }
 
+  if (req.method === 'GET' && pathname === '/api/admin/users') {
+    return sendJson(res, 200, {
+      data: listAdminUsers({ query: requestUrl.searchParams.get('q') })
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/plans') {
+    return sendJson(res, 200, {
+      data: listAdminPlans({
+        mode: requestUrl.searchParams.get('mode'),
+        state: requestUrl.searchParams.get('state')
+      })
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/practice-sessions') {
+    return sendJson(res, 200, {
+      data: listAdminPracticeSessions({ mode: requestUrl.searchParams.get('mode') })
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/recitation-sessions') {
+    return sendJson(res, 200, {
+      data: listAdminRecitationSessions({ period: requestUrl.searchParams.get('period') })
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/products') {
+    return sendJson(res, 200, {
+      data: listAdminProducts({
+        category: requestUrl.searchParams.get('category'),
+        status: requestUrl.searchParams.get('status'),
+        q: requestUrl.searchParams.get('q')
+      })
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/products') {
+    return sendJson(res, 201, { data: createProduct(parseJsonBody(body)) });
+  }
+
+  if (req.method === 'PUT' && pathname.startsWith('/api/admin/products/')) {
+    const productId = decodeURIComponent(pathname.replace('/api/admin/products/', ''));
+    return sendJson(res, 200, { data: updateProduct(productId, parseJsonBody(body)) });
+  }
+
+  if (req.method === 'DELETE' && pathname.startsWith('/api/admin/products/')) {
+    const productId = decodeURIComponent(pathname.replace('/api/admin/products/', ''));
+    return sendJson(res, 200, { data: archiveProduct(productId) });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/orders') {
+    return sendJson(res, 200, {
+      data: listAdminOrders({
+        status: requestUrl.searchParams.get('status'),
+        paymentStatus: requestUrl.searchParams.get('paymentStatus')
+      })
+    });
+  }
+
+  const adminOrderStatusMatch = pathname.match(/^\/api\/admin\/orders\/([^/]+)\/status$/);
+  if (req.method === 'PUT' && adminOrderStatusMatch) {
+    return sendJson(res, 200, {
+      data: updateOrderStatus(decodeURIComponent(adminOrderStatusMatch[1]), parseJsonBody(body))
+    });
+  }
+
   if (req.method === 'POST' && pathname === '/api/admin/contents') {
     return sendJson(res, 201, {
       data: createContent(parseJsonBody(body))
@@ -494,6 +578,15 @@ async function handleRequest(req, res, body) {
         type: requestUrl.searchParams.get('type'),
         organizationId: requestUrl.searchParams.get('organizationId'),
         mode: requestUrl.searchParams.get('mode')
+      })
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/products') {
+    return sendJson(res, 200, {
+      data: listProducts({
+        category: requestUrl.searchParams.get('category'),
+        q: requestUrl.searchParams.get('q')
       })
     });
   }
@@ -996,6 +1089,9 @@ function getRequiredPermission(method, pathname) {
   if (pathname.startsWith('/api/admin/')) {
     if (pathname === '/api/admin/overview' || pathname === '/api/admin/session') return 'admin.read';
     if (pathname === '/api/admin/notification-jobs/dispatch' && method === 'POST') return 'notification.dispatch';
+    if (pathname === '/api/admin/products' && method === 'POST') return 'commerce.write';
+    if (pathname.startsWith('/api/admin/products/') && ['PUT', 'DELETE'].includes(method)) return 'commerce.write';
+    if (pathname.startsWith('/api/admin/orders/') && method === 'PUT') return 'commerce.order.manage';
     if (pathname === '/api/admin/contents' && method === 'GET') return 'admin.read';
     if (pathname === '/api/admin/contents' && method === 'POST') return 'content.write';
     if (pathname.startsWith('/api/admin/contents/') && pathname.endsWith('/versions') && method === 'GET') return 'admin.read';
@@ -1173,7 +1269,8 @@ function toAdminProfile(admin = {}) {
     username: admin.username || ADMIN_USERNAME,
     role: admin.role || 'super_admin',
     name: admin.name || admin.username || '管理员',
-    status: admin.status || 'active'
+    status: admin.status || 'active',
+    permissions: ROLE_PERMISSIONS[admin.role || 'readonly_member'] || []
   };
 }
 

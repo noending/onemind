@@ -606,3 +606,42 @@ create table if not exists audit_logs (
 create index if not exists audit_logs_actor_idx on audit_logs (actor_type, actor_id, created_at);
 create index if not exists audit_logs_target_idx on audit_logs (target_type, target_id, created_at);
 create index if not exists audit_logs_organization_idx on audit_logs (organization_id, created_at);
+
+create table if not exists products (
+  id varchar(80) primary key,
+  category varchar(80) not null,
+  tag varchar(80),
+  title varchar(200) not null,
+  subtitle text,
+  price numeric(12, 2) not null default 0,
+  original_price numeric(12, 2),
+  is_featured boolean not null default false,
+  color varchar(32),
+  cover text,
+  description text,
+  features jsonb not null default '[]'::jsonb,
+  stock int not null default 0,
+  status varchar(32) not null default 'draft',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists products_status_category_idx on products (status, category, updated_at desc);
+
+create table if not exists commerce_orders (
+  id varchar(80) primary key,
+  order_no varchar(80) not null unique,
+  user_id uuid references users(id),
+  user_nickname varchar(160),
+  amount numeric(12, 2) not null default 0,
+  status varchar(32) not null default 'pending',
+  payment_status varchar(32) not null default 'unpaid',
+  payment_method varchar(32),
+  items jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists commerce_orders_status_idx on commerce_orders (status, payment_status, created_at desc);

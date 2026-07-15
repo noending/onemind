@@ -5,7 +5,10 @@ const { execFileSync } = require('node:child_process');
 
 const { contents: seedContents } = require('../src/data/seed');
 const store = require('../src/repositories/memoryStore');
-const { contents: builtinContents } = require('../../common/content');
+const {
+  contents: builtinContents,
+  getApprovedContentStructure
+} = require('../../common/content');
 const { normalizeContent } = require('../../common/api');
 const storeModulePath = require.resolve('../src/repositories/store');
 require.cache[storeModulePath] = {
@@ -103,6 +106,23 @@ test('great compassion exposes six reviewed sections with exactly 84 ordered uni
   assert.deepEqual(
     units.map((unit) => unit.text),
     builtinContents.find((item) => item.title === '大悲咒').segments
+  );
+});
+
+test('client builtin snapshot only resolves the exact approved published version', () => {
+  const structure = getApprovedContentStructure(
+    'great-compassion-opening',
+    'great-compassion-v1'
+  );
+
+  assert.equal(structure.contentId, 'great-compassion-opening');
+  assert.equal(structure.contentVersionId, 'great-compassion-v1');
+  assert.equal(structure.reviewStatus, 'approved');
+  assert.equal(structure.sections.length, 6);
+  assert.equal(structure.sections.flatMap((section) => section.units).length, 84);
+  assert.equal(
+    getApprovedContentStructure('great-compassion-opening', 'great-compassion-v2'),
+    null
   );
 });
 

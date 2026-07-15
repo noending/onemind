@@ -46,6 +46,27 @@ const templateConfig = {
   }]
 };
 
+test('dispatcher forwards an optional user scope to every claim', async () => {
+  let claimOptions;
+  const job = { id: 'job-scope', userId: 'user-scope', channel: 'wechat_subscribe', payload: { type: 'review' } };
+  const repository = createRepository(job, {
+    claimDueNotificationJobs(options) {
+      claimOptions = options;
+      return [];
+    }
+  });
+  const dispatcher = loadDispatcher().createNotificationDispatcher({
+    repository,
+    templateConfig,
+    sender: { send: async () => ({ ok: true }) },
+    now: () => new Date('2026-07-12T00:00:00.000Z')
+  });
+
+  await dispatcher.dispatchDue({ userId: 'user-scope', limit: 1 });
+
+  assert.equal(claimOptions.userId, 'user-scope');
+});
+
 test('dispatcher marks sent and consumes authorization only after provider success', async () => {
   const dispatcherModule = loadDispatcher();
   assert.ok(dispatcherModule, 'notificationDispatcher service must exist');

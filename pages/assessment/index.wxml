@@ -20,7 +20,7 @@
     <block wx:if="{{!loading && !error && phase === 'scope' && !isEmpty}}">
       <view class="scope-head">
         <text class="section-label">选择范围</text>
-        <text class="scope-hint">先选全文或一会，再开始抽题。</text>
+        <text class="scope-hint">先选全文或一个学习段，再开始抽题。</text>
       </view>
       <view class="scope-list">
         <button wx:for="{{scopeOptions}}" wx:key="index" class="scope-option {{selectedScopeIndex === index ? 'active' : ''}}" data-index="{{index}}" bindtap="chooseScope" disabled="{{isSubmitting || !item.unitCount}}">

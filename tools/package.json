@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check:package-size": "node check-miniprogram-package-size.mjs",
     "check:shop": "node check-shop-parity.mjs",
     "check:home": "node check-home-parity.mjs",
     "check:library": "node check-library-parity.mjs",

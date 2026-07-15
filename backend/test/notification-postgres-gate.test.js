@@ -105,6 +105,7 @@ test('postgres notification gate matches memory sent, consumed, and retry semant
     payload: { type: 'review', title: '真实 PG 门禁' }
   });
   const claimedSuccess = postgresStore.claimDueNotificationJobs({
+    userId: user.id,
     dueBefore: '2026-07-12T00:00:00.000Z',
     leaseUntil: '2026-07-12T00:01:00.000Z'
   }).find((item) => item.id === successJob.id);
@@ -148,6 +149,7 @@ test('postgres notification gate matches memory sent, consumed, and retry semant
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const dueBefore = attempt === 0 ? '2026-07-12T00:00:00.000Z' : failed.nextRetryAt;
     const claimed = postgresStore.claimDueNotificationJobs({
+      userId: user.id,
       dueBefore,
       leaseUntil: new Date(Date.parse(dueBefore) + 30_000).toISOString()
     }).find((item) => item.id === failedJob.id);
@@ -239,8 +241,8 @@ test('postgres claim and reservation prevent duplicate provider calls for same j
     now: () => new Date('2026-07-12T00:00:00.000Z')
   };
   await Promise.all([
-    createNotificationDispatcher(options).dispatchDue({ limit: 10 }),
-    createNotificationDispatcher(options).dispatchDue({ limit: 10 })
+    createNotificationDispatcher(options).dispatchDue({ userId: user.id, limit: 10 }),
+    createNotificationDispatcher(options).dispatchDue({ userId: user.id, limit: 10 })
   ]);
   assert.equal(providerCalls, 1);
   assert.equal(postgresStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === sameJob.id).status, 'sent');
@@ -262,6 +264,7 @@ test('postgres claim and reservation prevent duplicate provider calls for same j
   }
   providerCalls = 0;
   const result = await createNotificationDispatcher(options).dispatchDue({
+    userId: user.id,
     dueBefore: '2026-07-12T00:00:00.000Z',
     limit: 10
   });
@@ -294,6 +297,7 @@ test('postgres lease recovery fails unknown and durable provider POST count neve
     payload: { type: 'review' }
   });
   const firstClaim = postgresStore.claimDueNotificationJobs({
+    userId: user.id,
     dueBefore: '2026-07-12T00:00:00.000Z',
     leaseUntil: '2026-07-12T00:00:30.000Z'
   }).find((item) => item.id === leaseJob.id);
@@ -314,6 +318,7 @@ test('postgres lease recovery fails unknown and durable provider POST count neve
   assert.equal(postgresStore.getNotificationSettings(user.id, '2026-07-12T00:00:10.000Z')
     .find((item) => item.channel === 'wechat_subscribe').enabled, false);
   const recovered = postgresStore.claimDueNotificationJobs({
+    userId: user.id,
     dueBefore: '2026-07-12T00:01:00.000Z',
     claimedAt: '2026-07-12T00:01:00.000Z',
     leaseUntil: '2026-07-12T00:02:00.000Z'
@@ -367,7 +372,7 @@ test('postgres lease recovery fails unknown and durable provider POST count neve
     now: () => new Date(clock)
   });
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    await dispatcher.dispatchDue({ limit: 10 });
+    await dispatcher.dispatchDue({ userId: user.id, limit: 10 });
     const current = postgresStore.listNotificationJobs({ userId: user.id }).find((item) => item.id === retryJob.id);
     if (current.nextRetryAt) clock = Date.parse(current.nextRetryAt);
   }
@@ -400,6 +405,7 @@ test('postgres rejects an expired success finalize without consuming its reserva
     payload: { type: 'review' }
   });
   const claimed = postgresStore.claimDueNotificationJobs({
+    userId: user.id,
     dueBefore: '2026-07-12T00:00:00.000Z',
     claimedAt: '2026-07-12T00:00:00.000Z',
     leaseUntil: '2026-07-12T00:00:30.000Z'
@@ -429,6 +435,7 @@ test('postgres rejects an expired success finalize without consuming its reserva
   assert.equal(reserved.reservationToken, claimed.claimToken);
 
   postgresStore.claimDueNotificationJobs({
+    userId: user.id,
     dueBefore: '2026-07-12T00:00:31.000Z',
     claimedAt: '2026-07-12T00:00:31.000Z'
   });
@@ -463,6 +470,7 @@ test('postgres rejects an expired failure finalize without releasing its reserva
     payload: { type: 'review' }
   });
   const claimed = postgresStore.claimDueNotificationJobs({
+    userId: user.id,
     dueBefore: '2026-07-12T00:00:00.000Z',
     claimedAt: '2026-07-12T00:00:00.000Z',
     leaseUntil: '2026-07-12T00:00:30.000Z'
@@ -493,6 +501,7 @@ test('postgres rejects an expired failure finalize without releasing its reserva
   assert.equal(reserved.reservationToken, claimed.claimToken);
 
   postgresStore.claimDueNotificationJobs({
+    userId: user.id,
     dueBefore: '2026-07-12T00:00:31.000Z',
     claimedAt: '2026-07-12T00:00:31.000Z'
   });
@@ -527,6 +536,7 @@ test('postgres wechat enabled projection is dynamic for active and expired reser
     payload: { type: 'review' }
   });
   const claimed = postgresStore.claimDueNotificationJobs({
+    userId: user.id,
     dueBefore: '2026-07-12T00:00:00.000Z',
     claimedAt: '2026-07-12T00:00:00.000Z',
     leaseUntil: '2026-07-12T00:01:00.000Z'

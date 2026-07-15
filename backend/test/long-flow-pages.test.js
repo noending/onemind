@@ -33,6 +33,7 @@ test('assessment page uses approved structure, stable keys, answers, and a compa
   assert.match(source, /attemptId/);
   assert.match(source, /pendingTimedOut/);
   assert.match(source, /unitCount/);
+  assert.match(source, /profile\/index\?auth=1/);
   assert.match(source, /60/);
   assert.match(source, /assessmentId=/);
   assert.match(source, /contentId=/);

@@ -301,6 +301,32 @@ function findContent(id) {
   return contents.find((item) => item.id === canonicalId);
 }
 
+function getApprovedContentStructure(contentId, versionId) {
+  const content = findContent(contentId);
+  if (
+    !content ||
+    content.reviewStatus !== "approved" ||
+    content.publishedVersionId !== versionId ||
+    !Array.isArray(content.sections)
+  ) {
+    return null;
+  }
+
+  return {
+    contentId,
+    contentVersionId: versionId,
+    reviewStatus: content.reviewStatus,
+    sourceNote: content.sourceNote || "",
+    versionNote: content.versionNote || "",
+    sections: content.sections.map((section) => ({
+      ...section,
+      units: Array.isArray(section.units)
+        ? section.units.map((unit) => ({ ...unit }))
+        : []
+    }))
+  };
+}
+
 function recommendNext(currentId) {
   const current = findContent(currentId);
   if (!current) return contents[0];
@@ -314,5 +340,6 @@ module.exports = {
   todayReviews,
   progressItems,
   findContent,
+  getApprovedContentStructure,
   recommendNext
 };

@@ -7,6 +7,7 @@ const {
   recommendPlan
 } = require('../../../common/adaptive-memory');
 const { businessDate } = require('../../../common/business-date');
+const { products: commerceProducts, orders: commerceOrders } = require('../data/commerceSeed');
 const { ensureAdaptiveSchema } = require('./adaptiveSchema');
 const { ensureNotificationSchema } = require('./notificationSchema');
 
@@ -335,6 +336,43 @@ function ensureFeatureSchema() {
       completed boolean not null default true,
       note text,
       created_at timestamptz not null default now()
+    )
+  `);
+  queryScalar(`
+    create table if not exists products (
+      id varchar(80) primary key,
+      category varchar(80) not null,
+      tag varchar(80),
+      title varchar(200) not null,
+      subtitle text,
+      price numeric(12, 2) not null default 0,
+      original_price numeric(12, 2),
+      is_featured boolean not null default false,
+      color varchar(32),
+      cover text,
+      description text,
+      features jsonb not null default '[]'::jsonb,
+      stock int not null default 0,
+      status varchar(32) not null default 'draft',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      deleted_at timestamptz
+    )
+  `);
+  queryScalar(`
+    create table if not exists commerce_orders (
+      id varchar(80) primary key,
+      order_no varchar(80) not null unique,
+      user_id uuid references users(id),
+      user_nickname varchar(160),
+      amount numeric(12, 2) not null default 0,
+      status varchar(32) not null default 'pending',
+      payment_status varchar(32) not null default 'unpaid',
+      payment_method varchar(32),
+      items jsonb not null default '[]'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      deleted_at timestamptz
     )
   `);
   ensureAdaptiveSchema(queryScalar);
@@ -3481,6 +3519,263 @@ function listAuditLogs(filters = {}) {
   `);
 }
 
+function listAdminUsers(filters = {}) {
+  const where = ['u.deleted_at is null'];
+  const query = String(filters.query || '').trim();
+  if (query) {
+    const pattern = `%${query}%`;
+    where.push(`(u.nickname ilike ${sqlValue(pattern)} or u.id::text ilike ${sqlValue(pattern)})`);
+  }
+  return queryRows(`
+    select
+      u.id::text as "id",
+      coalesce(nullif(u.nickname, ''), '微信用户') as "nickname",
+      u.avatar_url as "avatarUrl",
+      u.platform,
+      u.status,
+      u.last_login_at as "lastActiveAt",
+      (select count(*)::int from memory_plans mp where mp.user_id = u.id and mp.deleted_at is null) as "planCount",
+      (select count(*)::int from practice_sessions ps where ps.user_id = u.id) as "practiceCount",
+      (select count(*)::int from recitation_sessions rs where rs.user_id = u.id and rs.completed = true) as "recitationCount"
+    from users u
+    where ${where.join(' and ')}
+    order by u.last_login_at desc nulls last, u.created_at desc
+  `);
+}
+
+function listAdminPlans(filters = {}) {
+  const where = ['mp.deleted_at is null'];
+  if (filters.mode) where.push(`mp.mode = ${sqlValue(normalizeMode(filters.mode))}`);
+  if (filters.state) where.push(`mp.state = ${sqlValue(filters.state)}`);
+  return queryRows(`
+    select
+      mp.id::text as "id",
+      mp.user_id::text as "userId",
+      coalesce(nullif(u.nickname, ''), '微信用户') as "userNickname",
+      mp.content_id::text as "contentId",
+      c.title as "contentTitle",
+      mp.title,
+      mp.mode,
+      mp.state,
+      mp.mastery_score as "masteryScore",
+      mp.current_day as "currentDay",
+      mp.total_days as "totalDays",
+      mp.created_at as "createdAt",
+      mp.updated_at as "updatedAt"
+    from memory_plans mp
+    join users u on u.id = mp.user_id
+    join contents c on c.id = mp.content_id
+    where ${where.join(' and ')}
+    order by mp.updated_at desc, mp.created_at desc
+  `);
+}
+
+function listAdminPracticeSessions(filters = {}) {
+  const where = ['true'];
+  if (filters.mode) where.push(`ps.mode = ${sqlValue(normalizeMode(filters.mode))}`);
+  return queryRows(`
+    select
+      ps.id::text as "id",
+      ps.user_id::text as "userId",
+      coalesce(nullif(u.nickname, ''), '微信用户') as "userNickname",
+      ps.plan_id::text as "planId",
+      ps.content_id::text as "contentId",
+      c.title as "contentTitle",
+      ps.mode,
+      ps.self_rating as "selfRating",
+      ps.result_level as "resultLevel",
+      ps.latency_band as "latencyBand",
+      ps.mistake_count as "mistakeCount",
+      ps.growth_stage as "growthStage",
+      ps.created_at as "createdAt"
+    from practice_sessions ps
+    join users u on u.id = ps.user_id
+    join contents c on c.id = ps.content_id
+    where ${where.join(' and ')}
+    order by ps.created_at desc
+  `);
+}
+
+function listAdminRecitationSessions(filters = {}) {
+  const where = ['true'];
+  if (filters.period) where.push(`rs.period = ${sqlValue(filters.period)}`);
+  return queryRows(`
+    select
+      rs.id::text as "id",
+      rs.user_id::text as "userId",
+      coalesce(nullif(u.nickname, ''), '微信用户') as "userNickname",
+      rs.content_id::text as "contentId",
+      c.title as "contentTitle",
+      rs.goal_id::text as "goalId",
+      rs.session_type as "sessionType",
+      rs.period,
+      rs.round_count as "roundCount",
+      rs.duration_seconds as "durationSeconds",
+      rs.completed,
+      rs.created_at as "createdAt"
+    from recitation_sessions rs
+    join users u on u.id = rs.user_id
+    join contents c on c.id = rs.content_id
+    where ${where.join(' and ')}
+    order by rs.created_at desc
+  `);
+}
+
+function listProducts(filters = {}) {
+  return listProductRows({ ...filters, status: 'published' });
+}
+
+function listAdminProducts(filters = {}) {
+  return listProductRows(filters);
+}
+
+function listProductRows(filters = {}) {
+  const where = ['deleted_at is null'];
+  if (filters.status) where.push(`status = ${sqlValue(filters.status)}`);
+  if (filters.category) where.push(`category = ${sqlValue(filters.category)}`);
+  const query = String(filters.q || filters.query || '').trim();
+  if (query) {
+    const pattern = `%${query}%`;
+    where.push(`(title ilike ${sqlValue(pattern)} or subtitle ilike ${sqlValue(pattern)} or tag ilike ${sqlValue(pattern)})`);
+  }
+  return queryRows(`
+    select
+      id,
+      category,
+      tag,
+      title,
+      subtitle,
+      price::float8 as "price",
+      original_price::float8 as "originalPrice",
+      is_featured as "isFeatured",
+      color,
+      cover,
+      description,
+      features,
+      stock,
+      status,
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from products
+    where ${where.join(' and ')}
+    order by is_featured desc, updated_at desc, created_at desc
+  `);
+}
+
+function createProduct(payload = {}) {
+  const product = normalizeProductRecord({ ...payload, id: `product_${Date.now()}_${crypto.randomBytes(3).toString('hex')}` });
+  if (!product.title) throw Object.assign(new Error('商品标题不能为空'), { statusCode: 400 });
+  const created = queryReturningOne(`
+    insert into products (
+      id, category, tag, title, subtitle, price, original_price, is_featured,
+      color, cover, description, features, stock, status
+    ) values (
+      ${sqlValue(product.id)}, ${sqlValue(product.category)}, ${sqlValue(product.tag)},
+      ${sqlValue(product.title)}, ${sqlValue(product.subtitle)}, ${product.price},
+      ${product.originalPrice === null ? 'null' : product.originalPrice}, ${product.isFeatured ? 'true' : 'false'},
+      ${sqlValue(product.color)}, ${sqlValue(product.cover)}, ${sqlValue(product.description)},
+      ${sqlJson(product.features)}::jsonb, ${product.stock}, ${sqlValue(product.status)}
+    )
+    returning id
+  `);
+  appendAuditLog({ action: 'product.created', targetType: 'product', targetId: null, detail: { productId: created.id, title: product.title } });
+  return listProductRows({}).find((item) => item.id === created.id);
+}
+
+function updateProduct(productId, payload = {}) {
+  const existing = listProductRows({}).find((item) => item.id === productId);
+  if (!existing) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+  const product = normalizeProductRecord({ ...existing, ...payload, id: existing.id });
+  queryScalar(`
+    update products set
+      category = ${sqlValue(product.category)},
+      tag = ${sqlValue(product.tag)},
+      title = ${sqlValue(product.title)},
+      subtitle = ${sqlValue(product.subtitle)},
+      price = ${product.price},
+      original_price = ${product.originalPrice === null ? 'null' : product.originalPrice},
+      is_featured = ${product.isFeatured ? 'true' : 'false'},
+      color = ${sqlValue(product.color)},
+      cover = ${sqlValue(product.cover)},
+      description = ${sqlValue(product.description)},
+      features = ${sqlJson(product.features)}::jsonb,
+      stock = ${product.stock},
+      status = ${sqlValue(product.status)},
+      deleted_at = null,
+      updated_at = now()
+    where id = ${sqlValue(productId)}
+    returning id
+  `);
+  appendAuditLog({ action: 'product.updated', targetType: 'product', targetId: null, detail: { productId, title: product.title, status: product.status } });
+  return listProductRows({ status: product.status }).find((item) => item.id === productId) || { ...product, updatedAt: new Date().toISOString() };
+}
+
+function archiveProduct(productId) {
+  return updateProduct(productId, { status: 'archived' });
+}
+
+function listAdminOrders(filters = {}) {
+  const where = ['deleted_at is null'];
+  if (filters.status) where.push(`status = ${sqlValue(filters.status)}`);
+  if (filters.paymentStatus) where.push(`payment_status = ${sqlValue(filters.paymentStatus)}`);
+  return queryRows(`
+    select
+      id,
+      order_no as "orderNo",
+      user_id::text as "userId",
+      user_nickname as "userNickname",
+      amount::float8 as "amount",
+      status,
+      payment_status as "paymentStatus",
+      payment_method as "paymentMethod",
+      items,
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from commerce_orders
+    where ${where.join(' and ')}
+    order by created_at desc
+  `);
+}
+
+function updateOrderStatus(orderId, payload = {}) {
+  const order = listAdminOrders({}).find((item) => item.id === orderId);
+  if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+  const allowedStatuses = ['pending', 'paid', 'processing', 'completed', 'cancelled', 'refunded'];
+  if (payload.status && !allowedStatuses.includes(payload.status)) {
+    throw Object.assign(new Error('Invalid order status'), { statusCode: 400 });
+  }
+  if (payload.paymentStatus && payload.paymentStatus !== order.paymentStatus) {
+    throw Object.assign(new Error('支付状态只能由支付服务更新'), { statusCode: 409 });
+  }
+  queryScalar(`
+    update commerce_orders
+    set status = ${sqlValue(payload.status || order.status)}, updated_at = now()
+    where id = ${sqlValue(orderId)}
+    returning id
+  `);
+  appendAuditLog({ action: 'order.status_updated', targetType: 'order', targetId: null, detail: { orderId, status: payload.status || order.status } });
+  return listAdminOrders({}).find((item) => item.id === orderId);
+}
+
+function normalizeProductRecord(product = {}) {
+  return {
+    id: String(product.id || ''),
+    category: String(product.category || '未分类'),
+    tag: String(product.tag || ''),
+    title: String(product.title || '').trim(),
+    subtitle: String(product.subtitle || ''),
+    price: Math.max(0, Number(product.price || 0)),
+    originalPrice: product.originalPrice === null || product.originalPrice === undefined ? null : Math.max(0, Number(product.originalPrice || 0)),
+    isFeatured: Boolean(product.isFeatured),
+    color: String(product.color || '#7E2A1C'),
+    cover: String(product.cover || ''),
+    description: String(product.description || ''),
+    features: Array.isArray(product.features) ? product.features.map(String) : [],
+    stock: Math.max(0, Math.round(Number(product.stock || 0))),
+    status: ['draft', 'published', 'archived'].includes(product.status) ? product.status : 'draft'
+  };
+}
+
 function buildRecentDailyTrend(rows, dateField, { startAt, endAt, maxDays = 7 } = {}) {
   const normalizedEndAt = normalizeDateTimeFilter(endAt) || new Date().toISOString();
   const normalizedStartAt = normalizeDateTimeFilter(startAt) || normalizedEndAt;
@@ -4443,8 +4738,9 @@ function listDueNotificationJobs({ dueBefore = new Date().toISOString(), limit =
   `);
 }
 
-function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claimedAt, leaseUntil, limit = 20 } = {}) {
+function claimDueNotificationJobs({ userId, dueBefore = new Date().toISOString(), claimedAt, leaseUntil, limit = 20 } = {}) {
   const dueAt = String(dueBefore || new Date().toISOString());
+  const userScope = userId ? `and user_id = ${sqlValue(String(userId))}` : '';
   const normalizedClaimedAt = String(claimedAt || dueAt);
   const normalizedLeaseUntil = String(leaseUntil || new Date(Date.parse(normalizedClaimedAt) + 30_000).toISOString());
   const normalizedLimit = Math.max(0, Math.min(200, Number(limit || 20)));
@@ -4453,6 +4749,7 @@ function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claime
       select id, user_id
       from notification_jobs
       where status = 'processing'
+        ${userScope}
         and lease_until is not null
         and lease_until <= ${sqlValue(normalizedClaimedAt)}
       for update skip locked
@@ -4488,6 +4785,7 @@ function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claime
       select id
       from notification_jobs
       where status = 'pending'
+        ${userScope}
         and scheduled_at <= ${sqlValue(dueAt)}
         and (next_retry_at is null or next_retry_at <= ${sqlValue(dueAt)})
         and (select count(*) from recovered) >= 0
@@ -5425,6 +5723,9 @@ function seedDatabase() {
     copyrightStatus: 'organization_owned'
   });
 
+  commerceProducts.forEach(seedProduct);
+  commerceOrders.forEach(seedCommerceOrder);
+
   const existingMember = queryScalar(`
     select id::text
     from organization_members
@@ -5752,6 +6053,42 @@ function seedAsset(asset) {
   `);
 }
 
+function seedProduct(product) {
+  const normalized = normalizeProductRecord(product);
+  queryScalar(`
+    insert into products (
+      id, category, tag, title, subtitle, price, original_price, is_featured,
+      color, cover, description, features, stock, status, created_at, updated_at
+    ) values (
+      ${sqlValue(normalized.id)}, ${sqlValue(normalized.category)}, ${sqlValue(normalized.tag)},
+      ${sqlValue(normalized.title)}, ${sqlValue(normalized.subtitle)}, ${normalized.price},
+      ${normalized.originalPrice === null ? 'null' : normalized.originalPrice}, ${normalized.isFeatured ? 'true' : 'false'},
+      ${sqlValue(normalized.color)}, ${sqlValue(normalized.cover)}, ${sqlValue(normalized.description)},
+      ${sqlJson(normalized.features)}::jsonb, ${normalized.stock}, ${sqlValue(normalized.status)},
+      ${sqlValue(product.createdAt || new Date().toISOString())}, ${sqlValue(product.updatedAt || new Date().toISOString())}
+    )
+    on conflict (id) do nothing
+    returning id
+  `);
+}
+
+function seedCommerceOrder(order) {
+  queryScalar(`
+    insert into commerce_orders (
+      id, order_no, user_id, user_nickname, amount, status, payment_status,
+      payment_method, items, created_at, updated_at
+    ) values (
+      ${sqlValue(order.id)}, ${sqlValue(order.orderNo)}, ${sqlValue(IDS.demoUser)},
+      ${sqlValue(order.userNickname || 'Demo 用户')}, ${Number(order.amount || 0)},
+      ${sqlValue(order.status || 'pending')}, ${sqlValue(order.paymentStatus || 'unpaid')},
+      ${sqlValue(order.paymentMethod || 'wechat_jsapi')}, ${sqlJson(order.items || [])}::jsonb,
+      ${sqlValue(order.createdAt || new Date().toISOString())}, ${sqlValue(order.updatedAt || new Date().toISOString())}
+    )
+    on conflict (id) do nothing
+    returning id
+  `);
+}
+
 function queryRows(sql) {
   return JSON.parse(queryScalar(`
     select coalesce(json_agg(row_to_json(result_row)), '[]'::json)
@@ -5910,6 +6247,17 @@ module.exports = {
   findAdminByCredentials,
   listAdminContents,
   listAdminFestivals,
+  listAdminUsers,
+  listAdminPlans,
+  listAdminPracticeSessions,
+  listAdminRecitationSessions,
+  listProducts,
+  listAdminProducts,
+  createProduct,
+  updateProduct,
+  archiveProduct,
+  listAdminOrders,
+  updateOrderStatus,
   listAuditLogs,
   listContentVersions,
   listContents,

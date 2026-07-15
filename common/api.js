@@ -1,4 +1,8 @@
-const { contents: localContents, festivals: localFestivals } = require("./content");
+const {
+  contents: localContents,
+  festivals: localFestivals,
+  getApprovedContentStructure
+} = require("./content");
 
 const API_ENABLED_KEY = "oneMind.api.enabled";
 const API_BASE_URL_KEY = "oneMind.api.baseUrl";
@@ -9,6 +13,7 @@ const AUTH_REFRESH_TOKEN_KEY = "oneMind.auth.refreshToken";
 const AUTH_USER_KEY = "oneMind.auth.user";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:8787";
+const DEFAULT_BACKEND_ENABLED = true;
 
 const TYPE_CATEGORY = {
   mantra: "短咒",
@@ -82,7 +87,7 @@ function safeSetStorage(key, value) {
 }
 
 function isBackendEnabled() {
-  return Boolean(safeGetStorage(API_ENABLED_KEY, false));
+  return Boolean(safeGetStorage(API_ENABLED_KEY, DEFAULT_BACKEND_ENABLED));
 }
 
 function setBackendEnabled(enabled) {
@@ -253,6 +258,11 @@ function loginWithWechat(userInfo = {}) {
           })
           .then((response) => {
             const data = response.data || {};
+            if (!data.token || !data.user) {
+              const error = new Error("登录服务未返回有效会话，请重试");
+              error.code = "AUTH_SESSION_INVALID";
+              throw error;
+            }
             saveAuthSession(data.token || "", data.user || null, data.refreshToken || "");
             resolve(data);
           })
@@ -649,9 +659,21 @@ function recommendMemoryPlanApi(payload = {}) {
 }
 
 function getContentStructureApi(contentId, versionId) {
+  const localStructure = getApprovedContentStructure(contentId, versionId);
+  if (!isBackendEnabled()) {
+    if (localStructure) return Promise.resolve(localStructure);
+    return Promise.reject(new Error("CONTENT_STRUCTURE_NOT_AVAILABLE"));
+  }
+
   return request(
-    `/api/contents/${encodeURIComponent(contentId)}/versions/${encodeURIComponent(versionId)}/structure`
-  ).then((response) => response.data || null);
+    `/api/contents/${encodeURIComponent(contentId)}/versions/${encodeURIComponent(versionId)}/structure`,
+    { skipAuth: true }
+  )
+    .then((response) => response.data || null)
+    .catch((error) => {
+      if (localStructure && !error.statusCode) return localStructure;
+      throw error;
+    });
 }
 
 function completeReviewTaskApi(taskId, result, extra = {}) {
@@ -738,6 +760,7 @@ function createRecitationSessionApi(payload = {}) {
 }
 
 module.exports = {
+  DEFAULT_BACKEND_ENABLED,
   DEFAULT_BASE_URL,
   findCachedContent,
   getCachedContents,

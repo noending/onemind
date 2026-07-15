@@ -23,7 +23,7 @@ test('scope options keep the full scope when sections are empty', () => {
   assert.deepEqual(buildScopeOptions({ sections: [] }), [{
     scopeType: 'full',
     scopeId: null,
-    title: 'Full text',
+    title: '全文',
     unitCount: 0
   }]);
 });

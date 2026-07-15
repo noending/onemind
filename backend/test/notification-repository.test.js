@@ -7,6 +7,34 @@ function unique(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+test('memory claim scopes pending jobs to one user without touching other queues', () => {
+  const targetUserId = unique('claim-target-user');
+  const otherUserId = unique('claim-other-user');
+  const targetJob = memoryStore.createNotificationJob({
+    userId: targetUserId,
+    channel: 'wechat_subscribe',
+    scheduledAt: '1900-01-01T00:00:01.000Z',
+    payload: { type: 'review' }
+  });
+  const otherJob = memoryStore.createNotificationJob({
+    userId: otherUserId,
+    channel: 'wechat_subscribe',
+    scheduledAt: '1900-01-01T00:00:00.000Z',
+    payload: { type: 'review' }
+  });
+
+  const claimed = memoryStore.claimDueNotificationJobs({
+    userId: targetUserId,
+    dueBefore: '1900-01-02T00:00:00.000Z',
+    claimedAt: '1900-01-02T00:00:00.000Z',
+    leaseUntil: '1900-01-02T00:01:00.000Z',
+    limit: 10
+  });
+
+  assert.deepEqual(claimed.map((item) => item.id), [targetJob.id]);
+  assert.equal(memoryStore.listNotificationJobs({ userId: otherUserId }).find((item) => item.id === otherJob.id).status, 'pending');
+});
+
 test('memory subscription result is idempotent and only accept enables wechat channel', () => {
   const templateId = unique('tmpl');
   const rejected = memoryStore.saveNotificationSubscriptionResult({

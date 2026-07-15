@@ -117,12 +117,13 @@ function createNotificationDispatcher({ repository, templateConfig, sender, prov
     stats.results.push(updated);
   }
 
-  async function dispatchDue({ dueBefore = now().toISOString(), limit = 20 } = {}) {
+  async function dispatchDue({ dueBefore = now().toISOString(), limit = 20, userId } = {}) {
     const stats = createStats();
     const normalizedLimit = Math.max(0, Math.min(200, Number(limit || 20)));
     while (stats.processed < normalizedLimit) {
       const claimedAt = now();
       const [job] = repository.claimDueNotificationJobs({
+        userId,
         dueBefore,
         claimedAt: claimedAt.toISOString(),
         leaseUntil: new Date(claimedAt.getTime() + leaseMs).toISOString(),

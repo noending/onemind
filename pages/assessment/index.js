@@ -318,7 +318,7 @@ Page({
   },
 
   openAuthorization() {
-    wx.navigateTo({ url: "/pages/profile/index" });
+    wx.navigateTo({ url: "/pages/profile/index?auth=1" });
   },
 
   goBack() {

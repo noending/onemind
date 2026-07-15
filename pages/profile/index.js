@@ -634,6 +634,13 @@ Page({
     summaryText: "今日继续一小段，节律比速度更重要。"
   },
 
+  onLoad(options = {}) {
+    if (String(options.auth || "") !== "1") return;
+    this.pendingAuthPrompt = true;
+    this.returnAfterAuth = true;
+    this.setData({ subTab: "settings" });
+  },
+
   onShow() {
     this.refreshData();
   },
@@ -662,7 +669,14 @@ Page({
       }, () => this.refreshCurveData());
       this.refreshPlatformPanel();
       this.refreshGrowth();
-      this.refreshAuth().then((session) => this.refreshNotificationPanel(session));
+      this.refreshAuth().then((session) => {
+        const notificationAction = this.refreshNotificationPanel(session);
+        if (this.pendingAuthPrompt && !session.loggedIn) {
+          this.pendingAuthPrompt = false;
+          this.showWechatProfileSheet();
+        }
+        return notificationAction;
+      });
     });
   },
 
@@ -735,7 +749,7 @@ Page({
       this.setData({
         auth: buildAuthView(displayUser, {
           loggedIn: false,
-          statusText: localWechatUser ? "已使用微信资料（本地）" : "点击头像可授权微信资料"
+          statusText: localWechatUser ? "微信资料已保存，但尚未登录" : "点击头像可保存微信资料"
         })
       });
       return Promise.resolve(session);
@@ -743,13 +757,19 @@ Page({
 
     return getCurrentUser().then((session) => {
       const loggedIn = Boolean(session.loggedIn);
+      const localWechatUser = safeGetStorage(PROFILE_LOCAL_WECHAT_USER_KEY, null);
+      const displayUser = session.user || localWechatUser || null;
       this.setData({
-        auth: buildAuthView(session.user || null, {
+        auth: buildAuthView(displayUser, {
           loggedIn,
-          statusText: loggedIn ? "已完成微信授权" : "可选：微信授权同步跨端进度"
+          statusText: loggedIn
+            ? "已完成微信授权"
+            : localWechatUser
+              ? "微信资料已保存，确认后完成登录"
+              : "微信授权后可同步背诵与读诵记录"
         })
       });
-      return session;
+      return { ...session, user: displayUser };
     });
   },
 
@@ -899,7 +919,7 @@ Page({
       this.setData({
         auth: buildAuthView(localUser, {
           loggedIn: false,
-          statusText: "已使用微信资料（本地）"
+          statusText: "微信资料已保存，但尚未登录"
         }),
         authProfileSheetVisible: false,
         authDraft: {
@@ -908,7 +928,7 @@ Page({
           saving: false
         }
       });
-      wx.showToast({ title: "已显示微信资料", icon: "success" });
+      wx.showToast({ title: "仅保存资料，尚未登录", icon: "none" });
       return;
     }
 
@@ -932,6 +952,10 @@ Page({
         });
       });
       wx.showToast({ title: "授权成功", icon: "success" });
+      if (this.returnAfterAuth) {
+        this.returnAfterAuth = false;
+        wx.navigateBack();
+      }
     }).catch((error) => {
       this.setData({
         authDraft: {

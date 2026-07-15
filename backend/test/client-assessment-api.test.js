@@ -22,6 +22,17 @@ global.wx = {
 
 const api = require('../../common/api');
 
+test('backend-backed user flows are enabled by default but can be explicitly disabled', () => {
+  storage.delete('oneMind.api.enabled');
+  assert.equal(api.isBackendEnabled(), true);
+
+  api.setBackendEnabled(false);
+  assert.equal(api.isBackendEnabled(), false);
+
+  api.setBackendEnabled(true);
+  assert.equal(api.isBackendEnabled(), true);
+});
+
 test('assessment client APIs forward authentication and idempotency headers without duplicating keys in JSON', async () => {
   api.setBaseUrl('https://api.example.test');
   storage.set('oneMind.auth.token', 'signed-user-token');
@@ -65,6 +76,7 @@ test('assessment client APIs forward authentication and idempotency headers with
 });
 
 test('content structure client API percent-encodes content and version path segments', async () => {
+  api.setBackendEnabled(true);
   api.setBaseUrl('https://api.example.test');
   storage.set('oneMind.auth.token', 'signed-user-token');
 
@@ -76,5 +88,45 @@ test('content structure client API percent-encodes content and version path segm
     'https://api.example.test/api/contents/content%20%2F%3F%23/versions/version%20%2F%3F%23/structure'
   );
   assert.equal(request.method, 'GET');
-  assert.equal(request.header.Authorization, 'Bearer signed-user-token');
+  assert.equal(request.header.Authorization, undefined);
+});
+
+test('approved builtin structure loads without a backend request in local mode', async () => {
+  api.setBackendEnabled(false);
+  const beforeRequestCount = requests.length;
+
+  const structure = await api.getContentStructureApi(
+    'great-compassion-opening',
+    'great-compassion-v1'
+  );
+
+  assert.equal(requests.length, beforeRequestCount);
+  assert.equal(structure.reviewStatus, 'approved');
+  assert.equal(structure.sections.length, 6);
+  assert.equal(structure.sections.flatMap((section) => section.units).length, 84);
+});
+
+test('approved builtin structure is a network-only fallback and does not mask backend version errors', async () => {
+  api.setBackendEnabled(true);
+  const originalRequest = global.wx.request;
+
+  try {
+    global.wx.request = (options) => options.fail({ errMsg: 'request:fail timeout' });
+    const fallback = await api.getContentStructureApi(
+      'great-compassion-opening',
+      'great-compassion-v1'
+    );
+    assert.equal(fallback.sections.length, 6);
+
+    global.wx.request = (options) => options.success({
+      statusCode: 409,
+      data: { error: 'CONTENT_VERSION_NOT_APPROVED' }
+    });
+    await assert.rejects(
+      api.getContentStructureApi('great-compassion-opening', 'great-compassion-v1'),
+      (error) => error.statusCode === 409
+    );
+  } finally {
+    global.wx.request = originalRequest;
+  }
 });

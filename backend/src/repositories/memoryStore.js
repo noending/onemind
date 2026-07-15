@@ -15,6 +15,7 @@ const {
   assets,
   auditLogs
 } = require('../data/seed');
+const { products, orders } = require('../data/commerceSeed');
 
 const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空复现', '整段复诵', '抽查巩固'];
 const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
@@ -54,6 +55,8 @@ const state = {
   organizationMembers: [...organizationMembers],
   assets: [...assets],
   auditLogs: [...auditLogs],
+  products: products.map((item) => ({ ...item, features: [...item.features] })),
+  orders: orders.map((item) => ({ ...item, items: item.items.map((entry) => ({ ...entry })) })),
   usersByOpenId: {}
 };
 
@@ -803,6 +806,144 @@ function listFestivals() {
 
 function listAdminFestivals() {
   return festivals.map(toFestivalDetail);
+}
+
+function listAdminUsers(filters = {}) {
+  const query = String(filters.query || '').trim().toLowerCase();
+  return state.users
+    .filter((item) => !query || [item.id, item.nickname, item.platform].some((value) => String(value || '').toLowerCase().includes(query)))
+    .map((item) => ({
+      id: item.id,
+      nickname: item.nickname || '微信用户',
+      avatarUrl: item.avatarUrl || '',
+      platform: item.platform || 'wechat',
+      status: item.status || 'active',
+      planCount: state.plans.filter((plan) => plan.userId === item.id).length,
+      practiceCount: state.practiceSessions.filter((session) => session.userId === item.id).length,
+      recitationCount: state.recitationSessions.filter((session) => session.userId === item.id && session.completed).length,
+      lastActiveAt: item.updatedAt || item.createdAt || ''
+    }));
+}
+
+function listAdminPlans(filters = {}) {
+  return state.plans
+    .filter((item) => !filters.mode || item.mode === filters.mode)
+    .map((item) => ({
+      ...item,
+      userNickname: state.users.find((user) => user.id === item.userId)?.nickname || item.userId,
+      contentTitle: contents.find((content) => content.id === item.contentId)?.title || item.title || ''
+    }))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+}
+
+function listAdminPracticeSessions(filters = {}) {
+  return state.practiceSessions
+    .filter((item) => !filters.mode || item.mode === filters.mode)
+    .map((item) => ({
+      ...item,
+      userNickname: state.users.find((user) => user.id === item.userId)?.nickname || item.userId,
+      contentTitle: contents.find((content) => content.id === item.contentId)?.title || ''
+    }))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+}
+
+function listAdminRecitationSessions() {
+  return state.recitationSessions
+    .map((item) => ({
+      ...item,
+      userNickname: state.users.find((user) => user.id === item.userId)?.nickname || item.userId,
+      contentTitle: contents.find((content) => content.id === item.contentId)?.title || ''
+    }))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+}
+
+function listProducts(filters = {}) {
+  const query = String(filters.q || filters.query || '').trim().toLowerCase();
+  return state.products
+    .filter((item) => item.status === 'published')
+    .filter((item) => !filters.category || item.category === filters.category)
+    .filter((item) => !query || [item.title, item.subtitle, item.tag].some((value) => String(value || '').toLowerCase().includes(query)))
+    .map((item) => cloneJson(item));
+}
+
+function listAdminProducts(filters = {}) {
+  const query = String(filters.q || filters.query || '').trim().toLowerCase();
+  return state.products
+    .filter((item) => !filters.category || item.category === filters.category)
+    .filter((item) => !filters.status || item.status === filters.status)
+    .filter((item) => !query || [item.title, item.subtitle, item.tag].some((value) => String(value || '').toLowerCase().includes(query)))
+    .map((item) => cloneJson(item));
+}
+
+function createProduct(payload = {}) {
+  const now = new Date().toISOString();
+  const product = normalizeProduct({
+    ...payload,
+    id: createId('product'),
+    createdAt: now,
+    updatedAt: now
+  });
+  if (!product.title) throw Object.assign(new Error('商品标题不能为空'), { statusCode: 400 });
+  state.products.unshift(product);
+  appendAuditLog({ action: 'product.created', targetType: 'product', targetId: product.id, detail: { title: product.title } });
+  return cloneJson(product);
+}
+
+function updateProduct(productId, payload = {}) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+  Object.assign(product, normalizeProduct({ ...product, ...payload, id: product.id, createdAt: product.createdAt, updatedAt: new Date().toISOString() }));
+  appendAuditLog({ action: 'product.updated', targetType: 'product', targetId: product.id, detail: { title: product.title, status: product.status } });
+  return cloneJson(product);
+}
+
+function archiveProduct(productId) {
+  return updateProduct(productId, { status: 'archived' });
+}
+
+function listAdminOrders(filters = {}) {
+  return state.orders
+    .filter((item) => !filters.status || item.status === filters.status)
+    .filter((item) => !filters.paymentStatus || item.paymentStatus === filters.paymentStatus)
+    .map((item) => cloneJson(item))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+}
+
+function updateOrderStatus(orderId, payload = {}) {
+  const order = state.orders.find((item) => item.id === orderId);
+  if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+  const allowedStatuses = ['pending', 'paid', 'processing', 'completed', 'cancelled', 'refunded'];
+  if (payload.status && !allowedStatuses.includes(payload.status)) {
+    throw Object.assign(new Error('Invalid order status'), { statusCode: 400 });
+  }
+  if (payload.paymentStatus && payload.paymentStatus !== order.paymentStatus) {
+    throw Object.assign(new Error('支付状态只能由支付服务更新'), { statusCode: 409 });
+  }
+  if (payload.status) order.status = payload.status;
+  order.updatedAt = new Date().toISOString();
+  appendAuditLog({ action: 'order.status_updated', targetType: 'order', targetId: order.id, detail: { status: order.status } });
+  return cloneJson(order);
+}
+
+function normalizeProduct(product = {}) {
+  return {
+    id: String(product.id || ''),
+    category: String(product.category || '未分类'),
+    tag: String(product.tag || ''),
+    title: String(product.title || '').trim(),
+    subtitle: String(product.subtitle || ''),
+    price: Math.max(0, Number(product.price || 0)),
+    originalPrice: product.originalPrice === null || product.originalPrice === undefined ? null : Math.max(0, Number(product.originalPrice || 0)),
+    isFeatured: Boolean(product.isFeatured),
+    color: String(product.color || '#7E2A1C'),
+    cover: String(product.cover || ''),
+    description: String(product.description || ''),
+    features: Array.isArray(product.features) ? product.features.map(String) : [],
+    stock: Math.max(0, Math.round(Number(product.stock || 0))),
+    status: ['draft', 'published', 'archived'].includes(product.status) ? product.status : 'draft',
+    createdAt: product.createdAt || new Date().toISOString(),
+    updatedAt: product.updatedAt || new Date().toISOString()
+  };
 }
 
 function createFestival(payload = {}) {
@@ -2023,11 +2164,13 @@ function listDueNotificationJobs({ dueBefore = new Date().toISOString(), limit =
     .map((job) => ({ ...job }));
 }
 
-function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claimedAt, leaseUntil, limit = 20 } = {}) {
+function claimDueNotificationJobs({ userId, dueBefore = new Date().toISOString(), claimedAt, leaseUntil, limit = 20 } = {}) {
   const dueAt = String(dueBefore || new Date().toISOString());
+  const normalizedUserId = userId ? String(userId) : '';
   const normalizedClaimedAt = String(claimedAt || dueAt);
   const normalizedLeaseUntil = String(leaseUntil || new Date(Date.parse(normalizedClaimedAt) + 30_000).toISOString());
   state.notificationJobs.forEach((job) => {
+    if (normalizedUserId && job.userId !== normalizedUserId) return;
     if (job.status !== 'processing' || !job.leaseUntil || String(job.leaseUntil) > normalizedClaimedAt) return;
     state.notificationSubscriptions.forEach((subscription) => {
       if (subscription.reservedJobId !== job.id) return;
@@ -2049,6 +2192,7 @@ function claimDueNotificationJobs({ dueBefore = new Date().toISOString(), claime
 
   return state.notificationJobs
     .filter((job) => job.status === 'pending')
+    .filter((job) => !normalizedUserId || job.userId === normalizedUserId)
     .filter((job) => String(job.scheduledAt) <= dueAt)
     .filter((job) => !job.nextRetryAt || String(job.nextRetryAt) <= dueAt)
     .slice()
@@ -2651,6 +2795,17 @@ module.exports = {
   createFestival,
   listAdminContents,
   listAdminFestivals,
+  listAdminUsers,
+  listAdminPlans,
+  listAdminPracticeSessions,
+  listAdminRecitationSessions,
+  listProducts,
+  listAdminProducts,
+  createProduct,
+  updateProduct,
+  archiveProduct,
+  listAdminOrders,
+  updateOrderStatus,
   createNotificationJob,
   createAdaptivePlan,
   createMemoryAssessment,

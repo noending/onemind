@@ -32,7 +32,7 @@ function buildScopeOptions(structure = {}) {
     {
       scopeType: 'full',
       scopeId: null,
-      title: 'Full text',
+      title: '全文',
       unitCount: fullUnitCount
     },
     ...reviewedSections.map((section) => ({
