@@ -1,0 +1,121 @@
+{
+  "meta": {
+    "page": "practice",
+    "updatedAt": "2026-06-03",
+    "notes": "Web TrainingModal 与 MiniApp practice 页结构映射基线。"
+  },
+  "mappings": [
+    {
+      "id": "practice.topbar",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1445,
+        "snippet": "返回 / 步骤 / 查看全文"
+      },
+      "miniappRef": {
+        "file": "pages/practice/index.wxml",
+        "line": 3,
+        "selector": ".topbar",
+        "snippet": "back + topbar-meta + fulltext-button"
+      }
+    },
+    {
+      "id": "practice.progress",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1456,
+        "snippet": "顶部进度条"
+      },
+      "miniappRef": {
+        "file": "pages/practice/index.wxml",
+        "line": 8,
+        "selector": ".train-progress",
+        "snippet": "train-progress-bar"
+      }
+    },
+    {
+      "id": "practice.info-chips",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1460,
+        "snippet": "类型 + 第 N/N 天"
+      },
+      "miniappRef": {
+        "file": "pages/practice/index.wxml",
+        "line": 12,
+        "selector": ".train-chip-row",
+        "snippet": "train-info-chip"
+      }
+    },
+    {
+      "id": "practice.header-title",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1464,
+        "snippet": "content.title"
+      },
+      "miniappRef": {
+        "file": "pages/practice/index.wxml",
+        "line": 19,
+        "selector": ".train-title",
+        "snippet": "{{content.title}}"
+      }
+    },
+    {
+      "id": "practice.segment-cards",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1493,
+        "snippet": "StepRead / StepFirstChar 段落卡片"
+      },
+      "miniappRef": {
+        "file": "pages/practice/index.wxml",
+        "line": 45,
+        "selector": ".segment-card",
+        "snippet": "wx:for=\"{{displaySegments}}\""
+      }
+    },
+    {
+      "id": "practice.step-actions",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1475,
+        "snippet": "上一步 / 下一步"
+      },
+      "miniappRef": {
+        "file": "pages/practice/index.wxml",
+        "line": 56,
+        "selector": ".step-actions",
+        "snippet": "step-btn ghost/primary"
+      }
+    },
+    {
+      "id": "practice.feedback",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1568,
+        "snippet": "StepFeedback"
+      },
+      "miniappRef": {
+        "file": "pages/practice/index.wxml",
+        "line": 62,
+        "selector": ".feedback-grid",
+        "snippet": "feedback-button"
+      }
+    },
+    {
+      "id": "practice.next-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1880,
+        "snippet": "下一段建议"
+      },
+      "miniappRef": {
+        "file": "pages/practice/index.wxml",
+        "line": 74,
+        "selector": ".next-card",
+        "snippet": "next-card"
+      }
+    }
+  ]
+}

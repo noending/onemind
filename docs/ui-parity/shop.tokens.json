@@ -1,0 +1,107 @@
+{
+  "meta": {
+    "page": "shop",
+    "source": "design/src/app/App.tsx",
+    "target": "pages/shop/index.(wxml|wxss|js)",
+    "updatedAt": "2026-07-07",
+    "designFrame": {
+      "widthPx": 390,
+      "heightPx": 844
+    },
+    "conversion": {
+      "miniProgramWidthRpx": 750,
+      "rpxPerPx": 1.9230769231,
+      "rounding": "round-half-up"
+    }
+  },
+  "palette": {
+    "pageBg": "#f6ecd7",
+    "primary": "#a63127",
+    "headline": "#351b18",
+    "subtle": "#80655c",
+    "cardBg": "#f7f4ee",
+    "featuredStart": "#aa332b",
+    "featuredEnd": "#873327",
+    "featuredText": "#fff8ed",
+    "featuredAccent": "#f2ac3e"
+  },
+  "typography": {
+    "title": {
+      "designPx": 30,
+      "miniRpx": 58,
+      "implementedRpx": 54
+    },
+    "subtitle": {
+      "designPx": 12.5,
+      "miniRpx": 24,
+      "implementedRpx": 22
+    },
+    "featuredTitle": {
+      "designPx": 26,
+      "miniRpx": 50,
+      "implementedRpx": 48
+    },
+    "productTitle": {
+      "designPx": 14.5,
+      "miniRpx": 28,
+      "implementedRpx": 29
+    },
+    "price": {
+      "designPx": 14,
+      "miniRpx": 27,
+      "implementedRpx": 40
+    }
+  },
+  "shape": {
+    "featuredRadius": {
+      "designPx": 26,
+      "miniRpx": 50,
+      "implementedRpx": 40
+    },
+    "productCardRadius": {
+      "designPx": 18,
+      "miniRpx": 35,
+      "implementedRpx": 34
+    },
+    "tabRadius": {
+      "designPx": 999,
+      "miniRpx": 1921,
+      "implementedRpx": 999
+    }
+  },
+  "spacing": {
+    "pageHorizontal": {
+      "designPx": 24,
+      "miniRpx": 46,
+      "implementedRpx": 36
+    },
+    "featuredTopMargin": {
+      "designPx": 24,
+      "miniRpx": 46,
+      "implementedRpx": 24
+    },
+    "productGap": {
+      "designPx": 14,
+      "miniRpx": 27,
+      "implementedRpx": 14
+    }
+  },
+  "selectorSnapshot": {
+    ".shop-body .page-title": [
+      "font-size: 54rpx",
+      "line-height: 1.15"
+    ],
+    ".theme-card": [
+      "border-radius: 40rpx",
+      "background: linear-gradient(135deg, #942b1f 0%, #a73927 55%, #7d2b1d 100%)"
+    ],
+    ".product-card": [
+      "padding: 20rpx",
+      "border: 1rpx solid rgba(224, 214, 196, 0.95)"
+    ],
+    ".shop-tab.active": [
+      "background: #8d2f22",
+      "color: #fff8ed"
+    ]
+  }
+}

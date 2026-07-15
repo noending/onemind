@@ -1,0 +1,106 @@
+{
+  "meta": {
+    "page": "profile",
+    "source": "design/src/app/App.tsx#MineScreen",
+    "target": "pages/profile/index.(wxml|wxss|js)",
+    "updatedAt": "2026-07-07",
+    "designFrame": {
+      "widthPx": 390,
+      "heightPx": 844
+    },
+    "conversion": {
+      "miniProgramWidthRpx": 750,
+      "rpxPerPx": 1.9230769231,
+      "rounding": "round-half-up"
+    }
+  },
+  "palette": {
+    "pageBg": "#f6ecd7",
+    "headline": "#2d2018",
+    "subtle": "#8a7860",
+    "heroGlow": "rgba(244, 224, 176, 0.4)",
+    "heroCardStart": "#7e2a1c",
+    "heroCardEnd": "#5c1f14",
+    "reviewTint": "rgba(126, 42, 28, 0.08)",
+    "riskTint": "rgba(197, 138, 46, 0.1)",
+    "doneTint": "rgba(94, 122, 79, 0.1)"
+  },
+  "typography": {
+    "authName": {
+      "designPx": 20,
+      "miniRpx": 38,
+      "implementedRpx": 36
+    },
+    "dailyTitle": {
+      "designPx": 15,
+      "miniRpx": 29,
+      "implementedRpx": 29
+    },
+    "growthNumber": {
+      "designPx": 24,
+      "miniRpx": 46,
+      "implementedRpx": 42
+    },
+    "planTitle": {
+      "designPx": 19,
+      "miniRpx": 37,
+      "implementedRpx": 34
+    }
+  },
+  "shape": {
+    "heroRadius": {
+      "designPx": 20,
+      "miniRpx": 38,
+      "implementedRpx": 36
+    },
+    "dailyCardRadius": {
+      "designPx": 18,
+      "miniRpx": 35,
+      "implementedRpx": 32
+    },
+    "cardRadius": {
+      "designPx": 20,
+      "miniRpx": 38,
+      "implementedRpx": 34
+    }
+  },
+  "spacing": {
+    "pageTop": {
+      "designPx": 2,
+      "miniRpx": 4,
+      "implementedRpx": 124
+    },
+    "statsGap": {
+      "designPx": 16,
+      "miniRpx": 31,
+      "implementedRpx": 18
+    },
+    "cardGap": {
+      "designPx": 12,
+      "miniRpx": 23,
+      "implementedRpx": 14
+    }
+  },
+  "selectorSnapshot": {
+    ".hero-panel": [
+      "border-radius: 36rpx",
+      "background: linear-gradient(180deg, rgba(244, 224, 176, 0.4), rgba(251, 245, 233, 0.2) 54%, rgba(255, 250, 242, 0))"
+    ],
+    ".daily-card": [
+      "border-radius: 32rpx",
+      "background: linear-gradient(140deg, #7e2a1c, #5c1f14)"
+    ],
+    ".summary-pill": [
+      "border-radius: 28rpx",
+      "padding: 16rpx 14rpx"
+    ],
+    ".curve-card": [
+      "border-radius: 34rpx",
+      "padding: 22rpx"
+    ],
+    ".mini-plan-card": [
+      "border-radius: 34rpx",
+      "padding: 22rpx"
+    ]
+  }
+}

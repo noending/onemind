@@ -1,0 +1,14 @@
+.font-serif-sc {
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+}
+.font-sans-sc {
+  font-family: 'Noto Sans SC', -apple-system, system-ui, sans-serif;
+}
+
+body {
+  font-family: 'Noto Sans SC', -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

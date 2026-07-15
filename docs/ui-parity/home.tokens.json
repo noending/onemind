@@ -1,0 +1,101 @@
+{
+  "meta": {
+    "page": "home",
+    "source": "design/src/app/App.tsx#TodayScreen",
+    "target": "pages/home/index.(wxml|wxss|js)",
+    "updatedAt": "2026-07-07",
+    "designFrame": {
+      "widthPx": 390,
+      "heightPx": 844
+    },
+    "conversion": {
+      "miniProgramWidthRpx": 750,
+      "rpxPerPx": 1.9230769231,
+      "rounding": "round-half-up"
+    }
+  },
+  "palette": {
+    "pageBg": "#f6ecd7",
+    "headline": "#351b18",
+    "subtle": "#80655c",
+    "todayCardStart": "#962f22",
+    "todayCardMid": "#7f271a",
+    "todayCardEnd": "#722114",
+    "todayText": "#fbe9c8",
+    "festivalStart": "#f4d8a5",
+    "festivalEnd": "rgba(233, 184, 106, 0.8)"
+  },
+  "typography": {
+    "pageTitle": {
+      "designPx": 32,
+      "miniRpx": 62,
+      "implementedRpx": 56
+    },
+    "todayVerse": {
+      "designPx": 18,
+      "miniRpx": 35,
+      "implementedRpx": 34
+    },
+    "reviewTitle": {
+      "designPx": 22,
+      "miniRpx": 42,
+      "implementedRpx": 40
+    },
+    "footerNote": {
+      "designPx": 11,
+      "miniRpx": 21,
+      "implementedRpx": 21
+    }
+  },
+  "shape": {
+    "todayCardRadius": {
+      "designPx": 26,
+      "miniRpx": 50,
+      "implementedRpx": 38
+    },
+    "reviewCardRadius": {
+      "designPx": 20,
+      "miniRpx": 38,
+      "implementedRpx": 32
+    },
+    "festivalCardRadius": {
+      "designPx": 22,
+      "miniRpx": 42,
+      "implementedRpx": 30
+    }
+  },
+  "spacing": {
+    "pageTop": {
+      "designPx": 8,
+      "miniRpx": 15,
+      "implementedRpx": 124
+    },
+    "todayCardTopMargin": {
+      "designPx": 24,
+      "miniRpx": 46,
+      "implementedRpx": 20
+    },
+    "reviewGap": {
+      "designPx": 12,
+      "miniRpx": 23,
+      "implementedRpx": 14
+    }
+  },
+  "selectorSnapshot": {
+    ".home-body": [
+      "padding-top: 124rpx"
+    ],
+    ".today-card": [
+      "border-radius: 38rpx",
+      "background: linear-gradient(140deg, #962f22, #7f271a 65%, #722114)"
+    ],
+    ".review-card": [
+      "padding: 22rpx",
+      "border-radius: 32rpx"
+    ],
+    ".home-note": [
+      "text-align: center",
+      "font-size: 21rpx"
+    ]
+  }
+}

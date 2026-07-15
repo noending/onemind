@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "page": "shop",
+    "updatedAt": "2026-06-01",
+    "notes": "Web 与 MiniApp 的结构映射基线。用于像素对齐回归，不作为运行时代码。"
+  },
+  "mappings": [
+    {
+      "id": "shop.title",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 920,
+        "snippet": "心经记 · 商城"
+      },
+      "miniappRef": {
+        "file": "pages/shop/index.wxml",
+        "line": 4,
+        "selector": ".page-title",
+        "snippet": "心经记 · 商城"
+      }
+    },
+    {
+      "id": "shop.featured-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 933,
+        "snippet": "featuredProduct 渐变卡"
+      },
+      "miniappRef": {
+        "file": "pages/shop/index.wxml",
+        "line": 12,
+        "selector": ".theme-card",
+        "snippet": "wx:if=\"{{featuredProduct}}\""
+      }
+    },
+    {
+      "id": "shop.category-tabs",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 947,
+        "snippet": "categories.map"
+      },
+      "miniappRef": {
+        "file": "pages/shop/index.wxml",
+        "line": 22,
+        "selector": ".shop-tabs/.shop-tab",
+        "snippet": "wx:for=\"{{categories}}\""
+      }
+    },
+    {
+      "id": "shop.product-list-filter",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 913,
+        "snippet": "category && !isFeatured"
+      },
+      "miniappRef": {
+        "file": "pages/shop/index.js",
+        "line": 151,
+        "selector": "refreshProducts",
+        "snippet": "item.category === active && !item.isFeatured"
+      }
+    },
+    {
+      "id": "shop.product-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 999,
+        "snippet": "ShopProductCard"
+      },
+      "miniappRef": {
+        "file": "pages/shop/index.wxml",
+        "line": 29,
+        "selector": ".product-card",
+        "snippet": "wx:for=\"{{visibleProducts}}\""
+      }
+    },
+    {
+      "id": "shop.bottom-sheet",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 540,
+        "snippet": "ProductDetailModal"
+      },
+      "miniappRef": {
+        "file": "pages/shop/index.wxml",
+        "line": 61,
+        "selector": ".sheet-mask/.product-sheet",
+        "snippet": "wx:if=\"{{selectedProduct}}\""
+      }
+    }
+  ]
+}

@@ -1,88 +1,360 @@
 <view class="screen">
-  <app-header />
-
   <view class="page-body profile-body">
-    <text class="page-title">我的</text>
-    <text class="page-subtitle">计划进度与修持记录</text>
-
-    <view class="platform-card card">
-      <view>
-        <text class="platform-label">当前端</text>
-        <text class="platform-title">{{platform.label}}</text>
-        <text class="platform-desc">{{platform.system || platform.model}}</text>
-      </view>
-      <button class="plan-button" bindtap="openPlan">计划</button>
-    </view>
-
-    <view class="stat-grid">
-      <view class="stat-card card">
-        <text class="stat-icon red">↻</text>
-        <text class="stat-number">{{stats.reviewing}}</text>
-        <text class="stat-label">复习中</text>
-      </view>
-      <view class="stat-card card">
-        <text class="stat-icon amber">△</text>
-        <text class="stat-number">{{stats.atRisk}}</text>
-        <text class="stat-label">高遗忘风险</text>
-      </view>
-      <view class="stat-card card">
-        <text class="stat-icon green">✓</text>
-        <text class="stat-number">{{stats.mastered}}</text>
-        <text class="stat-label">已背会</text>
-      </view>
-    </view>
-
-    <text class="section-title">提醒策略</text>
-    <view class="reminder-card card">
-      <text class="reminder-main">{{reminderStrategy}}</text>
-      <view class="capability-list">
-        <view wx:for="{{capabilities}}" wx:key="key" class="capability-row">
-          <view>
-            <text class="capability-title">{{item.title}}</text>
-            <text class="capability-desc">{{item.desc}}</text>
+    <view class="hero-panel">
+      <view class="auth-card card">
+        <button class="auth-avatar-button" open-type="chooseAvatar" bindchooseavatar="onChooseWechatAvatar">
+          <image wx:if="{{auth.avatarUrl}}" class="auth-avatar" src="{{auth.avatarUrl}}" mode="aspectFill"></image>
+          <view wx:else class="auth-avatar auth-avatar-fallback">{{auth.avatarInitial}}</view>
+        </button>
+        <view class="auth-copy">
+          <view class="auth-name-row">
+            <text class="auth-name">{{auth.nickname}}</text>
           </view>
-          <text class="capability-status {{item.status}}">{{item.status === 'available' ? '已启用' : item.status === 'ready' ? '待接入' : '降级'}}</text>
+          <view class="auth-stats-row">
+            <text class="auth-level">Lv.2 行愿</text>
+            <view class="auth-metrics">
+              <text class="auth-stat">◔ 记忆 {{growthOverview.memorizationStreak}} 天</text>
+              <text class="auth-stat">读诵 {{growthOverview.recitationStreak}} 天</text>
+            </view>
+          </view>
         </view>
       </view>
+
+      <view class="daily-card">
+        <text class="daily-kicker">今日寄语</text>
+        <text class="daily-title">念念相续，无有间断</text>
+        <text class="daily-desc">心定则慧生 · 慧生则烦恼断</text>
+      </view>
     </view>
 
-    <text class="section-title">多端自检</text>
-    <view class="check-card card">
-      <view wx:for="{{checklist}}" wx:key="key" class="check-row">
-        <text class="check-dot"></text>
-        <view class="check-copy">
-          <text class="check-title">{{item.title}}</text>
-          <text class="check-desc">{{item.desc}}</text>
+    <view class="growth-grid">
+      <view class="growth-card card">
+        <text class="growth-number">{{growthOverview.memorizationStreak}}</text>
+        <text class="growth-label">记忆连续</text>
+      </view>
+      <view class="growth-card card">
+        <text class="growth-number">{{growthOverview.recitationStreak}}</text>
+        <text class="growth-label">读诵连续</text>
+      </view>
+      <view class="growth-card card">
+        <text class="growth-number">{{growthOverview.masteredCount}}</text>
+        <text class="growth-label">已掌握</text>
+      </view>
+    </view>
+
+    <view wx:if="{{growthOverview.latestMilestone}}" class="milestone-card card">
+      <view class="milestone-head">
+        <text class="milestone-kicker">最近里程碑</text>
+        <text class="milestone-date">{{growthOverview.latestMilestone.achievedAt}}</text>
+      </view>
+      <text class="milestone-title">{{growthOverview.latestMilestone.title}}</text>
+      <text class="milestone-desc">{{growthOverview.latestMilestone.title}} 已被记录为新的成长节点</text>
+    </view>
+
+    <view wx:else class="milestone-card card milestone-empty">
+      <text class="milestone-kicker">最近里程碑</text>
+      <text class="milestone-title">继续保持当前节律</text>
+      <text class="milestone-desc">新的里程碑会在这里显示</text>
+    </view>
+
+    <view class="sub-tabs">
+      <button class="sub-tab {{subTab === 'progress' ? 'active' : ''}}" data-tab="progress" bindtap="changeSubTab">⟳ 进度</button>
+      <button class="sub-tab {{subTab === 'settings' ? 'active' : ''}}" data-tab="settings" bindtap="changeSubTab">⚙ 设置</button>
+    </view>
+
+    <block wx:if="{{subTab === 'progress'}}">
+      <view class="summary-strip">
+        <view class="summary-pill review">
+          <view class="summary-icon">⟳</view>
+          <view class="summary-copy">
+            <text class="summary-kicker">复习中</text>
+            <text class="summary-value">{{stats.reviewing}}</text>
+          </view>
+        </view>
+        <view class="summary-pill risk">
+          <view class="summary-icon">⚠</view>
+          <view class="summary-copy">
+            <text class="summary-kicker">遗忘风险</text>
+            <text class="summary-value">{{stats.atRisk}}</text>
+          </view>
+        </view>
+        <view class="summary-pill done">
+          <view class="summary-icon">✓</view>
+          <view class="summary-copy">
+            <text class="summary-kicker">已背会</text>
+            <text class="summary-value">{{stats.mastered}}</text>
+          </view>
         </view>
       </view>
-    </view>
+      <text class="summary-note">{{summaryText}}</text>
 
-    <text class="section-title">复习中</text>
-    <view wx:for="{{reviewing}}" wx:key="id" class="progress-card card">
-      <view class="progress-head">
-        <text class="progress-title">{{item.title}}</text>
-        <text class="progress-count">{{item.current}}/{{item.total}}</text>
+      <view wx:if="{{recitationGoals.length}}" class="section-head">
+        <text class="section-title">读诵目标</text>
       </view>
-      <view class="progress-track">
-        <view class="progress-bar" style="width: {{item.percent}}%;"></view>
+      <view wx:for="{{recitationGoals}}" wx:key="id" class="goal-card card" data-id="{{item.contentId}}" data-goal-id="{{item.id}}" data-period="{{item.preferredPeriod}}" bindtap="openRecitation">
+        <view class="goal-row">
+          <view class="goal-main">
+            <text class="goal-title">{{item.title}}</text>
+            <text class="goal-subtitle">{{item.subtitleText}}</text>
+          </view>
+          <view class="goal-meta">
+            <text class="goal-target">{{item.dailyTargetText}}</text>
+            <text class="goal-period">{{item.preferredPeriodLabel}}</text>
+          </view>
+        </view>
+        <view class="goal-badges">
+          <text class="goal-badge">{{item.goalTypeLabel}}</text>
+          <text class="goal-badge {{item.statusTone}}">{{item.statusLabel}}</text>
+        </view>
       </view>
-      <text class="progress-scene">{{item.scene}}</text>
-    </view>
 
-    <text class="section-title">已背会</text>
-    <view wx:for="{{mastered}}" wx:key="id" class="progress-card card">
-      <view class="progress-head">
-        <text class="progress-title">{{item.title}}</text>
-        <text class="progress-count">{{item.current}}/{{item.total}}</text>
+      <view class="curve-block">
+        <text class="curve-title">记忆曲线</text>
+        <text class="curve-desc">{{selectedPlanIsAdaptive ? '按分句记忆状态显示真实进度。' : selectedPlanMigrationRequired ? '旧长计划需确认升级后再进入新的分句进度。' : '基于艾宾浩斯遗忘曲线，红点为复习节点。'}}</text>
       </view>
-      <view class="progress-track">
-        <view class="progress-bar done" style="width: {{item.percent}}%;"></view>
-      </view>
-      <text class="progress-scene">{{item.scene}}</text>
-    </view>
 
-    <button class="reset-button" bindtap="resetDemo">♲ 重置 Demo</button>
+      <scroll-view wx:if="{{plans.length}}" class="curve-plan-scroll" scroll-x="true" show-scrollbar="false">
+        <view class="curve-plan-row">
+          <text wx:for="{{plans}}" wx:key="id" class="curve-plan-pill {{selectedPlanId === item.id ? 'active' : ''}}" data-id="{{item.id}}" bindtap="changeCurvePlan">{{item.title}}</text>
+        </view>
+      </scroll-view>
+
+      <view wx:if="{{selectedPlanIsAdaptive && adaptiveProgress}}" class="curve-card card adaptive-progress-card">
+        <view class="curve-head">
+          <text class="curve-plan-title">{{selectedPlanTitle}}</text>
+          <text class="curve-plan-day">稳定 {{adaptiveProgress.percent}}%</text>
+        </view>
+        <view class="adaptive-progress-grid">
+          <view class="adaptive-progress-item"><text class="adaptive-progress-value">{{adaptiveProgress.stableUnitCount}}/{{adaptiveProgress.totalUnitCount}}</text><text class="adaptive-progress-label">稳定句段</text></view>
+          <view class="adaptive-progress-item"><text class="adaptive-progress-value">{{adaptiveProgress.dueTodayCount}}</text><text class="adaptive-progress-label">今日到期</text></view>
+          <view class="adaptive-progress-item"><text class="adaptive-progress-value">{{adaptiveProgress.weakUnitCount}}</text><text class="adaptive-progress-label">薄弱句段</text></view>
+        </view>
+        <view class="adaptive-date-row"><text>预计首轮完成</text><text>{{adaptiveProgress.expectedFinishDate}}</text></view>
+        <view class="adaptive-date-row"><text>下次复习</text><text>{{adaptiveProgress.nextReviewDate}}</text></view>
+      </view>
+
+      <view wx:elif="{{selectedPlanMigrationRequired}}" class="curve-card card legacy-migration-panel">
+        <text class="curve-plan-title">{{selectedPlanTitle}}</text>
+        <text class="curve-desc">旧长计划不会继续使用固定遗忘曲线。升级后将按每句真实记忆状态安排新学与复习。</text>
+        <button class="legacy-migration-button" bindtap="migrateLegacyPlan">升级为新的分句计划</button>
+      </view>
+
+      <view wx:elif="{{curveData.length}}" class="curve-card card">
+        <view class="curve-head">
+          <text class="curve-plan-title">{{selectedPlanTitle}}</text>
+          <text class="curve-plan-day">第 {{curveCurrentDay}}/{{curveTotalDays}} 天</text>
+        </view>
+        <view class="curve-chart-shell">
+          <view class="curve-y-axis">
+            <text wx:for="{{curveChart.yTicks}}" wx:key="id" class="curve-y-label" style="{{item.style}}">{{item.value}}%</text>
+          </view>
+          <view class="curve-plot">
+            <canvas id="curveCanvas" type="2d" class="curve-canvas"></canvas>
+            <view wx:for="{{curveChart.guideLines}}" wx:key="id" class="curve-guide-line" style="{{item.style}}"></view>
+            <view class="curve-x-axis">
+              <text wx:for="{{curveChart.xTicks}}" wx:key="id" class="curve-x-label" style="{{item.style}}">{{item.day}}d</text>
+            </view>
+          </view>
+        </view>
+        <view class="curve-note-row">
+          <view wx:for="{{curveChart.nodeLegend}}" wx:key="id" class="curve-note-node">
+            <view class="curve-note-dot {{item.active ? 'active' : ''}}"></view>
+            <text class="curve-note-label {{item.active ? 'active' : ''}}">{{item.label}}</text>
+          </view>
+        </view>
+      </view>
+      <view wx:else class="curve-empty card">
+        <text class="curve-empty-icon">◌</text>
+        <text class="curve-empty-title">开始一段内容后</text>
+        <text class="curve-empty-desc">这里会显示你的记忆曲线与复习节点。</text>
+      </view>
+
+      <view wx:if="{{reviewingPlans.length}}" class="section-head">
+        <text class="section-title">复习中</text>
+      </view>
+      <view wx:for="{{reviewingPlans}}" wx:key="id" class="mini-plan-card card" data-id="{{item.contentId}}" data-plan-id="{{item.id}}" bindtap="openPractice">
+        <view class="mini-plan-row">
+          <text class="mini-plan-title">{{item.title}}</text>
+          <text class="mini-plan-progress">{{item.current}}/{{item.total}}</text>
+        </view>
+        <view class="mini-progress-track">
+          <view class="mini-progress-bar" style="width: {{item.percent}}%;"></view>
+        </view>
+        <text class="mini-plan-scene">{{item.scene}}</text>
+      </view>
+
+      <view wx:if="{{riskPlans.length}}" class="section-head">
+        <text class="section-title">高遗忘风险</text>
+      </view>
+      <view wx:for="{{riskPlans}}" wx:key="id" class="mini-plan-card card" data-id="{{item.contentId}}" data-plan-id="{{item.id}}" bindtap="openPractice">
+        <view class="mini-plan-row">
+          <text class="mini-plan-title">{{item.title}}</text>
+          <text class="mini-plan-progress">{{item.current}}/{{item.total}}</text>
+        </view>
+        <view class="mini-progress-track">
+          <view class="mini-progress-bar risk" style="width: {{item.percent}}%;"></view>
+        </view>
+        <text class="mini-plan-scene">{{item.scene}}</text>
+      </view>
+
+      <view wx:if="{{donePlans.length}}" class="section-head">
+        <text class="section-title">已背会</text>
+      </view>
+      <view wx:for="{{donePlans}}" wx:key="id" class="mini-plan-card card" data-id="{{item.contentId}}" data-plan-id="{{item.id}}" bindtap="openPractice">
+        <view class="mini-plan-row">
+          <text class="mini-plan-title done">{{item.title}}</text>
+          <text class="mini-plan-progress">{{item.total}}/{{item.total}}</text>
+        </view>
+        <view class="mini-progress-track">
+          <view class="mini-progress-bar done" style="width: 100%;"></view>
+        </view>
+        <text class="mini-plan-scene">{{item.scene}}</text>
+      </view>
+
+      <view wx:if="{{!reviewingPlans.length && !riskPlans.length && !donePlans.length}}" class="empty-card card">
+        <text class="empty-title">还没有计划</text>
+        <text class="empty-desc">去「选内容」开始你的第一段记忆计划。</text>
+        <button class="empty-button" bindtap="goLibrary">去选内容</button>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="settings-section">
+        <view class="section-head">
+          <text class="section-title">微信授权</text>
+        </view>
+        <view class="settings-card card">
+          <view class="settings-head">
+            <view class="settings-copy">
+              <text class="settings-title">授权状态</text>
+              <text class="settings-desc">{{auth.statusText}}</text>
+            </view>
+          </view>
+          <view class="settings-action-row">
+            <button class="settings-action primary" bindtap="showWechatProfileSheet">{{auth.loggedIn ? '重新授权' : '微信授权'}}</button>
+            <button wx:if="{{auth.loggedIn}}" class="settings-action ghost" bindtap="logoutWechat">退出授权</button>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title">平台能力</text>
+        </view>
+        <view class="settings-card card">
+          <view class="settings-head">
+            <view class="settings-copy">
+              <text class="settings-title">{{platformLabel}}</text>
+              <text class="settings-desc">{{reminderStrategy}}</text>
+            </view>
+          </view>
+          <text wx:if="{{platformDetailText}}" class="platform-detail">{{platformDetailText}}</text>
+          <view class="capability-grid">
+            <view wx:for="{{reminderCapabilities}}" wx:key="key" class="capability-card">
+              <view class="capability-row">
+                <text class="capability-title">{{item.title}}</text>
+                <text class="capability-status {{item.statusTone}}">{{item.statusLabel}}</text>
+              </view>
+              <text class="capability-desc">{{item.desc}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title">提醒设置</text>
+        </view>
+        <view class="settings-card card">
+          <view class="settings-head">
+            <view class="settings-copy">
+              <text class="settings-title">当前策略</text>
+              <text class="settings-desc">{{notificationSourceText}}</text>
+            </view>
+          </view>
+          <view class="notification-list">
+            <view wx:for="{{notificationSettings}}" wx:key="channel" class="notification-row" data-channel="{{item.channel}}" bindtap="toggleNotificationSetting">
+              <view class="notification-main">
+                <view class="notification-row-head">
+                  <text class="notification-title">{{item.channelLabel}}</text>
+                  <text class="notification-status {{item.enabled ? 'on' : 'off'}}">{{item.enabledText}}</text>
+                </view>
+                <text class="notification-desc">{{item.channelDescription}}</text>
+                <text class="notification-quiet">静默时段 {{item.quietHoursText}}</text>
+              </view>
+              <view class="notification-toggle {{item.enabled ? 'on' : 'off'}}">{{item.toggleText}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title">最近提醒任务</text>
+        </view>
+        <view class="settings-card card">
+          <text class="settings-desc">{{notificationJobsHint}}</text>
+          <view wx:if="{{notificationJobs.length}}" class="job-list">
+            <view wx:for="{{notificationJobs}}" wx:key="id" class="job-row">
+              <view class="job-main">
+                <view class="job-row-head">
+                  <text class="job-title">{{item.channelLabel}}</text>
+                  <text class="job-status {{item.statusTone}}">{{item.statusLabel}}</text>
+                </view>
+                <text class="job-meta">计划时间 {{item.scheduledAtText}}</text>
+                <text class="job-payload">{{item.payloadText}}</text>
+              </view>
+              <text class="job-time">{{item.sentAtText || item.scheduledAtText}}</text>
+            </view>
+          </view>
+          <view wx:else class="empty-inline">
+            <text class="empty-inline-text">暂无提醒任务</text>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title">多端自检</text>
+        </view>
+        <view class="settings-card card">
+          <view class="settings-head">
+            <view class="settings-copy">
+              <text class="settings-title">检查清单</text>
+              <text class="settings-desc">{{platformChecklistHint}}</text>
+            </view>
+            <button class="checklist-reset" bindtap="resetPlatformChecklist">重置</button>
+          </view>
+          <view class="checklist-list">
+            <view wx:for="{{platformChecklist}}" wx:key="key" class="checklist-row" data-key="{{item.key}}" bindtap="toggleChecklistItem">
+              <view class="checklist-main">
+                <text class="checklist-title">{{item.title}}</text>
+                <text class="checklist-desc">{{item.desc}}</text>
+              </view>
+              <view class="checklist-side">
+                <text class="checklist-status {{item.statusTone}}">{{item.statusText}}</text>
+                <text class="checklist-updated">{{item.updatedAtText}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </block>
+
+    <view class="profile-brand">
+      <text class="brand-line">· ✦ ·</text>
+      <text class="brand-copy">心经记 · 与你一起慢慢修</text>
+    </view>
   </view>
 
   <app-tabbar active="profile" />
+
+  <view wx:if="{{authProfileSheetVisible}}" class="auth-profile-mask" catchtap="closeWechatProfileSheet">
+    <view class="auth-profile-panel" catchtap="noop">
+      <text class="auth-profile-kicker">微信授权</text>
+      <text class="auth-profile-title">确认头像和昵称</text>
+      <text class="auth-profile-desc">微信已把头像昵称拆成单独能力，请选择头像并点昵称输入框获取微信昵称。</text>
+      <button class="auth-profile-avatar-button" open-type="chooseAvatar" bindchooseavatar="onChooseWechatAvatar">
+        <image wx:if="{{authDraft.avatarUrl}}" class="auth-profile-avatar" src="{{authDraft.avatarUrl}}" mode="aspectFill"></image>
+        <view wx:else class="auth-profile-avatar auth-profile-avatar-fallback">选头像</view>
+      </button>
+      <input class="auth-nickname-input" type="nickname" placeholder="点击选择微信昵称" value="{{authDraft.nickname}}" bindinput="onWechatNicknameInput" />
+      <view class="auth-profile-actions">
+        <button class="auth-profile-action secondary" bindtap="closeWechatProfileSheet">取消</button>
+        <button class="auth-profile-action primary" loading="{{authDraft.saving}}" disabled="{{authDraft.saving}}" bindtap="confirmWechatLogin">确认授权登录</button>
+      </view>
+    </view>
+  </view>
 </view>

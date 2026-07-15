@@ -1,3 +1,31 @@
 .app-header {
-  background: #fff8ed;
+  background: var(--color-bg);
+}
+
+.top-bar {
+  height: 74rpx;
+  padding: 0 36rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.top-spacer {
+  width: 40rpx;
+}
+
+.top-title {
+  color: var(--color-ink);
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: 8rpx;
+  padding-left: 8rpx;
+}
+
+.top-more {
+  width: 40rpx;
+  text-align: right;
+  color: var(--color-ink-3);
+  font-size: 30rpx;
+  letter-spacing: 2rpx;
 }

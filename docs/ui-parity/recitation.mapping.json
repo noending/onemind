@@ -1,0 +1,136 @@
+{
+  "meta": {
+    "page": "recitation",
+    "updatedAt": "2026-07-12",
+    "interactionMode": "manual-completion-no-playback",
+    "notes": "MiniApp 读诵页采用全文查看、手动轮次和完成记录；阶段 A 不包含音频、播放计时、进度条或播放器控制。"
+  },
+  "mappings": [
+    {
+      "id": "recitation.topbar",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1674,
+        "snippet": "返回训练 / 经文全文 / 收藏"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 3,
+        "selector": ".header-topbar",
+        "snippet": "back + header-top-title + heart-button"
+      }
+    },
+    {
+      "id": "recitation.hero-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1686,
+        "snippet": "Decorative banner"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 9,
+        "selector": ".hero-card",
+        "snippet": "hero-card"
+      }
+    },
+    {
+      "id": "recitation.stats-strip",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1700,
+        "snippet": "Stats strip"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 25,
+        "selector": ".stats-strip",
+        "snippet": "stats-strip"
+      }
+    },
+    {
+      "id": "recitation.lines",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1718,
+        "snippet": "全文逐句展示"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 46,
+        "selector": ".segment-card",
+        "snippet": "wx:for=\"{{content.segments}}\""
+      }
+    },
+    {
+      "id": "recitation.note-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1748,
+        "snippet": "修持要点"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 54,
+        "selector": ".note-card",
+        "snippet": "note-card"
+      }
+    },
+    {
+      "id": "recitation.full-text-view",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1674,
+        "snippet": "经文全文"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 5,
+        "selector": ".header-top-title",
+        "snippet": "经文全文"
+      }
+    },
+    {
+      "id": "recitation.round-adjustment",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 1761,
+        "snippet": "轮次"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 67,
+        "selector": ".round-inline",
+        "snippet": "decreaseRound + roundCount + increaseRound"
+      }
+    },
+    {
+      "id": "recitation.completion-record",
+      "designRef": {
+        "file": "docs/PRODUCT_REQUIREMENTS.md",
+        "line": 48,
+        "snippet": "完成打卡"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.wxml",
+        "line": 76,
+        "selector": ".complete-button",
+        "snippet": "completeRecitation"
+      }
+    },
+    {
+      "id": "recitation.no-playback",
+      "designRef": {
+        "file": "docs/PRODUCT_REQUIREMENTS.md",
+        "line": 113,
+        "snippet": "播放功能不属于本阶段范围"
+      },
+      "miniappRef": {
+        "file": "pages/recitation/index.(js|wxml|wxss)",
+        "line": 1,
+        "selector": "absence of audio, timer, progress, and playback controls",
+        "snippet": "manual completion only"
+      }
+    }
+  ]
+}

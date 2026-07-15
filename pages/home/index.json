@@ -1,3 +1,5 @@
 {
-  "navigationBarTitleText": "今日"
+  "navigationBarTitleText": "今日",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark"
 }

@@ -1,19 +1,28 @@
+const VALIDATION_STORAGE_KEY = "oneMind.phase2.validation";
+
 function getPlatformInfo() {
-  let info = {};
+  let deviceInfo = {};
+  let appBaseInfo = {};
   try {
-    info = wx.getSystemInfoSync();
+    if (typeof wx.getDeviceInfo === "function") {
+      deviceInfo = wx.getDeviceInfo() || {};
+    }
+    if (typeof wx.getAppBaseInfo === "function") {
+      appBaseInfo = wx.getAppBaseInfo() || {};
+    }
   } catch (error) {
-    info = {};
+    deviceInfo = {};
+    appBaseInfo = {};
   }
 
-  const host = info.host || {};
-  const platform = info.platform || "unknown";
+  const host = appBaseInfo.host || {};
+  const platform = deviceInfo.platform || "unknown";
 
   return {
     platform,
     hostName: host.env || host.appId || "wechat-miniapp",
-    system: info.system || "",
-    model: info.model || ""
+    system: deviceInfo.system || "",
+    model: deviceInfo.model || ""
   };
 }
 
@@ -71,39 +80,116 @@ function getReminderCapabilities() {
   ];
 }
 
+function testStorage() {
+  const key = "__oneMind_platform_probe__";
+  const value = `${Date.now()}`;
+
+  try {
+    wx.setStorageSync(key, value);
+    const stored = wx.getStorageSync(key);
+    wx.removeStorageSync(key);
+    return stored === value;
+  } catch (error) {
+    return false;
+  }
+}
+
+function statusText(status) {
+  if (status === "passed") return "通过";
+  if (status === "failed") return "失败";
+  return "待复测";
+}
+
+function getSavedValidationState() {
+  try {
+    const saved = wx.getStorageSync(VALIDATION_STORAGE_KEY);
+    return saved && typeof saved === "object" ? saved : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveValidationState(state) {
+  wx.setStorageSync(VALIDATION_STORAGE_KEY, state);
+}
+
+function nextManualStatus(status) {
+  if (status === "review") return "passed";
+  if (status === "passed") return "failed";
+  return "review";
+}
+
 function getPlatformChecklist() {
-  return [
+  const storageOk = testStorage();
+  const savedState = getSavedValidationState();
+
+  const rows = [
     {
       key: "layout",
       title: "布局与安全区",
       desc: "检查顶部安全区、底栏、训练页反馈按钮和商城卡片是否溢出。",
-      status: "pending"
+      status: "review"
     },
     {
       key: "asset",
       title: "图片与 SVG",
       desc: "检查商城图片、唐卡图片、底栏 SVG 图标是否正常显示。",
-      status: "pending"
+      status: "review"
     },
     {
       key: "storage",
       title: "本地存储",
-      desc: "创建计划、完成训练、进入我的页后进度应保持一致。",
-      status: "pending"
+      desc: storageOk ? "临时写入、读回、清理均成功。" : "存储读写失败，需要检查容器能力。",
+      status: storageOk ? "passed" : "failed"
     },
     {
       key: "navigation",
       title: "页面跳转",
       desc: "首页、内容库、训练页、商城、我的、计划页应能顺畅进出。",
-      status: "pending"
+      status: "review"
     },
     {
       key: "reminder",
       title: "提醒策略",
       desc: "当前端应显示正确提醒方案，并能降级为站内待办。",
-      status: "pending"
+      status: "passed"
     }
   ];
+
+  return rows.map((item) => {
+    const saved = savedState[item.key];
+    const status = item.key === "storage" || item.key === "reminder"
+      ? item.status
+      : (saved && saved.status) || item.status;
+
+    return {
+      ...item,
+      status,
+      statusText: statusText(status),
+      updatedAt: saved && saved.updatedAt ? saved.updatedAt : ""
+    };
+  });
+}
+
+function toggleChecklistStatus(key) {
+  const checklist = getPlatformChecklist();
+  const current = checklist.find((item) => item.key === key);
+  if (!current || current.key === "storage" || current.key === "reminder") {
+    return getPlatformChecklist();
+  }
+
+  const savedState = getSavedValidationState();
+  savedState[key] = {
+    status: nextManualStatus(current.status),
+    updatedAt: new Date().toISOString()
+  };
+  saveValidationState(savedState);
+  return getPlatformChecklist();
+}
+
+function resetChecklistStatus() {
+  saveValidationState({});
+  return getPlatformChecklist();
 }
 
 module.exports = {
@@ -111,5 +197,7 @@ module.exports = {
   getPlatformLabel,
   getReminderStrategy,
   getReminderCapabilities,
-  getPlatformChecklist
+  getPlatformChecklist,
+  toggleChecklistStatus,
+  resetChecklistStatus
 };

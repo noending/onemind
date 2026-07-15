@@ -45,7 +45,16 @@ Component({
       const url = event.currentTarget.dataset.url;
       if (key === this.properties.active) return;
       if (!url) return;
-      wx.redirectTo({ url });
+      if (this._navigating) return;
+      this._navigating = true;
+      wx.reLaunch({
+        url,
+        complete: () => {
+          setTimeout(() => {
+            this._navigating = false;
+          }, 300);
+        }
+      });
     }
   }
 });

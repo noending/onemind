@@ -1,0 +1,322 @@
+.recitation-screen {
+  min-height: 100vh;
+  padding-bottom: calc(190rpx + env(safe-area-inset-bottom));
+  background: #f6ecd7;
+}
+
+.recitation-header {
+  padding: 0 32rpx 16rpx;
+  background: linear-gradient(180deg, rgba(251, 245, 233, 0.96), rgba(243, 233, 210, 0.86));
+}
+
+.header-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.back {
+  color: var(--color-ink-3);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.header-top-title {
+  color: var(--color-ink-3);
+  font-size: 22rpx;
+}
+
+.heart-button {
+  width: var(--btn-h-sm);
+  height: var(--btn-h-sm);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 250, 242, 0.9);
+  color: var(--color-ink-3);
+  font-size: 30rpx;
+  line-height: var(--btn-h-sm);
+  text-align: center;
+}
+
+.heart-button.active {
+  color: var(--color-primary);
+}
+
+.hero-card {
+  position: relative;
+  overflow: hidden;
+  margin-top: 12rpx;
+  border-radius: 34rpx;
+  padding: 24rpx 26rpx;
+  background: linear-gradient(140deg, #7e2a1c, #8b3322 58%, #4a1810);
+  color: #fbe9c8;
+  box-shadow: 0 16rpx 36rpx rgba(126, 42, 28, 0.18);
+}
+
+.hero-mark {
+  position: absolute;
+  right: 16rpx;
+  top: 10rpx;
+  color: rgba(251, 233, 200, 0.1);
+  font-size: 84rpx;
+  line-height: 1;
+}
+
+.hero-type {
+  position: relative;
+  z-index: 1;
+  display: block;
+  color: rgba(233, 184, 106, 0.9);
+  font-size: 20rpx;
+  letter-spacing: 4rpx;
+}
+
+.hero-title {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 8rpx;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: var(--text-xl);
+  line-height: var(--lh-tight);
+}
+
+.hero-subtitle {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 8rpx;
+  color: rgba(251, 233, 200, 0.78);
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.recitation-body {
+  padding-top: 16rpx;
+}
+
+.empty-card {
+  padding: 28rpx;
+}
+
+.empty-title {
+  display: block;
+  color: #351b18;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.empty-desc {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--color-ink-3);
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.empty-button {
+  margin-top: 20rpx;
+  width: 204rpx;
+  height: var(--btn-h-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: var(--btn-h-sm);
+}
+
+.stats-strip {
+  padding: 12rpx 10rpx;
+  margin-bottom: 16rpx;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1rpx solid rgba(232, 216, 194, 0.9);
+  border-radius: 28rpx;
+  background: rgba(251, 245, 233, 0.4);
+  box-shadow: 0 8rpx 20rpx rgba(83, 56, 36, 0.03);
+}
+
+.stat-cell {
+  min-height: 78rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-cell.with-border {
+  border-left: 1rpx solid #ead8c2;
+  border-right: 1rpx solid #ead8c2;
+}
+
+.stat-main {
+  color: #7e2a1c;
+  font-size: 34rpx;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+.stat-sub {
+  margin-top: 4rpx;
+  color: var(--color-ink-3);
+  font-size: 20rpx;
+}
+
+.segment-head {
+  margin-bottom: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.segment-head-title {
+  color: var(--color-ink-3);
+  font-size: 22rpx;
+  letter-spacing: 4rpx;
+}
+
+.segment-head-meta {
+  color: var(--color-ink-3);
+  font-size: 20rpx;
+}
+
+.segment-wrap {
+  margin-top: 6rpx;
+}
+
+.segment-card {
+  margin-bottom: 12rpx;
+  padding: 20rpx 22rpx;
+  display: flex;
+  gap: 14rpx;
+  align-items: flex-start;
+  background: rgba(255, 250, 242, 0.72);
+  border: 1rpx solid rgba(232, 216, 194, 0.9);
+  border-radius: 30rpx;
+  box-shadow: 0 8rpx 20rpx rgba(83, 56, 36, 0.03);
+}
+
+.segment-index {
+  min-width: 34rpx;
+  color: var(--color-ink-3);
+  font-size: 20rpx;
+  line-height: 1.5;
+}
+
+.segment-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.segment-text {
+  color: var(--color-ink);
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: var(--text-lg);
+  line-height: var(--lh-base);
+}
+
+.note-card {
+  margin-top: 18rpx;
+  padding: 24rpx;
+  border-radius: 30rpx;
+  background: rgba(251, 245, 233, 0.58);
+}
+
+.note-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.note-icon {
+  color: #7e2a1c;
+  font-size: 22rpx;
+}
+
+.note-title {
+  color: #7e2a1c;
+  font-size: 22rpx;
+  letter-spacing: 2rpx;
+}
+
+.note-body {
+  display: block;
+  margin-top: 10rpx;
+  color: #5c4838;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.recitation-footer-note {
+  display: block;
+  margin-top: 22rpx;
+  text-align: center;
+  color: var(--color-ink-3);
+  font-size: 20rpx;
+}
+
+.player-footer {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  width: 100%;
+  max-width: 750rpx;
+  padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid #ead8c2;
+  background: rgba(251, 245, 233, 0.97);
+  backdrop-filter: blur(12rpx);
+}
+
+.round-inline {
+  margin-bottom: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.round-inline-label {
+  color: var(--color-ink-3);
+  font-size: 20rpx;
+}
+
+.round-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.round-inline-btn {
+  width: var(--btn-h-sm);
+  height: var(--btn-h-sm);
+  border-radius: var(--radius-pill);
+  background: #f6e4d1;
+  color: var(--color-ink-2);
+  font-size: 24rpx;
+  line-height: var(--btn-h-sm);
+  text-align: center;
+}
+
+.round-inline-count {
+  min-width: 44rpx;
+  text-align: center;
+  color: #7e2a1c;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.complete-button {
+  margin-top: 0;
+  height: var(--btn-h-md);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--text-base);
+  font-weight: 700;
+  line-height: var(--btn-h-md);
+}
+
+.complete-button.done {
+  background: #4b9b62;
+}

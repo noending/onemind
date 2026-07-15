@@ -1,0 +1,21 @@
+[     184ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[    1205ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5175/favicon.ico:0
+[27756916ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[27757472ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[30935744ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[30936106ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[36646400ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[36646912ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[36741284ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[36741640ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[105011365ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[105011908ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[105011997ms] [ERROR] Failed to load resource: net::ERR_INTERNET_DISCONNECTED @ https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600&display=swap:0
+[115105303ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[115105628ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[115674706ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[115674872ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[119965199ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[119965577ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606
+[120368401ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5175/@vite/client:963
+[120368620ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5175/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=9079d392:21606

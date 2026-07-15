@@ -1,0 +1,2857 @@
+const crypto = require('crypto');
+const {
+  recommendPlan,
+  allocateDailyUnits,
+  applyReviewGrade,
+  isInitialComplete
+} = require('../../../common/adaptive-memory');
+const { businessDate } = require('../../../common/business-date');
+
+const {
+  contents,
+  festivals,
+  organizations,
+  organizationMembers,
+  assets,
+  auditLogs
+} = require('../data/seed');
+const { products, orders } = require('../data/commerceSeed');
+
+const REVIEW_METHODS = ['拆段跟读', '首字提示', '遮挡回忆', '填空复现', '整段复诵', '抽查巩固'];
+const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30];
+const REVIEW_TAIL_INTERVAL = 15;
+const GROWTH_STAGES = ['初见', '熟悉', '稳定', '通顺', '已持诵'];
+const MAX_IDEMPOTENCY_KEY_LENGTH = 180;
+const ADAPTIVE_PLAN_CREATE_OPERATION = 'adaptive_plan_create';
+const STUDY_TASK_ITEM_COMPLETE_OPERATION = 'study_task_item_complete';
+const LEGACY_PLAN_ARCHIVE_OPERATION = 'legacy_plan_archive';
+
+const state = {
+  users: [
+    {
+      id: 'demo-user',
+      nickname: 'Demo 用户',
+      platform: 'wechat',
+      status: 'active'
+    }
+  ],
+  plans: [],
+  tasks: [],
+  reviewRecords: [],
+  practiceSessions: [],
+  recitationGoals: [],
+  recitationSessions: [],
+  contentVersions: [],
+  notificationSettings: [],
+  notificationJobs: [],
+  notificationSubscriptions: [],
+  notificationSubscriptionIdempotency: {},
+  memoryAssessments: [],
+  assessmentCompletionResponses: {},
+  adaptivePlans: [],
+  adaptiveDailyTasks: [],
+  adaptiveIdempotencyResponses: {},
+  organizations: [...organizations],
+  organizationMembers: [...organizationMembers],
+  assets: [...assets],
+  auditLogs: [...auditLogs],
+  products: products.map((item) => ({ ...item, features: [...item.features] })),
+  orders: orders.map((item) => ({ ...item, items: item.items.map((entry) => ({ ...entry })) })),
+  usersByOpenId: {}
+};
+
+function todayDate() {
+  return businessDate();
+}
+
+function addDays(dateString, days) {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function createId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeMode(mode) {
+  return String(mode || 'scientific').trim() === 'playful' ? 'playful' : 'scientific';
+}
+
+function normalizeSupportedModes(modes, fallbackMode = 'scientific') {
+  const list = Array.isArray(modes)
+    ? modes
+    : typeof modes === 'string'
+      ? modes.split(',').map((item) => item.trim()).filter(Boolean)
+      : [];
+  const normalized = Array.from(new Set(list.map((item) => normalizeMode(item))));
+  if (!normalized.length) normalized.push(normalizeMode(fallbackMode));
+  return normalized;
+}
+
+function buildReviewOffsets(totalDays) {
+  const total = Math.max(1, Number(totalDays || 1));
+  const offsets = [];
+
+  for (let index = 0; index < total; index += 1) {
+    if (index < REVIEW_INTERVALS.length) {
+      offsets.push(REVIEW_INTERVALS[index]);
+      continue;
+    }
+    const last = offsets[offsets.length - 1] || REVIEW_INTERVALS[REVIEW_INTERVALS.length - 1];
+    offsets.push(last + REVIEW_TAIL_INTERVAL);
+  }
+
+  return offsets;
+}
+
+function splitBodyToSegments(rawText) {
+  const text = String(rawText || '').trim();
+  if (!text) return [];
+
+  const byLine = text.split(/\n+/).map((item) => item.trim()).filter(Boolean);
+  if (byLine.length > 1) return byLine;
+
+  const byPunctuation = text
+    .split(/[。！？；;，,、：:]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (byPunctuation.length > 1) return byPunctuation;
+
+  const byWhitespace = text.split(/\s+/).map((item) => item.trim()).filter(Boolean);
+  if (byWhitespace.length > 1) return byWhitespace;
+
+  if (text.length <= 10) return [text];
+
+  const chunks = [];
+  for (let index = 0; index < text.length; index += 8) {
+    chunks.push(text.slice(index, index + 8));
+  }
+  return chunks.filter(Boolean);
+}
+
+function normalizeSegments(segments, body) {
+  if (Array.isArray(segments)) {
+    const cleaned = segments.map((item) => String(item || '').trim()).filter(Boolean);
+    if (cleaned.length) return cleaned;
+  }
+
+  if (typeof segments === 'string') {
+    const cleaned = segments.split(/\n|,|，|、/).map((item) => item.trim()).filter(Boolean);
+    if (cleaned.length) return cleaned;
+  }
+
+  return splitBodyToSegments(body);
+}
+
+function normalizeGrowthStage(score) {
+  const value = Number(score || 0);
+  if (value >= 100) return GROWTH_STAGES[4];
+  if (value >= 75) return GROWTH_STAGES[3];
+  if (value >= 50) return GROWTH_STAGES[2];
+  if (value >= 25) return GROWTH_STAGES[1];
+  return GROWTH_STAGES[0];
+}
+
+function scientificReasonText(plan, task) {
+  if (!task) return '今天适合再回顾一次，帮助记忆进入更稳的阶段。';
+  if (plan.state === 'at_risk') return '这段最近出现遗忘波动，建议尽快巩固。';
+  if (Number(task.dayIndex || 1) <= 2) return '刚进入记忆曲线前段，今天复习最能稳住记忆。';
+  if (Number(plan.masteryScore || 0) >= 60) return '这段已接近稳定，再巩固一次即可进入长周期。';
+  return '按计划复习能减少后续反复遗忘。';
+}
+
+function calculateDailyStreak(days) {
+  if (!Array.isArray(days) || !days.length) return 0;
+  const normalized = Array.from(new Set(days.map((day) => String(day).slice(0, 10)))).sort().reverse();
+  let cursor = todayDate();
+  let streak = 0;
+  for (const day of normalized) {
+    if (day === cursor) {
+      streak += 1;
+      cursor = addDays(cursor, -1);
+      continue;
+    }
+    if (streak === 0 && day === addDays(cursor, -1)) {
+      streak += 1;
+      cursor = addDays(day, -1);
+      continue;
+    }
+    break;
+  }
+  return streak;
+}
+
+function listContents(filters = {}) {
+  return contents
+    .filter((content) => content.publishStatus === 'published')
+    .filter((content) => !filters.type || content.type === filters.type)
+    .filter((content) => !filters.organizationId || content.organizationId === filters.organizationId)
+    .filter((content) => !filters.mode || matchesContentMode(content, filters.mode))
+    .map(toContentSummary);
+}
+
+function listAdminContents(filters = {}) {
+  return contents
+    .filter((content) => !filters.type || content.type === filters.type)
+    .filter((content) => !filters.organizationId || content.organizationId === filters.organizationId)
+    .filter((content) => !filters.publishStatus || content.publishStatus === filters.publishStatus)
+    .filter((content) => !filters.reviewStatus || (content.reviewStatus || 'draft') === filters.reviewStatus)
+    .filter((content) => !filters.mode || matchesContentMode(content, filters.mode))
+    .map(toContentSummary);
+}
+
+function nextContentVersionNo(contentId) {
+  return state.contentVersions
+    .filter((item) => item.contentId === contentId)
+    .reduce((max, item) => Math.max(max, Number(item.versionNo || 0)), 0) + 1;
+}
+
+function createContentVersionSnapshot(content, { changeNote = '' } = {}) {
+  const version = {
+    id: createId('content_version'),
+    contentId: content.id,
+    versionNo: nextContentVersionNo(content.id),
+    snapshotJson: toContentDetail(content),
+    changeNote: String(changeNote || '').trim() || content.versionNote || '自动保存版本快照',
+    createdBy: 'system',
+    createdAt: new Date().toISOString()
+  };
+  state.contentVersions.unshift(version);
+  return version;
+}
+
+function createApprovedPublishedContentVersion(content, { changeNote = '' } = {}) {
+  if (content.publishStatus !== 'published' || content.reviewStatus !== 'approved') return null;
+  const now = new Date().toISOString();
+  const snapshotSource = { ...content };
+  delete snapshotSource.publishedVersion;
+  const version = {
+    id: createId('content_version'),
+    contentId: content.id,
+    versionNo: nextContentVersionNo(content.id),
+    snapshotJson: toContentDetail(snapshotSource),
+    changeNote: String(changeNote || '').trim() || content.versionNote || '审核通过并发布',
+    createdBy: 'system',
+    createdAt: now,
+    reviewStatus: 'approved',
+    sourceNote: content.sourceNote || '',
+    versionNote: content.versionNote || '',
+    reviewedBy: 'system',
+    reviewedAt: content.reviewedAt || now,
+    publishedAt: now,
+    sourceContentId: content.sourceContentId || '',
+    sourceVersionNo: content.sourceVersionNo || null
+  };
+  state.contentVersions.unshift(version);
+  content.publishedVersion = {
+    id: version.id,
+    versionNo: version.versionNo,
+    reviewStatus: version.reviewStatus,
+    sourceNote: version.sourceNote,
+    versionNote: version.versionNote,
+    sourceContentId: version.sourceContentId,
+    sourceVersionNo: version.sourceVersionNo
+  };
+  return version;
+}
+
+function listContentVersions(contentId) {
+  return state.contentVersions
+    .filter((item) => item.contentId === contentId)
+    .slice()
+    .sort((left, right) => Number(right.versionNo || 0) - Number(left.versionNo || 0));
+}
+
+function createContent(payload = {}) {
+  const title = String(payload.title || '').trim();
+  const body = String(payload.body || payload.preview || '').trim();
+  if (!title || !body) {
+    const error = new Error('Content title and body are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const content = {
+    id: createId('content'),
+    title,
+    subtitle: payload.subtitle || '',
+    type: payload.type || 'mantra',
+    body,
+    preview: payload.preview || body,
+    lengthTier: payload.lengthTier || 'short',
+    planDays: Math.max(1, Number(payload.planDays || 1)),
+    scene: payload.scene || '后台新增内容',
+    segments: normalizeSegments(payload.segments, body),
+    organizationId: payload.organizationId || organizations[0]?.id || '',
+    defaultMode: normalizeMode(payload.defaultMode || 'scientific'),
+    supportedModes: normalizeSupportedModes(payload.supportedModes, payload.defaultMode || 'scientific'),
+    supportsRecitation: payload.supportsRecitation !== undefined ? Boolean(payload.supportsRecitation) : true,
+    recommendedRecitationTime: payload.recommendedRecitationTime || 'morning',
+    recitationTheme: payload.recitationTheme || title,
+    sourceNote: payload.sourceNote || '',
+    versionNote: payload.versionNote || '',
+    sourceContentId: payload.sourceContentId || '',
+    sourceVersionNo: payload.sourceVersionNo ? Number(payload.sourceVersionNo) : null,
+    accessLevel: payload.accessLevel || 'public',
+    publishStatus: payload.publishStatus || 'draft',
+    reviewStatus: payload.reviewStatus || ((payload.publishStatus || 'draft') === 'published' ? 'approved' : 'draft'),
+    reviewedAt: (payload.reviewStatus || ((payload.publishStatus || 'draft') === 'published' ? 'approved' : 'draft')) !== 'draft'
+      ? new Date().toISOString()
+      : null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  contents.push(content);
+  createApprovedPublishedContentVersion(content, {
+    changeNote: payload.versionNote || '创建内容时审核通过并发布'
+  });
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: content.organizationId,
+    action: 'content.created',
+    targetType: 'content',
+    targetId: content.id,
+    detail: {
+      title: content.title,
+      type: content.type,
+      publishStatus: content.publishStatus,
+      reviewStatus: content.reviewStatus
+    }
+  });
+  return toContentDetail(content);
+}
+
+function copyContentAsNewVersion(contentId, payload = {}) {
+  const source = getContent(contentId);
+  if (!source) {
+    const error = new Error('Content not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const snapshot = createContentVersionSnapshot(source, {
+    changeNote: payload.changeNote || `复制新版本前保存 ${source.title} 的当前快照`
+  });
+  const versionNote = String(payload.versionNote || '').trim() || `基于版本 v${snapshot.versionNo} 复制`;
+  const cloned = createContent({
+    title: source.title,
+    subtitle: source.subtitle,
+    type: source.type,
+    body: source.body,
+    preview: source.preview,
+    planDays: source.planDays,
+    lengthTier: source.lengthTier,
+    scene: source.scene,
+    organizationId: source.organizationId,
+    defaultMode: source.defaultMode,
+    supportedModes: source.supportedModes,
+    supportsRecitation: source.supportsRecitation,
+    recommendedRecitationTime: source.recommendedRecitationTime,
+    recitationTheme: source.recitationTheme,
+    sourceNote: source.sourceNote,
+    versionNote,
+    accessLevel: source.accessLevel,
+    publishStatus: 'draft',
+    reviewStatus: 'reviewing',
+    sourceContentId: source.id,
+    sourceVersionNo: snapshot.versionNo,
+    segments: source.segments
+  });
+
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: source.organizationId,
+    action: 'content.version_copied',
+    targetType: 'content',
+    targetId: cloned.id,
+    detail: {
+      sourceContentId: source.id,
+      sourceTitle: source.title,
+      sourceVersionNo: snapshot.versionNo,
+      versionNote
+    }
+  });
+
+  return cloned;
+}
+
+function updateContent(contentId, payload = {}) {
+  const index = contents.findIndex((item) => item.id === contentId);
+  if (index < 0) {
+    const error = new Error('Content not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const previous = { ...contents[index] };
+  if (previous.publishStatus === 'published') {
+    createContentVersionSnapshot(previous, {
+      changeNote: payload.versionNote || '更新已发布内容前自动保存版本快照'
+    });
+  }
+  const nextPublishStatus = payload.publishStatus !== undefined ? payload.publishStatus : previous.publishStatus;
+  const nextReviewStatus = payload.reviewStatus !== undefined
+    ? payload.reviewStatus
+    : nextPublishStatus === 'published'
+      ? (previous.reviewStatus === 'rejected' ? 'rejected' : 'approved')
+      : previous.reviewStatus || 'draft';
+
+  contents[index] = {
+    ...previous,
+    ...payload,
+    planDays: Math.max(1, Number(payload.planDays || previous.planDays || 1)),
+    organizationId: payload.organizationId !== undefined ? payload.organizationId : previous.organizationId,
+    defaultMode: normalizeMode(payload.defaultMode !== undefined ? payload.defaultMode : previous.defaultMode),
+    supportedModes: normalizeSupportedModes(payload.supportedModes !== undefined ? payload.supportedModes : previous.supportedModes, payload.defaultMode !== undefined ? payload.defaultMode : previous.defaultMode),
+    supportsRecitation: payload.supportsRecitation !== undefined ? Boolean(payload.supportsRecitation) : previous.supportsRecitation,
+    recommendedRecitationTime: payload.recommendedRecitationTime !== undefined ? payload.recommendedRecitationTime : previous.recommendedRecitationTime,
+    recitationTheme: payload.recitationTheme !== undefined ? payload.recitationTheme : previous.recitationTheme,
+    sourceNote: payload.sourceNote !== undefined ? payload.sourceNote : previous.sourceNote,
+    versionNote: payload.versionNote !== undefined ? payload.versionNote : previous.versionNote,
+    sourceContentId: payload.sourceContentId !== undefined ? payload.sourceContentId : previous.sourceContentId,
+    sourceVersionNo: payload.sourceVersionNo !== undefined ? payload.sourceVersionNo : previous.sourceVersionNo,
+    publishStatus: nextPublishStatus,
+    reviewStatus: nextReviewStatus,
+    reviewedAt: nextReviewStatus !== previous.reviewStatus
+      ? new Date().toISOString()
+      : previous.reviewedAt,
+    updatedAt: new Date().toISOString(),
+    segments: normalizeSegments(payload.segments, payload.body || previous.body)
+  };
+
+  const current = contents[index];
+  createApprovedPublishedContentVersion(current, {
+    changeNote: payload.versionNote || '更新内容时审核通过并发布'
+  });
+
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: current.organizationId,
+    action: 'content.updated',
+    targetType: 'content',
+    targetId: contentId,
+    detail: {
+      beforeTitle: previous.title,
+      afterTitle: current.title,
+      beforePublishStatus: previous.publishStatus,
+      afterPublishStatus: current.publishStatus,
+      beforeReviewStatus: previous.reviewStatus,
+      afterReviewStatus: current.reviewStatus
+    }
+  });
+
+  if (previous.publishStatus !== current.publishStatus) {
+    appendAuditLog({
+      actorType: 'admin_user',
+      actorId: 'system',
+      organizationId: current.organizationId,
+      action: 'content.publish_status_changed',
+      targetType: 'content',
+      targetId: contentId,
+      detail: {
+        beforePublishStatus: previous.publishStatus,
+        afterPublishStatus: current.publishStatus
+      }
+    });
+  }
+
+  if (previous.reviewStatus !== current.reviewStatus) {
+    appendAuditLog({
+      actorType: 'admin_user',
+      actorId: 'system',
+      organizationId: current.organizationId,
+      action: 'content.review_status_changed',
+      targetType: 'content',
+      targetId: contentId,
+      detail: {
+        beforeReviewStatus: previous.reviewStatus,
+        afterReviewStatus: current.reviewStatus
+      }
+    });
+  }
+
+  return toContentDetail(current);
+}
+
+function archiveContent(contentId) {
+  const index = contents.findIndex((item) => item.id === contentId);
+  if (index < 0) {
+    const error = new Error('Content not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  contents[index] = {
+    ...contents[index],
+    publishStatus: 'archived',
+    updatedAt: new Date().toISOString()
+  };
+  const archived = contents[index];
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: archived.organizationId,
+    action: 'content.archived',
+    targetType: 'content',
+    targetId: archived.id,
+    detail: {
+      title: archived.title
+    }
+  });
+  return {
+    id: archived.id,
+    title: archived.title,
+    publishStatus: 'archived'
+  };
+}
+
+function getContent(contentId) {
+  const content = contents.find((item) => item.id === contentId);
+  return content ? toContentDetail(content) : null;
+}
+
+function getContentStructure(contentId, versionId) {
+  const content = contents.find((item) => item.id === contentId);
+  const publishedVersion = content?.publishedVersion;
+
+  if (!content || !publishedVersion || publishedVersion.id !== versionId) {
+    throw contentStructureError('CONTENT_VERSION_NOT_FOUND', 404);
+  }
+  if (publishedVersion.reviewStatus !== 'approved') {
+    throw contentStructureError('CONTENT_VERSION_NOT_APPROVED', 409);
+  }
+
+  const sections = (Array.isArray(content.sections) ? content.sections : [])
+    .slice()
+    .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
+    .map((section) => ({
+      ...section,
+      units: (Array.isArray(section.units) ? section.units : [])
+        .slice()
+        .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
+        .map((unit) => ({ ...unit }))
+    }));
+
+  return {
+    contentId: content.id,
+    contentVersionId: publishedVersion.id,
+    reviewStatus: publishedVersion.reviewStatus,
+    sourceNote: publishedVersion.sourceNote || '',
+    versionNote: publishedVersion.versionNote || '',
+    sections
+  };
+}
+
+function createMemoryAssessment(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const contentId = String(payload.contentId || '').trim();
+  const contentVersionId = String(payload.contentVersionId || '').trim();
+  const scopeType = String(payload.scopeType || 'full').trim() || 'full';
+  const scopeId = payload.scopeId ? String(payload.scopeId).trim() : null;
+  const idempotencyKey = Object.hasOwn(payload, 'idempotencyKey')
+    ? normalizeAssessmentIdempotencyKey(payload.idempotencyKey)
+    : createId('direct-assessment');
+
+  if (!userId) throw assessmentError('ASSESSMENT_USER_REQUIRED', 400);
+  if (!contentId) throw assessmentError('ASSESSMENT_CONTENT_REQUIRED', 400);
+  if (!contentVersionId) throw assessmentError('ASSESSMENT_CONTENT_VERSION_REQUIRED', 400);
+
+  const existing = state.memoryAssessments.find((assessment) => (
+    assessment.userId === userId && assessment.startIdempotencyKey === idempotencyKey
+  ));
+  if (existing) return toMemoryAssessment(existing);
+
+  const structure = getContentStructure(contentId, contentVersionId);
+  const units = getAssessmentScopeUnits(structure, scopeType, scopeId);
+  const assessment = {
+    id: createId('memory_assessment'),
+    userId,
+    contentId,
+    contentVersionId,
+    scopeType,
+    scopeId,
+    items: sampleAssessmentItems(units),
+    answers: null,
+    familiarityLevel: null,
+    status: 'started',
+    startIdempotencyKey: idempotencyKey,
+    completionIdempotencyKey: null,
+    unitCount: units.length,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+    completionResponse: null
+  };
+  state.memoryAssessments.push(assessment);
+  return toMemoryAssessment(assessment);
+}
+
+function recommendMemoryPlan(payload = {}) {
+  const assessmentId = String(payload.assessmentId || '').trim();
+  const userId = String(payload.userId || '').trim();
+  if (!assessmentId || !userId) {
+    if (Object.hasOwn(payload, 'idempotencyKey')) {
+      normalizeAssessmentIdempotencyKey(payload.idempotencyKey);
+    }
+    const answers = Array.isArray(payload.answers) ? payload.answers.map((answer) => ({ ...answer })) : [];
+    return buildAssessmentRecommendation(payload, answers, payload.unitCount);
+  }
+
+  const idempotencyKey = normalizeAssessmentIdempotencyKey(payload.idempotencyKey);
+
+  const responseKey = `${userId}:${idempotencyKey}`;
+  const cachedCompletion = state.assessmentCompletionResponses[responseKey];
+  if (cachedCompletion) {
+    if (cachedCompletion.assessmentId !== assessmentId) {
+      throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(cachedCompletion.response);
+  }
+
+  const assessment = state.memoryAssessments.find((item) => item.id === assessmentId && item.userId === userId);
+  if (!assessment) throw assessmentError('ASSESSMENT_NOT_FOUND', 404);
+  if (assessment.completionResponse) {
+    if (assessment.completionIdempotencyKey !== idempotencyKey) {
+      throw assessmentError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(assessment.completionResponse);
+  }
+
+  const answers = normalizeAssessmentAnswers(payload.answers, assessment.items);
+  const recommendation = buildAssessmentRecommendation(payload, answers, assessment.unitCount);
+  const { familiarityLevel } = recommendation;
+
+  assessment.answers = answers;
+  assessment.familiarityLevel = familiarityLevel;
+  assessment.status = 'completed';
+  assessment.completionIdempotencyKey = idempotencyKey;
+  assessment.completedAt = new Date().toISOString();
+  const response = {
+    ...recommendation,
+    assessment: toMemoryAssessment(assessment)
+  };
+  assessment.completionResponse = cloneJson(response);
+  state.assessmentCompletionResponses[responseKey] = {
+    assessmentId,
+    response: cloneJson(response)
+  };
+  return response;
+}
+
+function normalizeAssessmentIdempotencyKey(value) {
+  const idempotencyKey = String(value || '').trim();
+  if (!idempotencyKey) throw assessmentError('IDEMPOTENCY_KEY_REQUIRED', 400);
+  if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    throw assessmentError('IDEMPOTENCY_KEY_INVALID', 400);
+  }
+  return idempotencyKey;
+}
+
+function normalizeAssessmentAnswers(rawAnswers, sampledItems) {
+  const answers = Array.isArray(rawAnswers) ? rawAnswers : [];
+  const items = Array.isArray(sampledItems) ? sampledItems : [];
+  if (answers.length !== items.length) {
+    throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+  }
+
+  const expectedIds = new Set(items.map((item) => String(item.memoryUnitId)));
+  const answersById = new Map();
+  answers.forEach((answer) => {
+    const memoryUnitId = String(answer?.memoryUnitId || '').trim();
+    if (!expectedIds.has(memoryUnitId) || answersById.has(memoryUnitId)) {
+      throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+    }
+    answersById.set(memoryUnitId, { ...answer, memoryUnitId });
+  });
+
+  if (answersById.size !== expectedIds.size) {
+    throw assessmentError('ASSESSMENT_ANSWERS_INVALID', 400);
+  }
+  return items.map((item) => answersById.get(String(item.memoryUnitId)));
+}
+
+function buildAssessmentRecommendation(payload, answers, unitCount) {
+  const averageScore = calculateAssessmentAverage(answers);
+  const familiarityLevel = averageScore < 0.75 ? 'new' : averageScore < 1.5 ? 'partial' : 'familiar';
+  return {
+    familiarityLevel,
+    averageScore,
+    ...recommendPlan({
+      unitCount,
+      familiarityLevel,
+      dailyMinutes: payload.dailyMinutes,
+      targetDays: payload.targetDays
+    })
+  };
+}
+
+function getAssessmentScopeUnits(structure, scopeType, scopeId) {
+  if (scopeType === 'full') return structure.sections.flatMap((section) => section.units || []);
+  if (scopeType === 'section') {
+    const section = structure.sections.find((item) => item.id === scopeId);
+    if (section) return section.units || [];
+  }
+  throw assessmentError('ASSESSMENT_SCOPE_NOT_FOUND', 404);
+}
+
+function sampleAssessmentItems(units) {
+  const count = units.length;
+  const indexes = count <= 8
+    ? Array.from({ length: count }, (_, index) => index)
+    : Array.from({ length: 8 }, (_, index) => Math.round(index * (count - 1) / 7));
+
+  return indexes.map((unitIndex) => {
+    const unit = units[unitIndex];
+    return {
+      memoryUnitId: unit.id,
+      firstCharacterCue: unit.firstCharacterCue || Array.from(String(unit.text || ''))[0] || '',
+      sortOrder: Number(unit.sortOrder),
+      positionBand: assessmentPositionBand(unitIndex, count)
+    };
+  });
+}
+
+function assessmentPositionBand(index, count) {
+  if (count <= 1 || index === 0) return 'start';
+  if (index === count - 1) return 'end';
+  const ratio = index / (count - 1);
+  if (ratio < 1 / 3) return 'start';
+  if (ratio < 2 / 3) return 'middle';
+  return 'end';
+}
+
+function calculateAssessmentAverage(answers) {
+  if (!answers.length) return 0;
+  const scores = { cannot: 0, partial: 1, complete: 2 };
+  const total = answers.reduce((sum, answer) => {
+    const base = scores[answer.result] ?? 0;
+    return sum + Math.max(0, base - (answer.revealed ? 1 : 0));
+  }, 0);
+  return total / answers.length;
+}
+
+function toMemoryAssessment(assessment) {
+  return cloneJson({
+    id: assessment.id,
+    userId: assessment.userId,
+    contentId: assessment.contentId,
+    contentVersionId: assessment.contentVersionId,
+    scopeType: assessment.scopeType,
+    scopeId: assessment.scopeId,
+    items: assessment.items,
+    answers: assessment.answers,
+    familiarityLevel: assessment.familiarityLevel,
+    status: assessment.status,
+    createdAt: assessment.createdAt,
+    completedAt: assessment.completedAt
+  });
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function assessmentError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+function normalizeFestivalContentIds(value) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',').map((item) => item.trim()).filter(Boolean)
+      : [];
+
+  return Array.from(new Set(
+    list
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .filter((contentId) => Boolean(getContent(contentId)))
+  ));
+}
+
+function toFestivalDetail(festival) {
+  const recommendedContentIds = normalizeFestivalContentIds(
+    festival.recommendedContentIds || festival.contentIds || []
+  );
+
+  return {
+    id: festival.id,
+    name: festival.name || '',
+    lunarDate: festival.lunarDate || festival.date || '',
+    solarDate: festival.solarDate || '',
+    relatedFigure: festival.relatedFigure || festival.deity || '',
+    description: festival.description || festival.reason || '',
+    publishStatus: festival.publishStatus || 'published',
+    recommendedContentIds,
+    recommendedContents: recommendedContentIds
+      .map((contentId) => contents.find((content) => content.id === contentId))
+      .filter(Boolean)
+      .map(toContentSummary),
+    createdAt: festival.createdAt || null,
+    updatedAt: festival.updatedAt || null
+  };
+}
+
+function listFestivals() {
+  return festivals
+    .map(toFestivalDetail)
+    .filter((festival) => festival.publishStatus === 'published');
+}
+
+function listAdminFestivals() {
+  return festivals.map(toFestivalDetail);
+}
+
+function listAdminUsers(filters = {}) {
+  const query = String(filters.query || '').trim().toLowerCase();
+  return state.users
+    .filter((item) => !query || [item.id, item.nickname, item.platform].some((value) => String(value || '').toLowerCase().includes(query)))
+    .map((item) => ({
+      id: item.id,
+      nickname: item.nickname || '微信用户',
+      avatarUrl: item.avatarUrl || '',
+      platform: item.platform || 'wechat',
+      status: item.status || 'active',
+      planCount: state.plans.filter((plan) => plan.userId === item.id).length,
+      practiceCount: state.practiceSessions.filter((session) => session.userId === item.id).length,
+      recitationCount: state.recitationSessions.filter((session) => session.userId === item.id && session.completed).length,
+      lastActiveAt: item.updatedAt || item.createdAt || ''
+    }));
+}
+
+function listAdminPlans(filters = {}) {
+  return state.plans
+    .filter((item) => !filters.mode || item.mode === filters.mode)
+    .map((item) => ({
+      ...item,
+      userNickname: state.users.find((user) => user.id === item.userId)?.nickname || item.userId,
+      contentTitle: contents.find((content) => content.id === item.contentId)?.title || item.title || ''
+    }))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+}
+
+function listAdminPracticeSessions(filters = {}) {
+  return state.practiceSessions
+    .filter((item) => !filters.mode || item.mode === filters.mode)
+    .map((item) => ({
+      ...item,
+      userNickname: state.users.find((user) => user.id === item.userId)?.nickname || item.userId,
+      contentTitle: contents.find((content) => content.id === item.contentId)?.title || ''
+    }))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+}
+
+function listAdminRecitationSessions() {
+  return state.recitationSessions
+    .map((item) => ({
+      ...item,
+      userNickname: state.users.find((user) => user.id === item.userId)?.nickname || item.userId,
+      contentTitle: contents.find((content) => content.id === item.contentId)?.title || ''
+    }))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+}
+
+function listProducts(filters = {}) {
+  const query = String(filters.q || filters.query || '').trim().toLowerCase();
+  return state.products
+    .filter((item) => item.status === 'published')
+    .filter((item) => !filters.category || item.category === filters.category)
+    .filter((item) => !query || [item.title, item.subtitle, item.tag].some((value) => String(value || '').toLowerCase().includes(query)))
+    .map((item) => cloneJson(item));
+}
+
+function listAdminProducts(filters = {}) {
+  const query = String(filters.q || filters.query || '').trim().toLowerCase();
+  return state.products
+    .filter((item) => !filters.category || item.category === filters.category)
+    .filter((item) => !filters.status || item.status === filters.status)
+    .filter((item) => !query || [item.title, item.subtitle, item.tag].some((value) => String(value || '').toLowerCase().includes(query)))
+    .map((item) => cloneJson(item));
+}
+
+function createProduct(payload = {}) {
+  const now = new Date().toISOString();
+  const product = normalizeProduct({
+    ...payload,
+    id: createId('product'),
+    createdAt: now,
+    updatedAt: now
+  });
+  if (!product.title) throw Object.assign(new Error('商品标题不能为空'), { statusCode: 400 });
+  state.products.unshift(product);
+  appendAuditLog({ action: 'product.created', targetType: 'product', targetId: product.id, detail: { title: product.title } });
+  return cloneJson(product);
+}
+
+function updateProduct(productId, payload = {}) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+  Object.assign(product, normalizeProduct({ ...product, ...payload, id: product.id, createdAt: product.createdAt, updatedAt: new Date().toISOString() }));
+  appendAuditLog({ action: 'product.updated', targetType: 'product', targetId: product.id, detail: { title: product.title, status: product.status } });
+  return cloneJson(product);
+}
+
+function archiveProduct(productId) {
+  return updateProduct(productId, { status: 'archived' });
+}
+
+function listAdminOrders(filters = {}) {
+  return state.orders
+    .filter((item) => !filters.status || item.status === filters.status)
+    .filter((item) => !filters.paymentStatus || item.paymentStatus === filters.paymentStatus)
+    .map((item) => cloneJson(item))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+}
+
+function updateOrderStatus(orderId, payload = {}) {
+  const order = state.orders.find((item) => item.id === orderId);
+  if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+  const allowedStatuses = ['pending', 'paid', 'processing', 'completed', 'cancelled', 'refunded'];
+  if (payload.status && !allowedStatuses.includes(payload.status)) {
+    throw Object.assign(new Error('Invalid order status'), { statusCode: 400 });
+  }
+  if (payload.paymentStatus && payload.paymentStatus !== order.paymentStatus) {
+    throw Object.assign(new Error('支付状态只能由支付服务更新'), { statusCode: 409 });
+  }
+  if (payload.status) order.status = payload.status;
+  order.updatedAt = new Date().toISOString();
+  appendAuditLog({ action: 'order.status_updated', targetType: 'order', targetId: order.id, detail: { status: order.status } });
+  return cloneJson(order);
+}
+
+function normalizeProduct(product = {}) {
+  return {
+    id: String(product.id || ''),
+    category: String(product.category || '未分类'),
+    tag: String(product.tag || ''),
+    title: String(product.title || '').trim(),
+    subtitle: String(product.subtitle || ''),
+    price: Math.max(0, Number(product.price || 0)),
+    originalPrice: product.originalPrice === null || product.originalPrice === undefined ? null : Math.max(0, Number(product.originalPrice || 0)),
+    isFeatured: Boolean(product.isFeatured),
+    color: String(product.color || '#7E2A1C'),
+    cover: String(product.cover || ''),
+    description: String(product.description || ''),
+    features: Array.isArray(product.features) ? product.features.map(String) : [],
+    stock: Math.max(0, Math.round(Number(product.stock || 0))),
+    status: ['draft', 'published', 'archived'].includes(product.status) ? product.status : 'draft',
+    createdAt: product.createdAt || new Date().toISOString(),
+    updatedAt: product.updatedAt || new Date().toISOString()
+  };
+}
+
+function createFestival(payload = {}) {
+  const name = String(payload.name || '').trim();
+  if (!name) {
+    const error = new Error('Festival name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const festival = {
+    id: createId('festival'),
+    name,
+    lunarDate: String(payload.lunarDate || '').trim(),
+    solarDate: String(payload.solarDate || '').trim(),
+    relatedFigure: String(payload.relatedFigure || '').trim(),
+    description: String(payload.description || '').trim(),
+    publishStatus: payload.publishStatus || 'draft',
+    recommendedContentIds: normalizeFestivalContentIds(payload.recommendedContentIds),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  festivals.unshift(festival);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: '',
+    action: 'festival.created',
+    targetType: 'festival',
+    targetId: festival.id,
+    detail: {
+      name: festival.name,
+      publishStatus: festival.publishStatus,
+      recommendedContentIds: festival.recommendedContentIds
+    }
+  });
+  return toFestivalDetail(festival);
+}
+
+function updateFestival(festivalId, payload = {}) {
+  const index = festivals.findIndex((item) => item.id === festivalId);
+  if (index < 0) {
+    const error = new Error('Festival not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const previous = toFestivalDetail(festivals[index]);
+  const name = String(payload.name !== undefined ? payload.name : previous.name).trim();
+  if (!name) {
+    const error = new Error('Festival name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  festivals[index] = {
+    ...festivals[index],
+    name,
+    lunarDate: payload.lunarDate !== undefined ? String(payload.lunarDate || '').trim() : previous.lunarDate,
+    solarDate: payload.solarDate !== undefined ? String(payload.solarDate || '').trim() : previous.solarDate,
+    relatedFigure: payload.relatedFigure !== undefined ? String(payload.relatedFigure || '').trim() : previous.relatedFigure,
+    description: payload.description !== undefined ? String(payload.description || '').trim() : previous.description,
+    publishStatus: payload.publishStatus || previous.publishStatus || 'draft',
+    recommendedContentIds: payload.recommendedContentIds !== undefined
+      ? normalizeFestivalContentIds(payload.recommendedContentIds)
+      : previous.recommendedContentIds,
+    updatedAt: new Date().toISOString()
+  };
+
+  const current = toFestivalDetail(festivals[index]);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: '',
+    action: 'festival.updated',
+    targetType: 'festival',
+    targetId: festivalId,
+    detail: {
+      beforeName: previous.name,
+      afterName: current.name,
+      beforePublishStatus: previous.publishStatus,
+      afterPublishStatus: current.publishStatus,
+      recommendedContentIds: current.recommendedContentIds
+    }
+  });
+  return current;
+}
+
+function archiveFestival(festivalId) {
+  const index = festivals.findIndex((item) => item.id === festivalId);
+  if (index < 0) {
+    const error = new Error('Festival not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  festivals[index] = {
+    ...festivals[index],
+    publishStatus: 'archived',
+    updatedAt: new Date().toISOString()
+  };
+  const archived = toFestivalDetail(festivals[index]);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: '',
+    action: 'festival.archived',
+    targetType: 'festival',
+    targetId: festivalId,
+    detail: {
+      name: archived.name
+    }
+  });
+  return archived;
+}
+
+function listPlans(userId = 'demo-user') {
+  const legacyPlans = state.plans
+    .filter((plan) => plan.userId === userId)
+    .map((plan) => ({
+      ...plan,
+      tasks: state.tasks.filter((task) => task.planId === plan.id)
+    }));
+  const adaptivePlans = state.adaptivePlans
+    .filter((plan) => plan.userId === userId)
+    .map(toAdaptivePlan);
+  return [...legacyPlans, ...adaptivePlans];
+}
+
+function archiveLegacyPlan(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const planId = String(payload.planId || '').trim();
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+  const responseKey = `${userId}:${idempotencyKey}`;
+  const cached = state.adaptiveIdempotencyResponses[responseKey];
+
+  if (cached) {
+    if (cached.operationType !== LEGACY_PLAN_ARCHIVE_OPERATION || cached.entityId !== planId) {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(cached.response);
+  }
+
+  const index = state.plans.findIndex((plan) => plan.id === planId && plan.userId === userId);
+  if (index < 0) throw adaptivePlanError('MEMORY_PLAN_NOT_FOUND', 404);
+  const content = contents.find((item) => item.id === state.plans[index].contentId);
+  if (!content || content.lengthTier !== 'long') {
+    throw adaptivePlanError('MEMORY_PLAN_NOT_MIGRATABLE', 409);
+  }
+
+  state.plans.splice(index, 1);
+  state.tasks = state.tasks.filter((task) => task.planId !== planId);
+  const response = { id: planId, archived: true };
+  state.adaptiveIdempotencyResponses[responseKey] = {
+    operationType: LEGACY_PLAN_ARCHIVE_OPERATION,
+    entityId: planId,
+    response: cloneJson(response)
+  };
+  return response;
+}
+
+function listOrganizations() {
+  return state.organizations.filter((organization) => organization.status === 'active');
+}
+
+function listOrganizationAssets(organizationId, filters = {}) {
+  const organization = state.organizations.find((item) => item.id === organizationId);
+  if (!organization) {
+    const error = new Error('Organization not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return state.assets
+    .filter((asset) => asset.organizationId === organizationId)
+    .filter((asset) => asset.publishStatus === 'published')
+    .filter((asset) => !filters.accessLevel || asset.accessLevel === filters.accessLevel)
+    .map(toAssetSummary);
+}
+
+function createAsset(payload = {}) {
+  const asset = {
+    id: createId('asset'),
+    organizationId: payload.organizationId || 'org-demo-dharma',
+    title: payload.title || '未命名资产',
+    type: payload.type || 'document',
+    url: payload.url || 'storage://demo/document/new-asset',
+    thumbnailUrl: payload.thumbnailUrl || null,
+    accessLevel: payload.accessLevel || 'private',
+    publishStatus: payload.publishStatus || 'published',
+    copyrightStatus: payload.copyrightStatus || 'organization_owned'
+  };
+  state.assets.unshift(asset);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: asset.organizationId,
+    action: 'asset.created',
+    targetType: 'asset',
+    targetId: asset.id,
+    detail: {
+      title: asset.title,
+      type: asset.type,
+      accessLevel: asset.accessLevel
+    }
+  });
+  return toAssetSummary(asset);
+}
+
+function updateAsset(assetId, payload = {}) {
+  const index = state.assets.findIndex((item) => item.id === assetId);
+  if (index < 0) {
+    const error = new Error('Asset not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  state.assets[index] = {
+    ...state.assets[index],
+    ...payload
+  };
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: state.assets[index].organizationId,
+    action: 'asset.updated',
+    targetType: 'asset',
+    targetId: state.assets[index].id,
+    detail: {
+      title: state.assets[index].title
+    }
+  });
+  return toAssetSummary(state.assets[index]);
+}
+
+function archiveAsset(assetId) {
+  const index = state.assets.findIndex((item) => item.id === assetId);
+  if (index < 0) {
+    const error = new Error('Asset not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  const [archived] = state.assets.splice(index, 1);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: archived.organizationId,
+    action: 'asset.archived',
+    targetType: 'asset',
+    targetId: archived.id,
+    detail: {
+      title: archived.title
+    }
+  });
+  return {
+    id: archived.id,
+    title: archived.title,
+    publishStatus: 'archived'
+  };
+}
+
+function addOrganizationMember({ organizationId, userId = 'demo-user', role = 'readonly_member' }) {
+  const organization = state.organizations.find((item) => item.id === organizationId);
+  if (!organization) {
+    const error = new Error('Organization not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const existing = state.organizationMembers.find((member) => (
+    member.organizationId === organizationId &&
+    member.userId === userId &&
+    member.status === 'active'
+  ));
+
+  if (existing) return existing;
+
+  const member = {
+    id: createId('member'),
+    organizationId,
+    userId,
+    role,
+    status: 'active',
+    joinedAt: new Date().toISOString()
+  };
+
+  state.organizationMembers.push(member);
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId,
+    action: 'organization.member_added',
+    targetType: 'organization_member',
+    targetId: member.id,
+    detail: {
+      userId,
+      role
+    }
+  });
+
+  return member;
+}
+
+function updateAssetAccess({ assetId, accessLevel }) {
+  const asset = state.assets.find((item) => item.id === assetId);
+  if (!asset) {
+    const error = new Error('Asset not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const allowed = ['public', 'registered', 'member', 'restricted', 'private'];
+  if (!allowed.includes(accessLevel)) {
+    const error = new Error('Invalid access level');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const before = asset.accessLevel;
+  asset.accessLevel = accessLevel;
+
+  appendAuditLog({
+    actorType: 'admin_user',
+    actorId: 'system',
+    organizationId: asset.organizationId,
+    action: 'asset.access_updated',
+    targetType: 'asset',
+    targetId: asset.id,
+    detail: {
+      before,
+      after: accessLevel
+    }
+  });
+
+  return toAssetSummary(asset);
+}
+
+function listAuditLogs(filters = {}) {
+  return state.auditLogs
+    .filter((log) => !filters.organizationId || log.organizationId === filters.organizationId)
+    .filter((log) => matchesDateRange(log.createdAt, filters))
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, Number(filters.limit || 50));
+}
+
+function createAdaptivePlan(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const contentId = String(payload.contentId || '').trim();
+  const contentVersionId = String(payload.contentVersionId || '').trim();
+  const scopeType = String(payload.scopeType || 'full').trim() || 'full';
+  const scopeId = payload.scopeId ? String(payload.scopeId).trim() : null;
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+  const cached = state.adaptiveIdempotencyResponses[`${userId}:${idempotencyKey}`];
+
+  if (!userId) throw adaptivePlanError('ADAPTIVE_PLAN_USER_REQUIRED', 400);
+  if (!contentId) throw adaptivePlanError('ADAPTIVE_PLAN_CONTENT_REQUIRED', 400);
+  if (!contentVersionId) throw adaptivePlanError('ADAPTIVE_PLAN_CONTENT_VERSION_REQUIRED', 400);
+  if (cached) {
+    if (
+      cached.operationType !== ADAPTIVE_PLAN_CREATE_OPERATION
+      || !cached.entityId
+      || cached.response?.id !== cached.entityId
+    ) {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(cached.response);
+  }
+
+  const startDate = String(payload.date || payload.startDate || todayDate()).slice(0, 10);
+  const structure = getContentStructure(contentId, contentVersionId);
+  const units = getAssessmentScopeUnits(structure, scopeType, scopeId);
+  const recommendation = recommendPlan({
+    unitCount: units.length,
+    familiarityLevel: payload.familiarityLevel,
+    dailyMinutes: payload.dailyMinutes,
+    targetDays: payload.targetDays
+  });
+  const strategy = normalizeAdaptiveStrategy(payload.strategy, recommendation.targetDays);
+
+  ensureAdaptiveUser(userId);
+  const plan = {
+    id: createId('adaptive_plan'),
+    userId,
+    contentId,
+    title: contents.find((item) => item.id === contentId)?.title || '',
+    contentVersionId,
+    scopeType,
+    scopeId,
+    targetDays: recommendation.targetDays,
+    dailyMinutes: recommendation.dailyMinutes,
+    familiarityLevel: payload.familiarityLevel || 'new',
+    strategy,
+    startDate,
+    expectedFinishDate: addDays(startDate, recommendation.targetDays - 1),
+    adaptiveStatus: 'active',
+    itemStates: units.map((unit) => ({
+      memoryUnitId: unit.id,
+      phase: 'new',
+      dueAt: null,
+      lastGrade: null,
+      lastReviewedAt: null,
+      lastLatencyMs: 0,
+      mistakeCount: 0,
+      hintCount: 0,
+      successfulRecallCount: 0,
+      crossDaySuccessCount: 0,
+      lapseCount: 0,
+      needsSameSessionRetry: false
+    })),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  state.adaptivePlans.push(plan);
+  const task = createAdaptiveDailyTask(plan, startDate);
+  const response = { ...toAdaptivePlan(plan), task: toAdaptiveDailyTask(task) };
+  state.adaptiveIdempotencyResponses[`${userId}:${idempotencyKey}`] = {
+    operationType: ADAPTIVE_PLAN_CREATE_OPERATION,
+    entityId: plan.id,
+    response: cloneJson(response)
+  };
+  return response;
+}
+
+function getTodayStudyTask(userId, planId, date = todayDate()) {
+  const plan = state.adaptivePlans.find((item) => item.id === planId && item.userId === userId);
+  if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
+
+  const taskDate = String(date || todayDate()).slice(0, 10);
+  const historicalTask = state.adaptiveDailyTasks
+    .filter((item) => item.planId === plan.id && item.taskDate <= taskDate)
+    .filter((item) => ['pending', 'in_progress'].includes(item.status))
+    .filter((item) => item.items.some((taskItem) => taskItem.status === 'pending'))
+    .sort((left, right) => String(left.taskDate).localeCompare(String(right.taskDate)))[0];
+  if (historicalTask) return toAdaptiveDailyTask(historicalTask);
+
+  let task = state.adaptiveDailyTasks.find((item) => item.planId === plan.id && item.taskDate === taskDate);
+  if (!task) task = createAdaptiveDailyTask(plan, taskDate);
+  return toAdaptiveDailyTask(task);
+}
+
+function completeStudyTaskItem(payload = {}) {
+  const userId = String(payload.userId || '').trim();
+  const itemId = String(payload.itemId || '').trim();
+  const idempotencyKey = normalizeAdaptiveIdempotencyKey(payload.idempotencyKey);
+  const responseKey = `${userId}:${idempotencyKey}`;
+  const cached = state.adaptiveIdempotencyResponses[responseKey];
+
+  if (cached) {
+    if (
+      cached.operationType !== STUDY_TASK_ITEM_COMPLETE_OPERATION
+      || cached.entityId !== itemId
+      || cached.response?.item?.id !== itemId
+    ) {
+      throw adaptivePlanError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return cloneJson(cached.response);
+  }
+
+  const grade = String(payload.grade || '').trim();
+  if (!['again', 'good', 'easy'].includes(grade)) {
+    throw adaptivePlanError('REVIEW_GRADE_INVALID', 400);
+  }
+
+  const task = state.adaptiveDailyTasks.find((candidate) => (
+    candidate.userId === userId && candidate.items.some((item) => item.id === itemId)
+  ));
+  if (!task) throw adaptivePlanError('STUDY_TASK_ITEM_NOT_FOUND', 404);
+  const item = task.items.find((candidate) => candidate.id === itemId);
+  const plan = state.adaptivePlans.find((candidate) => candidate.id === task.planId && candidate.userId === userId);
+  if (!plan) throw adaptivePlanError('STUDY_TASK_NOT_FOUND', 404);
+  const stateItem = plan.itemStates.find((candidate) => candidate.memoryUnitId === item.memoryUnitId);
+  if (!stateItem) throw adaptivePlanError('STUDY_TASK_ITEM_NOT_FOUND', 404);
+
+  if (item.status === 'pending') {
+    const reviewedAt = payload.reviewedAt || `${task.taskDate}T00:00:00.000Z`;
+    const metrics = normalizeAdaptiveMetrics(payload);
+    const reviewState = item.taskType === 'new' && stateItem.phase === 'new'
+      ? { ...stateItem, phase: 'learning' }
+      : stateItem;
+    const nextState = {
+      ...applyReviewGrade(reviewState, { grade, reviewedAt, ...metrics }),
+      ...metrics
+    };
+    Object.assign(stateItem, nextState);
+    item.status = 'completed';
+    item.result = grade;
+    item.latencyMs = metrics.lastLatencyMs;
+    item.mistakeCount = metrics.mistakeCount;
+    item.hintCount = metrics.hintCount;
+    item.completedAt = reviewedAt;
+
+    if (grade === 'again') appendWeakRetry(task, item.memoryUnitId, plan.dailyMinutes);
+
+    task.status = task.items.some((candidate) => candidate.status === 'pending') ? 'pending' : 'completed';
+    task.updatedAt = new Date().toISOString();
+    plan.adaptiveStatus = isInitialComplete(plan.itemStates) ? 'initial_complete' : 'active';
+    plan.updatedAt = new Date().toISOString();
+  }
+
+  const response = {
+    plan: toAdaptivePlan(plan),
+    task: toAdaptiveDailyTask(task),
+    item: cloneJson(item),
+    state: cloneJson(stateItem)
+  };
+  state.adaptiveIdempotencyResponses[responseKey] = {
+    operationType: STUDY_TASK_ITEM_COMPLETE_OPERATION,
+    entityId: itemId,
+    response: cloneJson(response)
+  };
+  return response;
+}
+
+function createAdaptiveDailyTask(plan, taskDate) {
+  const pendingUnitIds = new Set(
+    state.adaptiveDailyTasks
+      .filter((task) => task.planId === plan.id)
+      .flatMap((task) => task.items)
+      .filter((item) => item.status === 'pending')
+      .map((item) => item.memoryUnitId)
+  );
+  const allocation = allocateDailyUnits({
+    states: plan.itemStates.filter((stateItem) => !pendingUnitIds.has(stateItem.memoryUnitId)),
+    date: taskDate,
+    dailyMinutes: plan.dailyMinutes,
+    targetDays: plan.targetDays
+  });
+  const task = {
+    id: createId('study_task'),
+    planId: plan.id,
+    userId: plan.userId,
+    taskDate,
+    status: allocation.items.length ? 'pending' : 'completed',
+    estimatedMinutes: allocation.estimatedMinutes,
+    newUnitCount: allocation.newUnitCount,
+    reviewUnitCount: allocation.reviewUnitCount,
+    weakUnitCount: allocation.weakUnitCount,
+    sequenceRangeLabel: createSequenceRangeLabel(allocation.items),
+    items: allocation.items.map((stateItem, index) => ({
+      id: createId('study_task_item'),
+      taskId: '',
+      memoryUnitId: stateItem.memoryUnitId,
+      taskType: stateItem.taskType,
+      sortOrder: index + 1,
+      status: 'pending',
+      result: null,
+      latencyMs: 0,
+      mistakeCount: 0,
+      hintCount: 0,
+      completedAt: null
+    })),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  task.items.forEach((item) => { item.taskId = task.id; });
+  state.adaptiveDailyTasks.push(task);
+  return task;
+}
+
+function appendWeakRetry(task, memoryUnitId, dailyMinutes) {
+  const existing = task.items.find((item) => (
+    item.memoryUnitId === memoryUnitId && item.taskType === 'weak_review' && item.status === 'pending'
+  ));
+  if (existing) return existing;
+
+  const retry = {
+    id: createId('study_task_item'),
+    taskId: task.id,
+    memoryUnitId,
+    taskType: 'weak_review',
+    sortOrder: task.items.length + 1,
+    status: 'pending',
+    result: null,
+    latencyMs: 0,
+    mistakeCount: 0,
+    hintCount: 0,
+    completedAt: null
+  };
+  task.items.push(retry);
+  task.weakUnitCount += 1;
+  task.estimatedMinutes = Math.min(Number(dailyMinutes), Number(task.estimatedMinutes) + 0.5);
+  return retry;
+}
+
+function createSequenceRangeLabel(items) {
+  if (!items.length) return '';
+  const unitIds = items.map((item) => String(item.memoryUnitId));
+  return unitIds.length === 1 ? unitIds[0] : `${unitIds[0]} - ${unitIds[unitIds.length - 1]}`;
+}
+
+function ensureAdaptiveUser(userId) {
+  if (state.users.some((user) => user.id === userId)) return;
+  state.users.push({ id: userId, nickname: 'User', platform: 'wechat', status: 'active' });
+}
+
+function normalizeAdaptiveIdempotencyKey(value) {
+  const key = String(value || '').trim();
+  if (!key) throw adaptivePlanError('IDEMPOTENCY_KEY_REQUIRED', 400);
+  if (key.length > MAX_IDEMPOTENCY_KEY_LENGTH) throw adaptivePlanError('IDEMPOTENCY_KEY_INVALID', 400);
+  return key;
+}
+
+function normalizeAdaptiveStrategy(value, targetDays) {
+  const strategy = String(value || '').trim();
+  if (['accelerated', 'standard', 'steady'].includes(strategy)) return strategy;
+  if (targetDays <= 7) return 'accelerated';
+  if (targetDays <= 14) return 'standard';
+  return 'steady';
+}
+
+function toAdaptivePlan(plan) {
+  const content = contents.find((item) => item.id === plan.contentId);
+  return cloneJson({
+    ...plan,
+    title: plan.title || content?.title || ''
+  });
+}
+
+function toAdaptiveDailyTask(task) {
+  const plan = state.adaptivePlans.find((candidate) => candidate.id === task.planId);
+  const unitsById = new Map();
+  if (plan) {
+    const structure = getContentStructure(plan.contentId, plan.contentVersionId);
+    getAssessmentScopeUnits(structure, plan.scopeType, plan.scopeId).forEach((unit) => {
+      unitsById.set(unit.id, {
+        id: unit.id,
+        text: unit.text,
+        firstCharacterCue: unit.firstCharacterCue || Array.from(String(unit.text || ''))[0] || ''
+      });
+    });
+  }
+
+  return cloneJson({
+    ...task,
+    items: task.items.map((item) => ({
+      ...item,
+      unit: unitsById.get(item.memoryUnitId) || null
+    }))
+  });
+}
+
+function normalizeAdaptiveMetric(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+}
+
+function normalizeAdaptiveMetrics(payload = {}) {
+  return {
+    lastLatencyMs: normalizeAdaptiveMetric(payload.latencyMs),
+    mistakeCount: normalizeAdaptiveMetric(payload.mistakeCount),
+    hintCount: normalizeAdaptiveMetric(payload.hintCount)
+  };
+}
+
+function adaptivePlanError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+function createPlan({ userId = 'demo-user', contentId, startDate = todayDate(), mode = 'scientific' }) {
+  const content = contents.find((item) => item.id === contentId);
+  if (!content) {
+    const error = new Error('Content not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const existing = state.plans.find((plan) => (
+    plan.userId === userId &&
+    plan.contentId === contentId &&
+    plan.mode === normalizeMode(mode) &&
+    ['reviewing', 'at_risk'].includes(plan.state)
+  ));
+
+  if (existing) {
+    scheduleNextPlanReminderJobs(userId, {
+      ...existing,
+      tasks: state.tasks.filter((task) => task.planId === existing.id)
+    }, content);
+    return {
+      isNew: false,
+      plan: {
+        ...existing,
+        tasks: state.tasks.filter((task) => task.planId === existing.id)
+      }
+    };
+  }
+
+  if (!state.users.some((user) => user.id === userId)) {
+    state.users.push({
+      id: userId,
+      nickname: '未命名用户',
+      platform: 'wechat',
+      status: 'active'
+    });
+  }
+
+  const plan = {
+    id: createId('plan'),
+    userId,
+    contentId,
+    mode: normalizeMode(mode),
+    title: content.title,
+    startDate,
+    totalDays: content.planDays,
+    currentDay: 1,
+    state: 'reviewing',
+    masteryScore: 0,
+    streakHits: 0,
+    lastReviewedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  const taskCount = Math.max(content.planDays, 1);
+  const offsets = buildReviewOffsets(taskCount);
+  const tasks = Array.from({ length: taskCount }, (_, index) => ({
+    id: createId('task'),
+    planId: plan.id,
+    userId,
+    dueDate: addDays(startDate, offsets[index] || 0),
+    method: REVIEW_METHODS[index] || REVIEW_METHODS[REVIEW_METHODS.length - 1],
+    dayIndex: index + 1,
+    status: 'pending',
+    result: null,
+    completedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }));
+
+  state.plans.push(plan);
+  state.tasks.push(...tasks);
+  scheduleNextPlanReminderJobs(userId, { ...plan, tasks }, content);
+
+  return {
+    isNew: true,
+    plan: {
+      ...plan,
+      tasks
+    }
+  };
+}
+
+function completeTask({ taskId, userId = '', result = 'stronger', selfRating = '', latencyBand = '', mistakeCount = 0, note = '' }) {
+  const task = state.tasks.find((item) => item.id === taskId);
+  if (!task) {
+    const error = new Error('Review task not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (userId && task.userId !== userId) {
+    const error = new Error('Review task not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const plan = state.plans.find((item) => item.id === task.planId);
+  if (!plan) {
+    const error = new Error('Memory plan not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const masteryDelta = result === 'mastered' ? 40 : result === 'stronger' ? 24 : -8;
+
+  task.status = 'completed';
+  task.result = result;
+  task.completedAt = now;
+  task.updatedAt = now;
+
+  const doneCount = state.tasks.filter((item) => item.planId === plan.id && item.status === 'completed').length;
+  const total = Number(plan.totalDays || 1);
+  const mastered = doneCount >= total;
+  const rawNextMasteryScore = Math.max(0, Math.min(100, plan.masteryScore + masteryDelta));
+  plan.masteryScore = mastered ? 100 : Math.min(95, rawNextMasteryScore);
+  plan.currentDay = mastered ? total : Math.min(total, doneCount + 1);
+  plan.streakHits += result === 'needs_work' ? 0 : 1;
+  plan.lastReviewedAt = now;
+  plan.updatedAt = now;
+
+  if (result === 'needs_work') {
+    plan.state = 'at_risk';
+  } else if (mastered) {
+    plan.state = 'mastered';
+  } else {
+    plan.state = 'reviewing';
+  }
+
+  state.reviewRecords.push({
+    id: createId('review'),
+    userId: task.userId,
+    planId: plan.id,
+    taskId: task.id,
+    result,
+    masteryDelta,
+    createdAt: now
+  });
+
+  state.practiceSessions.push({
+    id: createId('practice'),
+    userId: task.userId,
+    planId: plan.id,
+    taskId: task.id,
+    contentId: plan.contentId,
+    mode: plan.mode || 'scientific',
+    selfRating,
+    resultLevel: result,
+    latencyBand,
+    mistakeCount: Math.max(0, Number(mistakeCount || 0)),
+    growthStage: normalizeGrowthStage(plan.masteryScore),
+    note,
+    createdAt: now
+  });
+  const planWithTasks = {
+    ...plan,
+    tasks: state.tasks.filter((item) => item.planId === plan.id)
+  };
+  scheduleNextPlanReminderJobs(task.userId, planWithTasks, contents.find((item) => item.id === plan.contentId));
+
+  return {
+    task,
+    plan: planWithTasks
+  };
+}
+
+function loginByWechatCode(payload = {}) {
+  const code = String(payload.code || '').trim() || `mock-${Date.now()}`;
+  const openid = String(payload.wechatOpenid || `mock_${hashValue(code).slice(0, 24)}`).trim();
+  const userInfo = payload.userInfo || {};
+  const incomingNickname = String(userInfo.nickName || payload.nickname || '').trim();
+  const nickname = incomingNickname || '微信用户';
+  const avatarUrl = String(userInfo.avatarUrl || payload.avatarUrl || '').trim();
+
+  const existingId = state.usersByOpenId[openid];
+  let user = existingId ? state.users.find((item) => item.id === existingId) : null;
+  if (!user) {
+    user = {
+      id: createId('wx_user'),
+      nickname,
+      avatarUrl,
+      wechatOpenid: openid,
+      platform: 'wechat',
+      status: 'active',
+      lastLoginAt: new Date().toISOString()
+    };
+    state.users.push(user);
+    state.usersByOpenId[openid] = user.id;
+  } else {
+    if (isMeaningfulNickname(incomingNickname)) {
+      user.nickname = incomingNickname;
+    }
+    if (avatarUrl) {
+      user.avatarUrl = avatarUrl;
+    }
+    user.lastLoginAt = new Date().toISOString();
+  }
+
+  return {
+    id: user.id,
+    nickname: user.nickname,
+    avatarUrl: user.avatarUrl || '',
+    platform: user.platform,
+    status: user.status,
+    phone: user.phone || ''
+  };
+}
+
+function getUserById(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) return null;
+  return {
+    id: user.id,
+    nickname: user.nickname || '微信用户',
+    avatarUrl: user.avatarUrl || '',
+    platform: user.platform || 'wechat',
+    status: user.status || 'active',
+    phone: user.phone || ''
+  };
+}
+
+function updateUserProfile(userId, payload = {}) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const nickname = String(payload.nickname || payload.nickName || '').trim();
+  const avatarUrl = String(payload.avatarUrl || '').trim();
+  const phone = String(payload.phone || '').trim();
+
+  if (nickname) user.nickname = nickname;
+  if (avatarUrl) user.avatarUrl = avatarUrl;
+  if (phone) user.phone = phone;
+  user.updatedAt = new Date().toISOString();
+
+  return getUserById(user.id);
+}
+
+function isMeaningfulNickname(value) {
+  const nickname = String(value || '').trim();
+  return Boolean(nickname && nickname !== '微信用户');
+}
+
+function getNotificationSettings(userId = 'demo-user', at = new Date().toISOString()) {
+  const channels = ['wechat_subscribe', 'app_push', 'sms'];
+  return channels.map((channel) => {
+    const existing = state.notificationSettings.find((item) => item.userId === userId && item.channel === channel);
+    const projected = existing || {
+      id: `${userId}-${channel}`,
+      userId,
+      channel,
+      enabled: channel === 'app_push',
+      quietHours: {
+        start: '22:00',
+        end: '07:00'
+      }
+    };
+    return channel === 'wechat_subscribe'
+      ? { ...projected, enabled: hasAvailableNotificationSubscription(userId, at) }
+      : projected;
+  });
+}
+
+function upsertNotificationSetting({ userId = 'demo-user', channel, enabled, quietHours }) {
+  const normalizedChannel = String(channel || '').trim();
+  if (!normalizedChannel) {
+    const error = new Error('Notification channel is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const nextValue = {
+    id: `${userId}-${normalizedChannel}`,
+    userId,
+    channel: normalizedChannel,
+    enabled: Boolean(enabled),
+    quietHours: quietHours || null,
+    updatedAt: new Date().toISOString()
+  };
+
+  const index = state.notificationSettings.findIndex((item) => item.userId === userId && item.channel === normalizedChannel);
+  if (index >= 0) {
+    state.notificationSettings[index] = {
+      ...state.notificationSettings[index],
+      ...nextValue
+    };
+    return state.notificationSettings[index];
+  }
+
+  state.notificationSettings.push(nextValue);
+  return nextValue;
+}
+
+function createNotificationJob({ userId = 'demo-user', taskId = null, channel, scheduledAt, payload }) {
+  const normalizedChannel = String(channel || '').trim();
+  const normalizedSchedule = String(scheduledAt || '').trim();
+  if (!normalizedChannel || !normalizedSchedule) {
+    const error = new Error('Notification channel and scheduledAt are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const job = {
+    id: createId('notify'),
+    userId,
+    taskId,
+    channel: normalizedChannel,
+    scheduledAt: normalizedSchedule,
+    status: 'pending',
+    payload: payload || {},
+    attemptCount: 0,
+    providerAttemptCount: 0,
+    nextRetryAt: null,
+    lastError: '',
+    providerMessageId: '',
+    providerResponse: null,
+    sentAt: null,
+    claimToken: '',
+    claimedAt: null,
+    leaseUntil: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  state.notificationJobs.push(job);
+  return job;
+}
+
+function scheduleNextPlanReminderJobs(userId, plan = {}, content = {}) {
+  if (plan.state === 'mastered') return [];
+  const nextTask = (plan.tasks || [])
+    .filter((task) => task.status !== 'completed')
+    .slice()
+    .sort((left, right) => {
+      const byDate = String(left.dueDate || '').localeCompare(String(right.dueDate || ''));
+      if (byDate !== 0) return byDate;
+      return Number(left.dayIndex || 0) - Number(right.dayIndex || 0);
+    })[0];
+  if (!nextTask) return [];
+
+  return scheduleNotificationJobs({
+    userId,
+    taskId: nextTask.id,
+    date: nextTask.dueDate || todayDate(),
+    period: 'morning',
+    payload: {
+      type: 'review',
+      planId: plan.id,
+      contentId: plan.contentId,
+      title: plan.title || content.title || '',
+      mode: plan.mode || 'scientific',
+      dayIndex: nextTask.dayIndex,
+      totalDays: plan.totalDays,
+      method: nextTask.method,
+      message: `今天复习 ${plan.title || content.title || '修持内容'}`
+    }
+  });
+}
+
+function scheduleNextRecitationReminderJobs(userId, goal = {}, content = {}, date = addDays(todayDate(), 1)) {
+  if (!goal || !goal.contentId) return [];
+  return scheduleNotificationJobs({
+    userId,
+    taskId: null,
+    date,
+    period: goal.preferredPeriod || 'morning',
+    payload: {
+      type: 'recitation',
+      goalId: goal.id || '',
+      contentId: goal.contentId,
+      title: content.title || '',
+      dailyTargetCount: goal.dailyTargetCount || 1,
+      preferredPeriod: goal.preferredPeriod || 'morning',
+      message: `今天读诵 ${content.title || '修持内容'}`
+    }
+  });
+}
+
+function scheduleNotificationJobs({ userId, taskId = null, date, period = 'morning', payload = {} }) {
+  const scheduledAt = buildReminderScheduledAt(date, period);
+  return getEnabledNotificationChannels(userId)
+    .map((channel) => ensureNotificationJob({
+      userId,
+      taskId,
+      channel,
+      scheduledAt,
+      payload
+    }))
+    .filter(Boolean);
+}
+
+function getEnabledNotificationChannels(userId) {
+  return getNotificationSettings(userId)
+    .filter((setting) => setting.enabled !== false)
+    .map((setting) => setting.channel)
+    .filter(Boolean);
+}
+
+function ensureNotificationJob({ userId, taskId = null, channel, scheduledAt, payload = {} }) {
+  const existing = state.notificationJobs.find((job) => {
+    if (job.userId !== userId || job.channel !== channel || job.status !== 'pending') return false;
+    if (taskId) return job.taskId === taskId;
+    const existingPayload = job.payload || {};
+    return !job.taskId &&
+      existingPayload.type === payload.type &&
+      existingPayload.contentId === payload.contentId &&
+      String(existingPayload.goalId || '') === String(payload.goalId || '') &&
+      String(job.scheduledAt || '').slice(0, 10) === String(scheduledAt || '').slice(0, 10);
+  });
+  if (existing) return existing;
+  return createNotificationJob({ userId, taskId, channel, scheduledAt, payload });
+}
+
+function buildReminderScheduledAt(date, period = 'morning') {
+  const hourByPeriod = {
+    morning: 8,
+    noon: 12,
+    evening: 18,
+    night: 21,
+    theme: 8
+  };
+  const dateText = String(date || todayDate()).slice(0, 10);
+  const hour = hourByPeriod[String(period || 'morning')] || hourByPeriod.morning;
+  const intended = new Date(`${dateText}T${String(hour).padStart(2, '0')}:00:00+08:00`);
+  const minimum = new Date(Date.now() + 10 * 60 * 1000);
+  const scheduled = Number.isNaN(intended.getTime()) || intended < minimum ? minimum : intended;
+  return scheduled.toISOString();
+}
+
+function listNotificationJobs({ userId = 'demo-user', limit = 20, status, startAt, endAt, organizationId, type, mode, includeAllUsers = false } = {}) {
+  return state.notificationJobs
+    .filter((job) => includeAllUsers || job.userId === userId)
+    .filter((job) => !status || job.status === status)
+    .filter((job) => matchesDateRange(job.scheduledAt, { startAt, endAt }))
+    .filter((job) => {
+      if (!organizationId && !type && !mode) return true;
+      const task = state.tasks.find((item) => item.id === job.taskId);
+      const plan = task ? state.plans.find((item) => item.id === task.planId) : null;
+      const content = plan ? contents.find((item) => item.id === plan.contentId) : null;
+      const effectiveOrganizationId = content?.organizationId || organizations[0]?.id || '';
+      if (organizationId && effectiveOrganizationId !== organizationId) return false;
+      if (type && content?.type !== type) return false;
+      if (mode && plan?.mode !== normalizeMode(mode)) return false;
+      return true;
+    })
+    .slice()
+    .sort((left, right) => String(right.scheduledAt).localeCompare(String(left.scheduledAt)))
+    .slice(0, Number(limit || 20))
+    .map((job) => {
+      const task = state.tasks.find((item) => item.id === job.taskId);
+      const plan = task ? state.plans.find((item) => item.id === task.planId) : null;
+      const content = plan ? contents.find((item) => item.id === plan.contentId) : null;
+      const user = state.users.find((item) => item.id === job.userId);
+      return {
+        ...job,
+        userNickname: user?.nickname || '',
+        mode: plan?.mode || '',
+        contentId: content?.id || '',
+        title: content?.title || job.payload?.title || ''
+      };
+    });
+}
+
+function saveNotificationSubscriptionResult({ userId, templateKey, templateId, status, idempotencyKey }) {
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedTemplateKey = String(templateKey || '').trim();
+  const normalizedTemplateId = String(templateId || '').trim();
+  const normalizedStatus = String(status || '').trim();
+  const normalizedKey = String(idempotencyKey || '').trim();
+  if (!normalizedUserId || !normalizedTemplateKey || !normalizedTemplateId || !normalizedKey) {
+    throw notificationError('NOTIFICATION_SUBSCRIPTION_INVALID', 400);
+  }
+  if (!['accept', 'reject', 'ban'].includes(normalizedStatus)) {
+    throw notificationError('NOTIFICATION_SUBSCRIPTION_STATUS_INVALID', 400);
+  }
+
+  const idempotencyScope = `${normalizedUserId}:${normalizedKey}`;
+  const request = { templateKey: normalizedTemplateKey, templateId: normalizedTemplateId, status: normalizedStatus };
+  const replay = state.notificationSubscriptionIdempotency[idempotencyScope];
+  if (replay) {
+    if (JSON.stringify(replay.request) !== JSON.stringify(request)) {
+      throw notificationError('IDEMPOTENCY_KEY_CONFLICT', 409);
+    }
+    return { ...structuredClone(replay.response), replayed: true };
+  }
+
+  const now = new Date().toISOString();
+  const existing = state.notificationSubscriptions.find((item) =>
+    item.userId === normalizedUserId && item.templateId === normalizedTemplateId
+  );
+  const subscription = {
+    ...(existing || { id: createId('notify_sub'), createdAt: now }),
+    userId: normalizedUserId,
+    templateKey: normalizedTemplateKey,
+    templateId: normalizedTemplateId,
+    status: normalizedStatus,
+    grantedAt: normalizedStatus === 'accept' ? now : null,
+    consumedAt: null,
+    reservedJobId: null,
+    reservationToken: '',
+    reservedAt: null,
+    reservationLeaseUntil: null,
+    updatedAt: now
+  };
+  if (existing) Object.assign(existing, subscription);
+  else state.notificationSubscriptions.push(subscription);
+
+  const setting = syncWechatNotificationSetting(normalizedUserId, now);
+  const response = { subscription: { ...subscription }, setting };
+  state.notificationSubscriptionIdempotency[idempotencyScope] = { request, response: structuredClone(response) };
+  return response;
+}
+
+function getNotificationSubscription({ userId, templateId }) {
+  return state.notificationSubscriptions.find((item) =>
+    item.userId === userId && item.templateId === templateId
+  ) || null;
+}
+
+function findAvailableNotificationSubscription({ userId, templateId, templateKey }) {
+  return state.notificationSubscriptions.find((item) =>
+    item.userId === userId &&
+    item.templateId === templateId &&
+    (!templateKey || item.templateKey === templateKey) &&
+    item.status === 'accept' &&
+    !item.consumedAt &&
+    !item.reservedJobId
+  ) || null;
+}
+
+function getNotificationDeliveryTarget(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  return user ? { userId: user.id, openid: user.wechatOpenid || '' } : null;
+}
+
+function isNotificationChannelEnabled(userId, channel) {
+  return getNotificationSettings(userId).some((setting) =>
+    setting.channel === channel && setting.enabled === true
+  );
+}
+
+function listDueNotificationJobs({ dueBefore = new Date().toISOString(), limit = 20 } = {}) {
+  const dueAt = String(dueBefore || new Date().toISOString());
+  return state.notificationJobs
+    .filter((job) => job.status === 'pending')
+    .filter((job) => String(job.scheduledAt) <= dueAt)
+    .filter((job) => !job.nextRetryAt || String(job.nextRetryAt) <= dueAt)
+    .slice()
+    .sort((left, right) => String(left.scheduledAt).localeCompare(String(right.scheduledAt)))
+    .slice(0, Math.max(0, Number(limit || 20)))
+    .map((job) => ({ ...job }));
+}
+
+function claimDueNotificationJobs({ userId, dueBefore = new Date().toISOString(), claimedAt, leaseUntil, limit = 20 } = {}) {
+  const dueAt = String(dueBefore || new Date().toISOString());
+  const normalizedUserId = userId ? String(userId) : '';
+  const normalizedClaimedAt = String(claimedAt || dueAt);
+  const normalizedLeaseUntil = String(leaseUntil || new Date(Date.parse(normalizedClaimedAt) + 30_000).toISOString());
+  state.notificationJobs.forEach((job) => {
+    if (normalizedUserId && job.userId !== normalizedUserId) return;
+    if (job.status !== 'processing' || !job.leaseUntil || String(job.leaseUntil) > normalizedClaimedAt) return;
+    state.notificationSubscriptions.forEach((subscription) => {
+      if (subscription.reservedJobId !== job.id) return;
+      subscription.consumedAt = normalizedClaimedAt;
+      clearNotificationSubscriptionReservation(subscription, normalizedClaimedAt);
+    });
+    Object.assign(job, {
+      status: 'failed',
+      attemptCount: Number(job.attemptCount || 0) + 1,
+      nextRetryAt: null,
+      lastError: 'DELIVERY_OUTCOME_UNKNOWN',
+      providerResponse: { recovery: 'lease_expired', deliveryOutcome: 'unknown' },
+      claimToken: '',
+      claimedAt: null,
+      leaseUntil: null,
+      updatedAt: normalizedClaimedAt
+    });
+  });
+
+  return state.notificationJobs
+    .filter((job) => job.status === 'pending')
+    .filter((job) => !normalizedUserId || job.userId === normalizedUserId)
+    .filter((job) => String(job.scheduledAt) <= dueAt)
+    .filter((job) => !job.nextRetryAt || String(job.nextRetryAt) <= dueAt)
+    .slice()
+    .sort((left, right) => String(left.scheduledAt).localeCompare(String(right.scheduledAt)))
+    .slice(0, Math.max(0, Number(limit || 20)))
+    .map((job) => {
+      Object.assign(job, {
+        status: 'processing',
+        claimToken: createId('notify_claim'),
+        claimedAt: normalizedClaimedAt,
+        leaseUntil: normalizedLeaseUntil,
+        updatedAt: normalizedClaimedAt
+      });
+      return { ...job };
+    });
+}
+
+function renewNotificationJobLease({ jobId, claimToken, renewedAt, leaseUntil } = {}) {
+  const job = state.notificationJobs.find((item) => item.id === jobId);
+  const renewalTime = String(renewedAt || new Date().toISOString());
+  if (!job || job.status !== 'processing' || job.claimToken !== claimToken ||
+    !job.leaseUntil || String(job.leaseUntil) <= renewalTime) return null;
+  job.leaseUntil = String(leaseUntil || job.leaseUntil);
+  job.updatedAt = renewalTime;
+  state.notificationSubscriptions.forEach((subscription) => {
+    if (subscription.reservedJobId === job.id && subscription.reservationToken === claimToken) {
+      subscription.reservationLeaseUntil = job.leaseUntil;
+      subscription.updatedAt = renewalTime;
+    }
+  });
+  return { ...job };
+}
+
+function reserveProviderAttempt({ jobId, claimToken, maxAttempts = 3, attemptedAt } = {}) {
+  const job = state.notificationJobs.find((item) => item.id === jobId);
+  const attemptTime = String(attemptedAt || new Date().toISOString());
+  const normalizedMax = Math.max(1, Number(maxAttempts || 3));
+  if (!job || job.status !== 'processing' || job.claimToken !== claimToken ||
+    !job.leaseUntil || String(job.leaseUntil) <= attemptTime ||
+    Number(job.providerAttemptCount || 0) >= normalizedMax) return null;
+  job.providerAttemptCount = Number(job.providerAttemptCount || 0) + 1;
+  job.updatedAt = attemptTime;
+  return { ...job };
+}
+
+function reserveNotificationSubscription({ jobId, claimToken, templateId, templateKey, leaseUntil, reservedAt } = {}) {
+  const job = state.notificationJobs.find((item) => item.id === jobId);
+  if (!job || job.status !== 'processing' || job.claimToken !== claimToken) {
+    throw notificationError('NOTIFICATION_JOB_CLAIM_INVALID', 409);
+  }
+  const reservationTime = String(reservedAt || job.claimedAt || new Date().toISOString());
+  const subscription = state.notificationSubscriptions.find((item) =>
+    item.userId === job.userId &&
+    item.templateId === templateId &&
+    (!templateKey || item.templateKey === templateKey) &&
+    item.status === 'accept' &&
+    !item.consumedAt &&
+    !item.reservedJobId
+  );
+  if (!subscription) return null;
+  Object.assign(subscription, {
+    reservedJobId: job.id,
+    reservationToken: claimToken,
+    reservedAt: reservationTime,
+    reservationLeaseUntil: String(leaseUntil || job.leaseUntil),
+    updatedAt: reservationTime
+  });
+  syncWechatNotificationSetting(job.userId, reservationTime);
+  return { ...subscription };
+}
+
+function recordNotificationJobSuccess({ jobId, claimToken, subscriptionId, providerMessageId, providerResponse, sentAt }) {
+  const job = state.notificationJobs.find((item) => item.id === jobId);
+  const subscription = state.notificationSubscriptions.find((item) => item.id === subscriptionId);
+  const completedAt = String(sentAt || new Date().toISOString());
+  if (!job || job.status !== 'processing' || job.claimToken !== claimToken) {
+    throw notificationError('NOTIFICATION_JOB_CLAIM_INVALID', 409);
+  }
+  if (!job.leaseUntil || String(job.leaseUntil) <= completedAt) {
+    throw notificationError('NOTIFICATION_CLAIM_STALE', 409);
+  }
+  if (!subscription || subscription.userId !== job.userId || subscription.status !== 'accept' || subscription.consumedAt ||
+    subscription.reservedJobId !== job.id || subscription.reservationToken !== claimToken) {
+    throw notificationError('WECHAT_SUBSCRIPTION_REQUIRED', 409);
+  }
+  subscription.consumedAt = completedAt;
+  clearNotificationSubscriptionReservation(subscription, completedAt);
+  subscription.updatedAt = completedAt;
+  syncWechatNotificationSetting(job.userId, completedAt);
+  Object.assign(job, {
+    status: 'sent',
+    sentAt: completedAt,
+    attemptCount: Number(job.attemptCount || 0) + 1,
+    nextRetryAt: null,
+    lastError: '',
+    providerMessageId: String(providerMessageId || ''),
+    providerResponse: providerResponse || null,
+    claimToken: '',
+    claimedAt: null,
+    leaseUntil: null,
+    updatedAt: completedAt
+  });
+  return { ...job };
+}
+
+function recordNotificationJobFailure({ jobId, claimToken, error, retryable, deliveryOutcome, providerResponse, attemptedAt }) {
+  const job = state.notificationJobs.find((item) => item.id === jobId);
+  const failedAt = String(attemptedAt || new Date().toISOString());
+  if (!job || job.status !== 'processing' || job.claimToken !== claimToken) {
+    throw notificationError('NOTIFICATION_JOB_CLAIM_INVALID', 409);
+  }
+  if (!job.leaseUntil || String(job.leaseUntil) <= failedAt) {
+    throw notificationError('NOTIFICATION_CLAIM_STALE', 409);
+  }
+  const outcomeUnknown = deliveryOutcome === 'unknown' || error === 'DELIVERY_OUTCOME_UNKNOWN';
+  state.notificationSubscriptions.forEach((subscription) => {
+    if (subscription.reservedJobId === job.id && subscription.reservationToken === claimToken) {
+      if (outcomeUnknown) subscription.consumedAt = failedAt;
+      clearNotificationSubscriptionReservation(subscription, failedAt);
+    }
+  });
+  const attemptCount = Number(job.attemptCount || 0) + 1;
+  const shouldRetry = !outcomeUnknown && Boolean(retryable) && attemptCount < 3 && Number(job.providerAttemptCount || 0) < 3;
+  const retryDelaysMs = [60_000, 5 * 60_000, 30 * 60_000];
+  Object.assign(job, {
+    status: shouldRetry ? 'pending' : 'failed',
+    attemptCount,
+    nextRetryAt: shouldRetry
+      ? new Date(new Date(failedAt).getTime() + retryDelaysMs[attemptCount - 1]).toISOString()
+      : null,
+    lastError: String(error || 'NOTIFICATION_DELIVERY_FAILED'),
+    providerResponse: providerResponse || null,
+    claimToken: '',
+    claimedAt: null,
+    leaseUntil: null,
+    updatedAt: failedAt
+  });
+  syncWechatNotificationSetting(job.userId, failedAt);
+  return { ...job };
+}
+
+function clearNotificationSubscriptionReservation(subscription, updatedAt) {
+  Object.assign(subscription, {
+    reservedJobId: null,
+    reservationToken: '',
+    reservedAt: null,
+    reservationLeaseUntil: null,
+    updatedAt: updatedAt || subscription.updatedAt
+  });
+}
+
+function syncWechatNotificationSetting(userId, at = new Date().toISOString()) {
+  const enabled = hasAvailableNotificationSubscription(userId, at);
+  const current = state.notificationSettings.find((item) => item.userId === userId && item.channel === 'wechat_subscribe');
+  return upsertNotificationSetting({
+    userId,
+    channel: 'wechat_subscribe',
+    enabled,
+    quietHours: current ? current.quietHours : null
+  });
+}
+
+function hasAvailableNotificationSubscription(userId, at = new Date().toISOString()) {
+  return state.notificationSubscriptions.some((item) =>
+    item.userId === userId &&
+    item.status === 'accept' &&
+    !item.consumedAt &&
+    (!item.reservedJobId || (item.reservationLeaseUntil && String(item.reservationLeaseUntil) <= String(at)))
+  );
+}
+
+function notificationError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+function getGrowthOverview(userId = 'demo-user') {
+  const memorizationStreak = calculateDailyStreak(
+    state.practiceSessions
+      .filter((item) => item.userId === userId)
+      .map((item) => item.createdAt)
+  );
+  const recitationStreak = calculateDailyStreak(
+    state.recitationSessions
+      .filter((item) => item.userId === userId && item.completed)
+      .map((item) => item.createdAt)
+  );
+  const latestPractice = state.practiceSessions
+    .filter((item) => item.userId === userId)
+    .slice()
+    .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))[0] || null;
+  return {
+    memorizationStreak,
+    recitationStreak,
+    masteredCount: state.plans.filter((item) => item.userId === userId && item.state === 'mastered').length,
+    playfulPlanCount: state.plans.filter((item) => item.userId === userId && item.mode === 'playful').length,
+    scientificPlanCount: state.plans.filter((item) => item.userId === userId && item.mode !== 'playful').length,
+    completedTaskCount: state.tasks.filter((item) => item.userId === userId && item.status === 'completed').length,
+    recitationSessionCount: state.recitationSessions.filter((item) => item.userId === userId && item.completed).length,
+    latestMilestone: latestPractice
+      ? { title: latestPractice.growthStage, achievedAt: latestPractice.createdAt }
+      : null
+  };
+}
+
+function listRecitationGoals(userId = 'demo-user') {
+  return state.recitationGoals
+    .filter((item) => item.userId === userId && item.status === 'active')
+    .map((goal) => {
+      const content = contents.find((item) => item.id === goal.contentId);
+      return {
+        ...goal,
+        title: content ? content.title : '',
+        preview: content ? content.preview : '',
+        scene: content ? content.scene : ''
+      };
+    });
+}
+
+function upsertRecitationGoal({ userId = 'demo-user', contentId, goalType = 'daily', preferredPeriod = 'morning', dailyTargetCount = 1 }) {
+  const content = contents.find((item) => item.id === contentId);
+  if (!content) {
+    const error = new Error('Content not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  const existing = state.recitationGoals.find((item) => item.userId === userId && item.contentId === contentId && item.goalType === goalType);
+  if (existing) {
+    existing.preferredPeriod = preferredPeriod || existing.preferredPeriod;
+    existing.dailyTargetCount = Math.max(1, Number(dailyTargetCount || existing.dailyTargetCount || 1));
+    existing.status = 'active';
+    existing.updatedAt = new Date().toISOString();
+    scheduleNextRecitationReminderJobs(userId, existing, content, addDays(todayDate(), 1));
+    return existing;
+  }
+  const goal = {
+    id: createId('recite_goal'),
+    userId,
+    contentId,
+    goalType,
+    preferredPeriod: preferredPeriod || 'morning',
+    dailyTargetCount: Math.max(1, Number(dailyTargetCount || 1)),
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  state.recitationGoals.unshift(goal);
+  scheduleNextRecitationReminderJobs(userId, goal, content, addDays(todayDate(), 1));
+  return goal;
+}
+
+function createRecitationSession({ userId = 'demo-user', contentId, goalId = null, sessionType = 'free', period = 'morning', roundCount = 1, durationSeconds = 0, completed = true, note = '' }) {
+  const content = contents.find((item) => item.id === contentId);
+  if (!content) {
+    const error = new Error('Content not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  const session = {
+    id: createId('recite'),
+    userId,
+    contentId,
+    goalId,
+    sessionType,
+    period,
+    roundCount: Math.max(1, Number(roundCount || 1)),
+    durationSeconds: Math.max(0, Number(durationSeconds || 0)),
+    completed: Boolean(completed),
+    note,
+    createdAt: new Date().toISOString()
+  };
+  state.recitationSessions.unshift(session);
+  if (session.completed) {
+    const goal = state.recitationGoals.find((item) => item.id === goalId && item.userId === userId);
+    scheduleNextRecitationReminderJobs(
+      userId,
+      goal || {
+        id: goalId,
+        contentId,
+        preferredPeriod: period,
+        dailyTargetCount: roundCount,
+        goalType: sessionType || 'daily'
+      },
+      content,
+      addDays(todayDate(), 1)
+    );
+  }
+  return session;
+}
+
+function listTodayFocus(userId = 'demo-user') {
+  const plans = listPlans(userId);
+  const today = todayDate();
+  const grouped = { scientificTasks: [], playfulTasks: [] };
+  plans.forEach((plan) => {
+    if (plan.contentVersionId || plan.adaptiveStatus || Array.isArray(plan.itemStates)) {
+      const task = getTodayStudyTask(userId, plan.id, today);
+      if (task.status === 'completed') return;
+      const content = contents.find((item) => item.id === plan.contentId) || {};
+      grouped.scientificTasks.push({
+        planId: plan.id,
+        taskId: task.id,
+        contentId: plan.contentId,
+        contentVersionId: plan.contentVersionId,
+        title: plan.title || content.title || '',
+        mode: 'scientific',
+        isAdaptive: true,
+        newUnitCount: task.newUnitCount,
+        reviewUnitCount: task.reviewUnitCount,
+        weakUnitCount: task.weakUnitCount,
+        estimatedMinutes: task.estimatedMinutes,
+        body: content.preview || '',
+        preview: content.preview || '',
+        scene: content.scene || ''
+      });
+      return;
+    }
+    const task = (plan.tasks || []).find((item) => item.status !== 'completed' && String(item.dueDate) <= today);
+    if (!task) return;
+    const content = contents.find((item) => item.id === plan.contentId) || {};
+    const item = {
+      planId: plan.id,
+      taskId: task.id,
+      contentId: plan.contentId,
+      title: plan.title,
+      mode: plan.mode || 'scientific',
+      state: plan.state || 'reviewing',
+      method: task.method,
+      currentDay: task.dayIndex,
+      totalDays: plan.totalDays,
+      meta: `第 ${task.dayIndex}/${plan.totalDays} 天 · ${task.method}`,
+      masteryScore: plan.masteryScore,
+      growthStage: normalizeGrowthStage(plan.masteryScore),
+      body: content.preview || '',
+      preview: content.preview || '',
+      scene: content.scene || '',
+      reasonText: scientificReasonText(plan, task)
+    };
+    if (item.mode === 'playful') {
+      grouped.playfulTasks.push(item);
+    } else {
+      grouped.scientificTasks.push(item);
+    }
+  });
+  return {
+    date: today,
+    scientificTasks: grouped.scientificTasks,
+    playfulTasks: grouped.playfulTasks,
+    recitationTasks: listRecitationGoals(userId).map((goal) => ({
+      goalId: goal.id,
+      contentId: goal.contentId,
+      title: goal.title,
+      preview: goal.preview,
+      preferredPeriod: goal.preferredPeriod,
+      dailyTargetCount: goal.dailyTargetCount,
+      goalType: goal.goalType,
+      status: goal.status
+    }))
+  };
+}
+
+function buildRecentDailyTrend(rows, dateField, { startAt, endAt, maxDays = 7 } = {}) {
+  const normalizedEndAt = String(endAt || '').trim() || new Date().toISOString();
+  const normalizedStartAt = String(startAt || '').trim() || normalizedEndAt;
+  const endDate = new Date(normalizedEndAt);
+  const startDate = new Date(normalizedStartAt);
+  endDate.setUTCHours(0, 0, 0, 0);
+  startDate.setUTCHours(0, 0, 0, 0);
+  if (startDate.getTime() > endDate.getTime()) startDate.setTime(endDate.getTime());
+
+  const days = [];
+  for (let cursor = new Date(endDate); cursor.getTime() >= startDate.getTime() && days.length < maxDays; cursor.setUTCDate(cursor.getUTCDate() - 1)) {
+    days.unshift(cursor.toISOString().slice(0, 10));
+  }
+  if (!days.length) days.push(endDate.toISOString().slice(0, 10));
+
+  const counter = new Map(days.map((day) => [day, 0]));
+  rows.forEach((item) => {
+    const day = String(item?.[dateField] || '').slice(0, 10);
+    if (counter.has(day)) {
+      counter.set(day, Number(counter.get(day) || 0) + 1);
+    }
+  });
+
+  return days.map((day) => ({
+    day,
+    label: day.slice(5),
+    count: Number(counter.get(day) || 0)
+  }));
+}
+
+function buildModeDistribution(planRows = []) {
+  return planRows.reduce((summary, item) => {
+    const key = item.mode === 'playful' ? 'playful' : 'scientific';
+    summary[key] += 1;
+    summary.total += 1;
+    return summary;
+  }, { scientific: 0, playful: 0, total: 0 });
+}
+
+function getDashboard(filters = {}) {
+  const filteredContents = listContents({
+    organizationId: filters.organizationId,
+    type: filters.type,
+    mode: filters.mode
+  });
+  const contentIds = new Set(filteredContents.map((item) => item.id));
+  const filteredPlans = state.plans.filter((item) => (
+    contentIds.has(item.contentId) &&
+    matchesDateRange(item.createdAt, filters) &&
+    (!filters.mode || item.mode === normalizeMode(filters.mode))
+  ));
+  const filteredTasks = state.tasks.filter((item) => {
+    if (item.status !== 'completed') return false;
+    const plan = state.plans.find((entry) => entry.id === item.planId);
+    if (!plan) return false;
+    return contentIds.has(plan.contentId) &&
+      (!filters.mode || plan.mode === normalizeMode(filters.mode)) &&
+      matchesDateRange(item.completedAt || item.updatedAt, filters);
+  });
+  const filteredPracticeSessions = state.practiceSessions.filter((item) => (
+    contentIds.has(item.contentId) &&
+    (!filters.mode || item.mode === normalizeMode(filters.mode)) &&
+    matchesDateRange(item.createdAt, filters)
+  ));
+  const filteredRecitationSessions = state.recitationSessions.filter((item) => (
+    contentIds.has(item.contentId) &&
+    item.completed &&
+    matchesDateRange(item.createdAt, filters)
+  ));
+  const filteredAssets = state.assets.filter((item) => !filters.organizationId || item.organizationId === filters.organizationId);
+  const filteredAuditLogs = listAuditLogs({
+    organizationId: filters.organizationId,
+    startAt: filters.startAt,
+    endAt: filters.endAt,
+    limit: 999
+  });
+  const filteredMembers = filters.organizationId
+    ? state.organizationMembers.filter((item) => item.organizationId === filters.organizationId && item.status === 'active')
+    : state.organizationMembers.filter((item) => item.status === 'active');
+  const recentDispatches = listNotificationJobs({
+    includeAllUsers: true,
+    organizationId: filters.organizationId,
+    type: filters.type,
+    mode: filters.mode,
+    status: 'sent',
+    startAt: filters.startAt,
+    endAt: filters.endAt,
+    limit: 6
+  });
+
+  return {
+    userCount: filteredMembers.length || state.users.length,
+    contentCount: filteredContents.length,
+    planCount: filteredPlans.length,
+    completedTaskCount: filteredTasks.length,
+    practiceSessionCount: filteredPracticeSessions.length,
+    recitationSessionCount: filteredRecitationSessions.length,
+    assetCount: filteredAssets.length,
+    organizationCount: filters.organizationId ? 1 : state.organizations.length,
+    auditLogCount: filteredAuditLogs.length,
+    modeDistribution: buildModeDistribution(filteredPlans),
+    practiceTrend: buildRecentDailyTrend(filteredPracticeSessions, 'createdAt', filters),
+    recitationTrend: buildRecentDailyTrend(filteredRecitationSessions, 'createdAt', filters),
+    recentDispatches,
+    recentPlans: filteredPlans
+      .slice()
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 6),
+    recentRecitations: filteredRecitationSessions
+      .slice()
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 6)
+      .map((item) => {
+      const content = contents.find((entry) => entry.id === item.contentId);
+      return {
+        id: item.id,
+        title: content ? content.title : '',
+        period: item.period,
+        roundCount: item.roundCount,
+        createdAt: item.createdAt
+      };
+    }),
+    recentAuditLogs: listAuditLogs({
+      limit: 6,
+      organizationId: filters.organizationId,
+      startAt: filters.startAt,
+      endAt: filters.endAt
+    })
+  };
+}
+
+function matchesDateRange(value, filters = {}) {
+  const current = Date.parse(String(value || ''));
+  if (Number.isNaN(current)) return true;
+  const startAt = Date.parse(String(filters.startAt || ''));
+  const endAt = Date.parse(String(filters.endAt || ''));
+  if (!Number.isNaN(startAt) && current < startAt) return false;
+  if (!Number.isNaN(endAt) && current > endAt) return false;
+  return true;
+}
+
+function toContentSummary(content) {
+  const publishedVersion = content.publishedVersion || {};
+  return {
+    id: content.id,
+    organizationId: content.organizationId || organizations[0]?.id || '',
+    title: content.title,
+    subtitle: content.subtitle,
+    type: content.type,
+    body: content.body,
+    preview: content.preview,
+    segments: content.segments,
+    lengthTier: content.lengthTier,
+    planDays: content.planDays,
+    scene: content.scene,
+    publishedVersionId: publishedVersion.id || content.publishedVersionId || '',
+    publishedVersionNo: publishedVersion.versionNo || null,
+    sourceNote: publishedVersion.sourceNote || '',
+    versionNote: publishedVersion.versionNote || '',
+    sourceContentId: publishedVersion.sourceContentId || content.sourceContentId || '',
+    sourceVersionNo: publishedVersion.sourceVersionNo || content.sourceVersionNo || null,
+    accessLevel: content.accessLevel,
+    publishStatus: content.publishStatus || 'draft',
+    reviewStatus: publishedVersion.reviewStatus || 'draft',
+    reviewedAt: content.reviewedAt || null,
+    createdAt: content.createdAt || null,
+    updatedAt: content.updatedAt || null,
+    defaultMode: normalizeMode(content.defaultMode || 'scientific'),
+    supportedModes: normalizeSupportedModes(content.supportedModes || ['scientific', 'playful'], content.defaultMode || 'scientific'),
+    supportsRecitation: content.supportsRecitation !== false,
+    recommendedRecitationTime: content.recommendedRecitationTime || '',
+    recitationTheme: content.recitationTheme || '',
+    ...(Array.isArray(content.sections) ? { sections: content.sections } : {})
+  };
+}
+
+function matchesContentMode(content, mode) {
+  const normalizedMode = normalizeMode(mode);
+  const supportedModes = normalizeSupportedModes(content.supportedModes || [], content.defaultMode || 'scientific');
+  return supportedModes.includes(normalizedMode) || normalizeMode(content.defaultMode) === normalizedMode;
+}
+
+function toContentDetail(content) {
+  return {
+    ...toContentSummary(content),
+    body: content.body,
+    segments: content.segments
+  };
+}
+
+function toAssetSummary(asset) {
+  return {
+    id: asset.id,
+    organizationId: asset.organizationId,
+    title: asset.title,
+    type: asset.type,
+    url: asset.accessLevel === 'public' ? asset.url : null,
+    thumbnailUrl: asset.thumbnailUrl,
+    accessLevel: asset.accessLevel,
+    publishStatus: asset.publishStatus,
+    copyrightStatus: asset.copyrightStatus
+  };
+}
+
+function appendAuditLog({ actorType, actorId, organizationId, action, targetType, targetId, detail }) {
+  state.auditLogs.push({
+    id: createId('audit'),
+    actorType,
+    actorId,
+    organizationId,
+    action,
+    targetType,
+    targetId,
+    detail: detail || {},
+    createdAt: new Date().toISOString()
+  });
+}
+
+function hashValue(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function contentStructureError(code, statusCode) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+module.exports = {
+  addOrganizationMember,
+  archiveAsset,
+  archiveContent,
+  archiveFestival,
+  archiveLegacyPlan,
+  copyContentAsNewVersion,
+  createFestival,
+  listAdminContents,
+  listAdminFestivals,
+  listAdminUsers,
+  listAdminPlans,
+  listAdminPracticeSessions,
+  listAdminRecitationSessions,
+  listProducts,
+  listAdminProducts,
+  createProduct,
+  updateProduct,
+  archiveProduct,
+  listAdminOrders,
+  updateOrderStatus,
+  createNotificationJob,
+  createAdaptivePlan,
+  createMemoryAssessment,
+  createRecitationSession,
+  getUserById,
+  getGrowthOverview,
+  getNotificationSettings,
+  getNotificationDeliveryTarget,
+  getNotificationSubscription,
+  getDashboard,
+  listNotificationJobs,
+  listDueNotificationJobs,
+  claimDueNotificationJobs,
+  renewNotificationJobLease,
+  reserveProviderAttempt,
+  isNotificationChannelEnabled,
+  loginByWechatCode,
+  updateUserProfile,
+  createPlan,
+  createAsset,
+  createContent,
+  completeTask,
+  completeStudyTaskItem,
+  getContent,
+  getContentStructure,
+  getTodayStudyTask,
+  recommendMemoryPlan,
+  listContentVersions,
+  listAuditLogs,
+  listContents,
+  listFestivals,
+  listOrganizationAssets,
+  listOrganizations,
+  listPlans,
+  listRecitationGoals,
+  listTodayFocus,
+  updateAsset,
+  updateContent,
+  updateFestival,
+  updateAssetAccess,
+  upsertRecitationGoal,
+  upsertNotificationSetting,
+  findAvailableNotificationSubscription,
+  reserveNotificationSubscription,
+  recordNotificationJobFailure,
+  recordNotificationJobSuccess,
+  saveNotificationSubscriptionResult,
+  todayDate
+};

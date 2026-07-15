@@ -5,6 +5,9 @@
     "pages/shop/index",
     "pages/profile/index",
     "pages/practice/index",
+    "pages/assessment/index",
+    "pages/plan-setup/index",
+    "pages/recitation/index",
     "pages/plan/index"
   ],
   "window": {

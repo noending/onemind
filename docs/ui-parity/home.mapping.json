@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "page": "home",
+    "updatedAt": "2026-06-01",
+    "notes": "Web TodayScreen 与 MiniApp home 页结构映射基线。"
+  },
+  "mappings": [
+    {
+      "id": "home.title",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 643,
+        "snippet": "今日修持"
+      },
+      "miniappRef": {
+        "file": "pages/home/index.wxml",
+        "line": 7,
+        "selector": ".page-title",
+        "snippet": "今日修持"
+      }
+    },
+    {
+      "id": "home.today-verse-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 645,
+        "snippet": "TODAY · 今日偈语卡"
+      },
+      "miniappRef": {
+        "file": "pages/home/index.wxml",
+        "line": 9,
+        "selector": ".today-card",
+        "snippet": "TODAY · 今日偈语"
+      }
+    },
+    {
+      "id": "home.due-counter",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 669,
+        "snippet": "{dueList.length} 段"
+      },
+      "miniappRef": {
+        "file": "pages/home/index.wxml",
+        "line": 23,
+        "selector": ".list-count",
+        "snippet": "{{dueList.length}} 段"
+      }
+    },
+    {
+      "id": "home.review-cards",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 676,
+        "snippet": "ReviewCard 列表"
+      },
+      "miniappRef": {
+        "file": "pages/home/index.wxml",
+        "line": 32,
+        "selector": ".review-card",
+        "snippet": "wx:for=\"{{dueList}}\""
+      }
+    },
+    {
+      "id": "home.festival-card",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 695,
+        "snippet": "节日精选卡"
+      },
+      "miniappRef": {
+        "file": "pages/home/index.wxml",
+        "line": 46,
+        "selector": ".festival-card",
+        "snippet": "wx:if=\"{{featuredFestival}}\""
+      }
+    },
+    {
+      "id": "home.footer-note",
+      "designRef": {
+        "file": "design/src/app/App.tsx",
+        "line": 709,
+        "snippet": "Demo · 快讲一天，体验明日复习"
+      },
+      "miniappRef": {
+        "file": "pages/home/index.wxml",
+        "line": 56,
+        "selector": ".home-note",
+        "snippet": "Demo · 快讲一天，体验明日复习"
+      }
+    }
+  ]
+}

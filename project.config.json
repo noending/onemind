@@ -30,9 +30,70 @@
   },
   "compileType": "miniprogram",
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "backend"
+      },
+      {
+        "type": "folder",
+        "value": "design"
+      },
+      {
+        "type": "folder",
+        "value": "docs"
+      },
+      {
+        "type": "folder",
+        "value": "tools"
+      },
+      {
+        "type": "folder",
+        "value": "wiki"
+      },
+      {
+        "type": "folder",
+        "value": ".playwright-mcp"
+      },
+      {
+        "type": "folder",
+        "value": ".super-agent"
+      },
+      {
+        "type": "folder",
+        "value": ".superpowers"
+      },
+      {
+        "type": "folder",
+        "value": ".workbuddy"
+      },
+      {
+        "type": "file",
+        "value": "PLAN.md"
+      },
+      {
+        "type": "file",
+        "value": "README.md"
+      },
+      {
+        "type": "file",
+        "value": "design-library.png"
+      },
+      {
+        "type": "file",
+        "value": "design-profile.png"
+      },
+      {
+        "type": "file",
+        "value": "design-shop.png"
+      },
+      {
+        "type": "file",
+        "value": "design-today.png"
+      }
+    ],
     "include": []
   },
-  "appid": "wx852e7aca1252a0e7",
+  "appid": "wxecc1d357860b8622",
   "editorSetting": {}
 }

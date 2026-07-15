@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {
+      "path": "/",
+      "title": "Home"
+    }
+  ],
+  "issues": [],
+  "updatedAt": "2026-07-10T02:35:26.222Z",
+  "status": "unavailable",
+  "devServer": {
+    "url": "",
+    "command": "",
+    "health": "not_configured"
+  },
+  "reason": "dev_server_not_configured",
+  "nextAction": "Start the dev server, then run super-agent capture"
+}

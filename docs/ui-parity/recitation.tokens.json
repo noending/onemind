@@ -1,0 +1,112 @@
+{
+  "meta": {
+    "page": "recitation",
+    "source": "design/src/app/App.tsx#FullTextModal",
+    "target": "pages/recitation/index.(wxml|wxss|js)",
+    "updatedAt": "2026-07-12",
+    "interactionMode": "manual-completion-no-playback",
+    "notes": "阶段 A 验收覆盖全文、修持提示、手动轮次和完成记录；不保留播放器样式基线。",
+    "designFrame": {
+      "widthPx": 390,
+      "heightPx": 844
+    },
+    "conversion": {
+      "miniProgramWidthRpx": 750,
+      "rpxPerPx": 1.9230769231,
+      "rounding": "round-half-up"
+    }
+  },
+  "palette": {
+    "pageBg": "#f6ecd7",
+    "primary": "#7e2a1c",
+    "headline": "#2d2018",
+    "subtle": "#8a7860",
+    "heroStart": "#7e2a1c",
+    "heroMid": "#8b3322",
+    "heroEnd": "#4a1810",
+    "cardBg": "rgba(255, 250, 242, 0.72)"
+  },
+  "typography": {
+    "heroTitle": {
+      "designPx": 30,
+      "miniRpx": 58,
+      "implementedRpx": 44
+    },
+    "lineText": {
+      "designPx": 20,
+      "miniRpx": 38,
+      "implementedRpx": 32
+    },
+    "statNumber": {
+      "designPx": 18,
+      "miniRpx": 35,
+      "implementedRpx": 34
+    }
+  },
+  "shape": {
+    "heroRadius": {
+      "designPx": 18,
+      "miniRpx": 35,
+      "implementedRpx": 34
+    },
+    "segmentRadius": {
+      "designPx": 16,
+      "miniRpx": 31,
+      "implementedRpx": 30
+    },
+    "completionButtonRadius": {
+      "designPx": 999,
+      "miniRpx": 1921,
+      "implementedRpx": 999
+    }
+  },
+  "spacing": {
+    "pageHorizontal": {
+      "designPx": 24,
+      "miniRpx": 46,
+      "implementedRpx": 36
+    },
+    "segmentGap": {
+      "designPx": 6,
+      "miniRpx": 12,
+      "implementedRpx": 12
+    },
+    "roundControlGap": {
+      "designPx": 5,
+      "miniRpx": 10,
+      "implementedRpx": 10
+    }
+  },
+  "selectorSnapshot": {
+    ".hero-card": [
+      "border-radius: 34rpx",
+      "background: linear-gradient(140deg, #7e2a1c, #8b3322 58%, #4a1810)"
+    ],
+    ".stats-strip": [
+      "border-radius: 28rpx",
+      "grid-template-columns: repeat(3, 1fr)"
+    ],
+    ".segment-card": [
+      "padding: 20rpx 22rpx",
+      "border-radius: 30rpx"
+    ],
+    ".note-card": [
+      "border-radius: 30rpx",
+      "padding: 24rpx"
+    ],
+    ".round-inline": [
+      "margin-bottom: 14rpx",
+      "display: flex",
+      "justify-content: space-between"
+    ],
+    ".round-inline-btn": [
+      "width: var(--btn-h-sm)",
+      "height: var(--btn-h-sm)",
+      "border-radius: var(--radius-pill)"
+    ],
+    ".complete-button": [
+      "height: var(--btn-h-md)",
+      "border-radius: var(--radius-pill)"
+    ]
+  }
+}
